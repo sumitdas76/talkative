@@ -1,0 +1,10 @@
+faster-whisper
+sounddevice
+numpy
+pynput
+pyperclip
+pystray
+Pillow
+uiautomation
+pywin32
+pyinstaller
