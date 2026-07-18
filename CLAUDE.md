@@ -107,12 +107,14 @@ Each stage is a separate module with no cross-dependencies beyond `config.py`
 - **`self_correction.py`** — pure, local, rule-based (no LLM, no network —
   keep it that way). Detects spoken retraction phrases (compound only —
   bare "sorry" is deliberately not a trigger because it appears in real
-  dictated content). Trigger words may be comma-separated ("No, sorry" ==
-  "no sorry") because Whisper punctuates freely, but never period-separated.
-  A mid-sentence trigger discards back to the last sentence boundary; a
-  trigger that *starts* a sentence retracts the previous sentence (Whisper
-  often inserts a period right before the retraction). Retraction never
-  reaches more than one sentence back.
+  dictated content). Comma-separated trigger words ("No, sorry") are only
+  trusted at the start of a sentence -- Whisper punctuates real retractions
+  that way, but mid-sentence "I said no, sorry, I was busy" is literal
+  content and no rule can tell the difference (grammar engine's job later).
+  Periods never join trigger words. A mid-sentence strict trigger discards
+  back to the last sentence boundary; a trigger that *starts* a sentence
+  retracts the previous sentence. Retraction never reaches more than one
+  sentence back, so an all-comma transcript is left alone (safe miss).
 - **`cleanup.py`** — rule-based filler removal and conservative near-repeat
   sentence collapsing (word-level similarity + shared opening word; keep the
   last version). Governing principle: wrongly deleting intended words is the

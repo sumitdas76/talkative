@@ -20,14 +20,38 @@ _FIRST_LETTER = re.compile(r"([.!?]\s*|^\s*)([a-z])")
 _MAX_PASSES = 20
 
 
-def _build_trigger_pattern(triggers):
+def _build_trigger_patterns(triggers):
+    """Two patterns: strict (spaces between trigger words, matched anywhere)
+    and loose (commas also allowed between words, e.g. "No, sorry"). The
+    loose form is only trusted at the start of a sentence -- mid-sentence,
+    "I said no, sorry, I was busy" is literal content, not a retraction, and
+    no rule can tell the difference. Periods are never allowed between
+    trigger words ("I said no. Sorry, ..." is not a retraction)."""
     phrases = sorted(triggers, key=len, reverse=True)
-    # Words inside a trigger may be separated by a comma as well as spaces:
-    # Whisper punctuates freely, so "no sorry" must also match "No, sorry".
-    # Periods are deliberately NOT allowed between trigger words -- "I said
-    # no. Sorry, I was busy." is not a retraction.
-    alternatives = [re.escape(p).replace(r"\ ", r"(?:,\s*|\s+)") for p in phrases]
-    return re.compile(r"\b(?:" + "|".join(alternatives) + r")\b[,.:;!]?\s*", re.IGNORECASE)
+    strict = [re.escape(p).replace(r"\ ", r"\s+") for p in phrases]
+    loose = [re.escape(p).replace(r"\ ", r"(?:,\s*|\s+)") for p in phrases]
+    tail = r"\b[,.:;!]?\s*"
+    return (
+        re.compile(r"\b(?:" + "|".join(strict) + r")" + tail, re.IGNORECASE),
+        re.compile(r"\b(?:" + "|".join(loose) + r")" + tail, re.IGNORECASE),
+    )
+
+
+def _find_trigger(strict_pattern, loose_pattern, text):
+    strict_match = strict_pattern.search(text)
+    loose_match = None
+    for m in loose_pattern.finditer(text):
+        before = text[: m.start()].strip()
+        if not before or before[-1] in ".!?":
+            loose_match = m
+            break
+        if strict_match is not None and m.start() > strict_match.start():
+            break
+    if strict_match is None:
+        return loose_match
+    if loose_match is None or strict_match.start() <= loose_match.start():
+        return strict_match
+    return loose_match
 
 
 def _recapitalize(text):
@@ -42,12 +66,12 @@ def apply_self_corrections(text, triggers=None):
     if not triggers:
         return text
 
-    pattern = _build_trigger_pattern(triggers)
+    strict_pattern, loose_pattern = _build_trigger_patterns(triggers)
 
     result = text
     changed = False
     for _ in range(_MAX_PASSES):
-        match = pattern.search(result)
+        match = _find_trigger(strict_pattern, loose_pattern, result)
         if not match:
             break
         changed = True
