@@ -10,12 +10,21 @@ only what follows.
 """
 
 import re
+from difflib import SequenceMatcher
 
 from . import config
 
 _SENTENCE_BOUNDARY = re.compile(r"[.!?]\s*")
 _WHITESPACE_RUN = re.compile(r"[ \t]+")
 _FIRST_LETTER = re.compile(r"([.!?]\s*|^\s*)([a-z])")
+_WORD_TOKENS = re.compile(r"[a-z0-9']+")
+
+
+def _word_similarity(a, b):
+    wa, wb = _WORD_TOKENS.findall(a.lower()), _WORD_TOKENS.findall(b.lower())
+    if not wa or not wb:
+        return 0.0
+    return SequenceMatcher(None, wa, wb).ratio()
 
 _MAX_PASSES = 20
 
@@ -80,12 +89,24 @@ def apply_self_corrections(text, triggers=None):
         boundaries = list(_SENTENCE_BOUNDARY.finditer(preceding))
         cut = boundaries[-1].end() if boundaries else 0
 
-        # A trigger that *starts* a sentence retracts the previous sentence:
-        # "Send it on Monday, Sumit. No, sorry, send it on Wednesday." -- the
-        # retracted content sits before the boundary Whisper inserted, so
-        # reach back one sentence further.
+        # A trigger that *starts* a sentence retracts into the previous
+        # sentence ("... Monday, Sumit. No, sorry, send it Wednesday.").
+        # How much of it? A retraction is a restatement, so retract the span
+        # that resembles the correction: the whole previous sentence, or only
+        # its last comma clause (Whisper often glues separate spoken
+        # sentences with commas -- "Keep this line, drop this line."). Ties
+        # go to the smaller span: delete less when unsure.
         if boundaries and not preceding[cut:].strip():
-            cut = boundaries[-2].end() if len(boundaries) > 1 else 0
+            prev_start = boundaries[-2].end() if len(boundaries) > 1 else 0
+            prev_sentence = preceding[prev_start:cut]
+            comma = prev_sentence.rstrip().rfind(",")
+            if comma == -1:
+                cut = prev_start
+            else:
+                correction = _SENTENCE_BOUNDARY.split(result[match.end():].lstrip())[0]
+                whole_sim = _word_similarity(prev_sentence, correction)
+                clause_sim = _word_similarity(prev_sentence[comma + 1 :], correction)
+                cut = prev_start if whole_sim > clause_sim else prev_start + comma + 1
 
         kept_prefix = preceding[:cut].rstrip()
         remainder = result[match.end() :].lstrip()
