@@ -88,25 +88,26 @@ def apply_self_corrections(text, triggers=None):
         preceding = result[: match.start()]
         boundaries = list(_SENTENCE_BOUNDARY.finditer(preceding))
         cut = boundaries[-1].end() if boundaries else 0
+        correction = _SENTENCE_BOUNDARY.split(result[match.end() :].lstrip())[0]
 
         # A trigger that *starts* a sentence retracts into the previous
-        # sentence ("... Monday, Sumit. No, sorry, send it Wednesday.").
-        # How much of it? A retraction is a restatement, so retract the span
-        # that resembles the correction: the whole previous sentence, or only
-        # its last comma clause (Whisper often glues separate spoken
-        # sentences with commas -- "Keep this line, drop this line."). Ties
-        # go to the smaller span: delete less when unsure.
+        # sentence instead -- Whisper often puts a period right before the
+        # retraction ("... Monday, Sumit. No, sorry, ...").
         if boundaries and not preceding[cut:].strip():
-            prev_start = boundaries[-2].end() if len(boundaries) > 1 else 0
-            prev_sentence = preceding[prev_start:cut]
-            comma = prev_sentence.rstrip().rfind(",")
-            if comma == -1:
-                cut = prev_start
-            else:
-                correction = _SENTENCE_BOUNDARY.split(result[match.end():].lstrip())[0]
-                whole_sim = _word_similarity(prev_sentence, correction)
-                clause_sim = _word_similarity(prev_sentence[comma + 1 :], correction)
-                cut = prev_start if whole_sim > clause_sim else prev_start + comma + 1
+            cut = boundaries[-2].end() if len(boundaries) > 1 else 0
+
+        # How much of the span gets retracted? Whisper glues separate spoken
+        # sentences with commas ("Keep this line, drop this line, no sorry
+        # use this one."), so retract the part that resembles the correction
+        # (a retraction is a restatement): the whole span, or only its last
+        # comma clause. Ties go to the clause -- delete less when unsure.
+        span = preceding[cut:].rstrip().rstrip(",.;:!? ")
+        comma = span.rfind(",")
+        if comma != -1:
+            whole_sim = _word_similarity(span, correction)
+            clause_sim = _word_similarity(span[comma + 1 :], correction)
+            if clause_sim >= whole_sim:
+                cut = cut + comma + 1
 
         kept_prefix = preceding[:cut].rstrip()
         remainder = result[match.end() :].lstrip()

@@ -111,13 +111,15 @@ Each stage is a separate module with no cross-dependencies beyond `config.py`
   trusted at the start of a sentence -- Whisper punctuates real retractions
   that way, but mid-sentence "I said no, sorry, I was busy" is literal
   content and no rule can tell the difference (grammar engine's job later).
-  Periods never join trigger words. A mid-sentence strict trigger discards
-  back to the last sentence boundary. A trigger that *starts* a sentence
-  retracts into the previous sentence, choosing the span that resembles the
-  correction (a retraction is a restatement): the whole sentence or only its
-  last comma clause -- Whisper often glues separate spoken sentences with
-  commas. Ties delete less. Retraction never reaches more than one sentence
-  back, so an all-comma transcript is left alone (safe miss).
+  Periods never join trigger words. The retraction span starts at the last
+  sentence boundary (or one sentence further back when the trigger itself
+  starts a sentence -- Whisper often puts a period right before a
+  retraction). Within that span, if a comma is present, retract the part
+  that resembles the correction (a retraction is a restatement): the whole
+  span or only its last comma clause; ties delete the smaller. This exists
+  because Whisper glues separate spoken sentences with commas. Retraction
+  never reaches more than one sentence back. Debug per-stage output via
+  config.DEBUG_LOG -> %LOCALAPPDATA%\SumitSpeak\debug.log.
 - **`cleanup.py`** — rule-based filler removal and conservative near-repeat
   sentence collapsing (word-level similarity + shared opening word; keep the
   last version). Governing principle: wrongly deleting intended words is the
