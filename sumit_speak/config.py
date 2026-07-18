@@ -97,6 +97,15 @@ APPEND_SPACE = True
 PRESS_ENTER_AFTER = False
 
 # ---------------------------------------------------------------------------
+# Debugging
+# ---------------------------------------------------------------------------
+# Append every dictation's raw Whisper transcript and each pipeline stage's
+# output to %LOCALAPPDATA%\SumitSpeak\debug.log. Development aid for
+# diagnosing cleanup behavior -- the raw transcript is the ground truth the
+# rules operate on. Will become a hidden setting in Phase 2.
+DEBUG_LOG = True
+
+# ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
 # Synced to the per-user Windows Run registry key at every launch.

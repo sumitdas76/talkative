@@ -1,5 +1,8 @@
+import datetime
+import os
 import threading
 import time
+from pathlib import Path
 
 from pynput import keyboard
 
@@ -19,6 +22,20 @@ NO_TARGET_MESSAGE = (
     "Click into a text box, document, or address bar first, then hold "
     "Right Ctrl to dictate."
 )
+
+
+def _debug_log(**stages):
+    if not config.DEBUG_LOG:
+        return
+    try:
+        folder = Path(os.environ.get("LOCALAPPDATA", ".")) / "SumitSpeak"
+        folder.mkdir(exist_ok=True)
+        with open(folder / "debug.log", "a", encoding="utf-8") as f:
+            f.write(datetime.datetime.now().isoformat(timespec="seconds") + "\n")
+            for name, value in stages.items():
+                f.write(f"  {name}: {value!r}\n")
+    except Exception:
+        pass
 
 
 class SumitSpeakApp:
@@ -89,15 +106,28 @@ class SumitSpeakApp:
             show_error_popup(f"Transcription failed:\n{exc}")
             return
 
+        raw = text
         # Fillers first: "sorry, um, I mean" must become "sorry I mean"
         # before the correction triggers run.
         if config.CLEANUP_MODE == "cleaned_up":
             text = remove_fillers(text)
+            after_fillers = text
             if config.ENABLE_SELF_CORRECTION:
                 text = apply_self_corrections(text)
+            after_corrections = text
             text = collapse_repeats(text)
+            after_collapse = text
+        else:
+            after_fillers = after_corrections = after_collapse = text
 
         text = apply_dictionary(text)
+        _debug_log(
+            raw=raw,
+            fillers=after_fillers,
+            corrections=after_corrections,
+            collapse=after_collapse,
+            final=text,
+        )
 
         if not text:
             return
