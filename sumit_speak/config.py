@@ -79,7 +79,12 @@ DICTIONARY = {
     "PPT": "PowerPoint",
     "Sumit": "Sumit Chatterjee",
 }
-ENABLE_RECOGNITION_BIAS = True
+# Off by default: biasing Whisper toward short name-like terms makes it
+# mishear ordinary phrases as those terms (observed live: "Send it Monday"
+# transcribed as "Sumit Monday", which the dictionary then expanded to
+# "Sumit Chatterjee Monday"). Text replacement above is unaffected. Only
+# re-enable after testing with the specific dictionary in use.
+ENABLE_RECOGNITION_BIAS = False
 
 # ---------------------------------------------------------------------------
 # Output
