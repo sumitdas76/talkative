@@ -58,6 +58,10 @@ class TrayApp:
         self.icon.icon = self._idle_image
         self.icon.title = "Sumit Speak (hold Right Ctrl to dictate)"
 
+    def set_loading(self, note="loading model..."):
+        self.icon.icon = self._loading_image
+        self.icon.title = f"Sumit Speak ({note})"
+
     def set_recording(self):
         self.icon.icon = self._recording_image
         self.icon.title = "Sumit Speak (listening...)"

@@ -144,6 +144,39 @@ Each stage is a separate module with no cross-dependencies beyond `config.py`
   loading / blue idle / red recording), not loaded from image assets — keep
   it that way so PyInstaller packaging doesn't need extra `--add-data`.
 
+## Current status / resume point (saved end of July 19, 2026 session)
+
+Phase 1 (engine) and Phase 2 (settings window) are complete, built, and
+live-tested. **Phase 3 model manager is half-built — resume here:**
+
+Done and committed (safe, nothing wired to UI yet):
+- `model_manager.py` — two tiers (fast=small.en, accurate=large-v3-turbo,
+  both verified supported by installed faster-whisper 1.2.1), app-owned
+  folder `%LOCALAPPDATA%\SumitSpeak\models`, is_downloaded/download/delete/
+  storage_used_mb, and one-time migration copy from the shared HF cache.
+- `transcriber.py` accepts `download_root`.
+- `tray.py` gained `set_loading(note)`.
+
+Still to do, in order:
+1. `app.py`: call `model_manager.migrate_from_hf_cache()` in
+   `_load_model_async` and pass `download_root=str(model_manager.models_dir())`
+   to Transcriber; add `reload_model(size, on_done)` (background swap with
+   tray loading state, revert on failure, persist via
+   `settings.save({"model_size": size})`) and `unload_model()`; pass a
+   controller (reload/unload/has_model) into `open_settings`.
+2. `settings_window.py`: replace the Models tab placeholder with two tiles
+   per spec §5 — states none/downloading/not-in-use/loading/in-use rendered
+   by a ~300ms poll loop (worker threads write a state dict; only the Tk
+   thread touches widgets), indeterminate progressbar during download (no
+   cancel in v1), delete with the three confirmation flows (inactive /
+   active-with-backup switches first / only-model disables dictation),
+   storage-used line.
+3. Test (download of Accurate is ~1.6 GB — get user consent before
+   triggering), rebuild EXE, deploy both copies, relaunch.
+
+The session had blanket user approval for kill-rebuild-relaunch cycles;
+re-confirm in a new session before stopping a running instance.
+
 ## Deferred / known issues
 
 - **Retraction span ambiguity (parked July 2026, revisit in Phase 3):** the
