@@ -22,7 +22,11 @@ _MAX_PASSES = 20
 
 def _build_trigger_pattern(triggers):
     phrases = sorted(triggers, key=len, reverse=True)
-    alternatives = [re.escape(p).replace(r"\ ", r"\s+") for p in phrases]
+    # Words inside a trigger may be separated by a comma as well as spaces:
+    # Whisper punctuates freely, so "no sorry" must also match "No, sorry".
+    # Periods are deliberately NOT allowed between trigger words -- "I said
+    # no. Sorry, I was busy." is not a retraction.
+    alternatives = [re.escape(p).replace(r"\ ", r"(?:,\s*|\s+)") for p in phrases]
     return re.compile(r"\b(?:" + "|".join(alternatives) + r")\b[,.:;!]?\s*", re.IGNORECASE)
 
 
@@ -51,6 +55,13 @@ def apply_self_corrections(text, triggers=None):
         preceding = result[: match.start()]
         boundaries = list(_SENTENCE_BOUNDARY.finditer(preceding))
         cut = boundaries[-1].end() if boundaries else 0
+
+        # A trigger that *starts* a sentence retracts the previous sentence:
+        # "Send it on Monday, Sumit. No, sorry, send it on Wednesday." -- the
+        # retracted content sits before the boundary Whisper inserted, so
+        # reach back one sentence further.
+        if boundaries and not preceding[cut:].strip():
+            cut = boundaries[-2].end() if len(boundaries) > 1 else 0
 
         kept_prefix = preceding[:cut].rstrip()
         remainder = result[match.end() :].lstrip()
