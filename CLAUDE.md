@@ -4,11 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Wispr Lite: a Windows tray app for hold-to-talk local dictation. Hold **Right
-Ctrl**, speak, release — audio is transcribed offline via faster-whisper and
-pasted (clipboard + simulated Ctrl+V) into whatever control currently has
-focus. No network calls except the one-time model download from Hugging
-Face on first run.
+Sumit Speak (formerly Wispr Lite): a Windows tray app for hold-to-talk local
+dictation. Hold **Right Ctrl**, speak, release — audio is transcribed offline
+via faster-whisper, cleaned up (fillers, spoken corrections, near-repeats,
+personal dictionary), and pasted (clipboard + simulated Ctrl+V) into whatever
+control currently has focus. No network calls except the one-time model
+download from Hugging Face on first run.
+
+The full product direction (settings UI, model manager, update system,
+grammar engine) is specced in the "Sumit Speak — Product Specification"
+artifact from the July 2026 consulting sessions; Phase 1 (engine features,
+no UI) is implemented.
 
 ## Commands
 
@@ -23,42 +29,46 @@ python -m venv .venv
 .\.venv\Scripts\pythonw.exe main.py
 
 # Rebuild the standalone EXE after any source change
-.\.venv\Scripts\pyinstaller --noconfirm --onefile --windowed --name WisprLite --collect-all ctranslate2 --collect-all faster_whisper --collect-all av --collect-all tokenizers --collect-all uiautomation --hidden-import win32timezone main.py
+.\.venv\Scripts\pyinstaller --noconfirm --onefile --windowed --name SumitSpeak --collect-all ctranslate2 --collect-all faster_whisper --collect-all av --collect-all tokenizers --collect-all uiautomation --hidden-import win32timezone main.py
 ```
 
-There is no test suite, linter, or CI in this project — verification is
-manual (run it, dictate something, watch the tray icon / target app).
+There is no linter or CI. A sanity-test script for the pure text-pipeline
+functions (cleanup, dictionary, self-correction) lives in the session
+scratchpad pattern — exercise those functions with real sentences after
+changing them. App-level verification is manual (run it, dictate something,
+watch the tray icon / target app).
 
 ### IMPORTANT: two EXE copies, and the file-lock gotcha
 
-The user keeps a working copy of `WisprLite.exe` at the **project root**
-(not just `dist\`) and launches it from there directly — always copy a
-fresh build to **both** locations:
+The user keeps a working copy of the EXE at the **project root** (not just
+`dist\`) and launches it from there directly — always copy a fresh build to
+**both** locations:
 
 ```powershell
-cp dist/WisprLite.exe WisprLite.exe
+cp dist/SumitSpeak.exe SumitSpeak.exe
 ```
+
+(Stale `WisprLite.exe` copies from before the rename may still exist; they
+are the old build.)
 
 PyInstaller fails with `PermissionError: Access is denied` if either copy is
 currently running (it can't overwrite a locked EXE). Before rebuilding,
 check for and stop running instances:
 
 ```powershell
-Get-Process WisprLite -ErrorAction SilentlyContinue | Select-Object Id,StartTime,Path
-Stop-Process -Name WisprLite -Force -ErrorAction SilentlyContinue
+Get-Process SumitSpeak, WisprLite -ErrorAction SilentlyContinue | Select-Object Id,StartTime,Path
 ```
 
 The user frequently has an instance running to test something live — ask
 before killing it rather than assuming it's safe to stop.
 
 After PyInstaller finishes, do a launch smoke test (start it, confirm the
-`WisprLite` process stays alive for a few seconds without exiting, then stop
-it) — this has caught real packaging issues before (missing DLLs, bad hidden
-imports).
+process stays alive for a few seconds without exiting, then stop it) — this
+has caught real packaging issues before (missing DLLs, bad hidden imports).
 
 ## Architecture
 
-Everything lives in `wispr_lite/`, wired together by `WisprLiteApp` in
+Everything lives in `sumit_speak/`, wired together by `SumitSpeakApp` in
 `app.py`, which owns the hotkey listener, the recorder, the transcriber, and
 the tray icon, and drives one linear pipeline per dictation:
 
@@ -66,59 +76,74 @@ the tray icon, and drives one linear pipeline per dictation:
 hotkey press  → focus_check.is_focus_editable()   (gate: is anything typable focused?)
               → audio_recorder.AudioRecorder.start()
 hotkey release→ audio_recorder.AudioRecorder.stop() → raw audio buffer (numpy)
-              → transcriber.Transcriber.transcribe() → raw text (faster-whisper, verbatim)
-              → self_correction.apply_self_corrections()  (drop retracted speech)
+              → transcriber.Transcriber.transcribe()  (faster-whisper; dictionary
+                vocabulary fed as initial_prompt to bias recognition)
+              → cleanup.remove_fillers()             (cleaned_up mode only)
+              → self_correction.apply_self_corrections()  (cleaned_up mode only)
+              → cleanup.collapse_repeats()           (cleaned_up mode only)
+              → dictionary.apply_dictionary()        (always)
               → focus_check.is_focus_editable()   (re-checked: focus may have changed)
               → text_inserter.insert_text()        (clipboard + simulated Ctrl+V + restore)
 ```
+
+Fillers are removed *before* correction triggers run so "sorry, um, I mean"
+still matches the "sorry I mean" trigger.
 
 Each stage is a separate module with no cross-dependencies beyond `config.py`
 — when changing behavior, the fix almost always belongs in exactly one file:
 
 - **`config.py`** — every tunable lives here (hotkey, model size/device,
-  min recording length, self-correction trigger phrases and on/off switch).
+  cleanup mode, filler list, dictionary, output options, autostart flag).
   Prefer adding a new config constant over hardcoding a value in a module.
+  Phase 2 (settings UI) will move user-editable values to a settings file;
+  until then constants are the config store.
 - **`focus_check.py`** — Windows UI Automation check, deliberately a
   **block-list, not an allow-list**: it only refuses dictation when it can
-  positively confirm the focused control is non-editable (nothing focused,
-  disabled, or explicitly read-only). This was a deliberate design change
-  (see git history / conversation context) away from an earlier allow-list
-  that only permitted known-good UIA patterns (Edit/Document/ComboBox) —
-  that version silently failed in apps like WhatsApp for Windows (React
-  Native for Windows) that don't expose standard accessibility patterns at
-  all. Don't reintroduce an allow-list here without a strong reason.
-- **`self_correction.py`** — pure, local, rule-based text post-processing
-  (no LLM, no network — keep it that way). Detects spoken retraction
-  phrases ("scratch that", "no wait", etc., configured in
-  `config.SELF_CORRECTION_TRIGGERS`) and discards text back to the last
-  sentence boundary before the trigger. Known, accepted limitation: it only
-  looks back to the most recent `.`/`!`/`?`, so a correction after a full
-  stop won't retract the previous sentence — this is an inherent trade-off
-  of a non-semantic heuristic, not a bug to silently "fix" by adding an LLM
-  call.
+  positively confirm the focused control is non-editable. This was a
+  deliberate design change away from an allow-list that silently failed in
+  apps like WhatsApp for Windows (React Native) that don't expose standard
+  accessibility patterns. Don't reintroduce an allow-list without a strong
+  reason.
+- **`self_correction.py`** — pure, local, rule-based (no LLM, no network —
+  keep it that way). Detects spoken retraction phrases (compound only —
+  bare "sorry" is deliberately not a trigger because it appears in real
+  dictated content) and discards text back to the last sentence boundary.
+  Known, accepted limitation: a correction after a full stop won't retract
+  the previous sentence.
+- **`cleanup.py`** — rule-based filler removal and conservative near-repeat
+  sentence collapsing (word-level similarity + shared opening word; keep the
+  last version). Governing principle: wrongly deleting intended words is the
+  worst failure a dictation tool can have — anything ambiguous is left
+  alone. Loose rephrasings are out of scope for rules (future grammar
+  engine's job).
+- **`dictionary.py`** — personal spoken→typed replacements, whole-word,
+  case-preserving at sentence start. Typed forms are matched-to-themselves
+  so already-expanded phrases don't double-expand. Also builds the
+  vocabulary bias prompt for the transcriber.
 - **`transcriber.py`** — thin `faster_whisper.WhisperModel` wrapper, one-shot
-  (not streaming) transcription of a single in-memory buffer.
-- **`text_inserter.py`** — clipboard-based insertion is intentional: it's
-  the most broadly compatible way to get text into arbitrary native/browser/
-  Electron controls, more so than simulating individual keystrokes. Restores
-  the user's previous clipboard contents after `config.CLIPBOARD_RESTORE_DELAY`.
+  (not streaming) transcription; accepts `initial_prompt` for vocabulary
+  biasing.
+- **`text_inserter.py`** — clipboard-based insertion is intentional: most
+  broadly compatible way into arbitrary native/browser/Electron controls.
+  Honors INSERT_MODE (paste vs clipboard-only), APPEND_SPACE, and
+  PRESS_ENTER_AFTER. Restores the previous clipboard after
+  `config.CLIPBOARD_RESTORE_DELAY` (paste mode only).
+- **`autostart.py`** — syncs `config.START_WITH_WINDOWS` to the HKCU Run key
+  at every launch; handles frozen-EXE vs from-source launch commands.
 - **`tray.py`** — icons are drawn in code with PIL (colored circles: grey
   loading / blue idle / red recording), not loaded from image assets — keep
-  it that way so PyInstaller packaging doesn't need extra `--add-data` for
-  icon files.
+  it that way so PyInstaller packaging doesn't need extra `--add-data`.
 
 ## Packaging notes
 
-`WisprLite.spec` is checked in and reproducible — prefer re-running the
-`pyinstaller` command above (which regenerates it) over hand-editing the
-spec file. The `--collect-all` flags are load-bearing, not decorative:
+`--collect-all` flags in the pyinstaller command are load-bearing:
 `ctranslate2`/`faster-whisper` ship binary DLLs, and `uiautomation` ships a
 DLL under its package's `bin/` subfolder that PyInstaller's default scan
-doesn't discover — dropping any of these flags will silently produce a
-broken EXE (imports fine in source but crashes or misbehaves when frozen).
+doesn't discover — dropping any of these flags silently produces a broken
+EXE (imports fine in source but crashes when frozen).
 
 The speech model is *not* bundled into the EXE — it downloads to
 `%USERPROFILE%\.cache\huggingface\hub\models--Systran--faster-whisper-<MODEL_SIZE>`
-on first run of a given `MODEL_SIZE`, same whether running from source or
-from the built EXE. Changing `config.MODEL_SIZE` means a fresh download on
-next launch, not an instant switch.
+on first run of a given `MODEL_SIZE`. Changing `config.MODEL_SIZE` means a
+fresh download on next launch, not an instant switch. (The spec's Phase 3
+moves models to an app-owned folder.)

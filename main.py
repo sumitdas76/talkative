@@ -1,8 +1,8 @@
-from wispr_lite.app import WisprLiteApp
+from sumit_speak.app import SumitSpeakApp
 
 
 def main():
-    app = WisprLiteApp()
+    app = SumitSpeakApp()
     app.run()
 
 

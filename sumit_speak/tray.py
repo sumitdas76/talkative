@@ -8,7 +8,7 @@ MB_ICONERROR = 0x10
 MB_SYSTEMMODAL = 0x1000
 
 
-def show_error_popup(message, title="Wispr Lite"):
+def show_error_popup(message, title="Sumit Speak"):
     """Show a blocking Windows message box on its own thread so it never
     freezes the hotkey listener or tray loop."""
 
@@ -33,9 +33,9 @@ class TrayApp:
 
         self._on_quit = on_quit
         self.icon = pystray.Icon(
-            "wispr_lite",
+            "sumit_speak",
             self._loading_image,
-            "Wispr Lite (loading model...)",
+            "Sumit Speak (loading model...)",
             menu=pystray.Menu(pystray.MenuItem("Quit", self._quit)),
         )
 
@@ -45,13 +45,13 @@ class TrayApp:
 
     def set_idle(self):
         self.icon.icon = self._idle_image
-        self.icon.title = "Wispr Lite (hold Right Ctrl to dictate)"
+        self.icon.title = "Sumit Speak (hold Right Ctrl to dictate)"
 
     def set_recording(self):
         self.icon.icon = self._recording_image
-        self.icon.title = "Wispr Lite (listening...)"
+        self.icon.title = "Sumit Speak (listening...)"
 
-    def notify(self, message, title="Wispr Lite"):
+    def notify(self, message, title="Sumit Speak"):
         try:
             self.icon.notify(message, title)
         except Exception:

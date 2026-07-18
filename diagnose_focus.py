@@ -3,7 +3,7 @@ Run this, then within 4 seconds click into the WhatsApp message box
 (or whichever text field is failing to receive dictated text).
 
 Prints what Windows UI Automation sees about the focused control, so we
-can tell exactly why Wispr Lite thinks it isn't editable.
+can tell exactly why Sumit Speak thinks it isn't editable.
 """
 
 import time
@@ -52,7 +52,7 @@ except Exception as exc:
     print(f"LegacyPattern   : ERROR {exc}")
 
 print()
-print("Wispr Lite treats a control as editable only if:")
+print("Sumit Speak treats a control as editable only if:")
 print("  - ValuePattern exists and IsReadOnly is False, OR")
 print("  - TextPattern exists AND ControlTypeName is Edit/Document/ComboBox, OR")
 print("  - LegacyIAccessiblePattern exists AND ControlTypeName is Edit/Document/ComboBox")

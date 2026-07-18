@@ -5,6 +5,9 @@ from pynput import keyboard
 
 from . import config
 from .audio_recorder import AudioRecorder
+from .autostart import sync_autostart
+from .cleanup import collapse_repeats, remove_fillers
+from .dictionary import apply_dictionary, vocabulary_prompt
 from .focus_check import is_focus_editable
 from .self_correction import apply_self_corrections
 from .text_inserter import insert_text
@@ -18,7 +21,7 @@ NO_TARGET_MESSAGE = (
 )
 
 
-class WisprLiteApp:
+class SumitSpeakApp:
     def __init__(self):
         self.recorder = AudioRecorder(sample_rate=config.SAMPLE_RATE)
         self.transcriber = None
@@ -79,13 +82,22 @@ class WisprLiteApp:
 
     def _process_audio(self, audio):
         try:
-            text = self.transcriber.transcribe(audio, config.SAMPLE_RATE)
+            text = self.transcriber.transcribe(
+                audio, config.SAMPLE_RATE, initial_prompt=vocabulary_prompt()
+            )
         except Exception as exc:
             show_error_popup(f"Transcription failed:\n{exc}")
             return
 
-        if config.ENABLE_SELF_CORRECTION:
-            text = apply_self_corrections(text)
+        # Fillers first: "sorry, um, I mean" must become "sorry I mean"
+        # before the correction triggers run.
+        if config.CLEANUP_MODE == "cleaned_up":
+            text = remove_fillers(text)
+            if config.ENABLE_SELF_CORRECTION:
+                text = apply_self_corrections(text)
+            text = collapse_repeats(text)
+
+        text = apply_dictionary(text)
 
         if not text:
             return
@@ -95,8 +107,11 @@ class WisprLiteApp:
             return
 
         insert_text(text)
+        if config.INSERT_MODE == "clipboard":
+            self.tray.notify("Copied to clipboard — press Ctrl+V to paste.")
 
     def run(self):
+        sync_autostart()
         self._load_model_async()
         self._listener = keyboard.Listener(
             on_press=self._on_press, on_release=self._on_release

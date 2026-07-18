@@ -9,7 +9,7 @@ class Transcriber:
         self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
         self._language = "en" if model_size.endswith(".en") else None
 
-    def transcribe(self, audio, sample_rate=16000):
+    def transcribe(self, audio, sample_rate=16000, initial_prompt=None):
         if audio is None or audio.size == 0:
             return ""
 
@@ -17,5 +17,6 @@ class Transcriber:
             audio,
             language=self._language,
             vad_filter=True,
+            initial_prompt=initial_prompt,
         )
         return "".join(segment.text for segment in segments).strip()
