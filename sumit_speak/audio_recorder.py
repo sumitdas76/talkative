@@ -6,9 +6,10 @@ class AudioRecorder:
     """Records mono audio from the default input device into an in-memory
     buffer between start() and stop()."""
 
-    def __init__(self, sample_rate=16000, channels=1):
+    def __init__(self, sample_rate=16000, channels=1, device=None):
         self.sample_rate = sample_rate
         self.channels = channels
+        self.device = device  # None = system default input
         self._stream = None
         self._frames = []
 
@@ -21,6 +22,7 @@ class AudioRecorder:
             samplerate=self.sample_rate,
             channels=self.channels,
             dtype="float32",
+            device=self.device,
             callback=self._callback,
         )
         self._stream.start()

@@ -1,0 +1,309 @@
+"""
+Tabbed settings window (tkinter), opened from the tray menu.
+
+Reads current config values, writes settings.json via settings.save, then
+re-applies with settings.load_into_config and notifies the app through the
+on_applied callback. Runs in its own thread with its own Tk instance --
+only that thread touches tkinter objects. A second open request while the
+window exists is ignored.
+"""
+
+import threading
+import tkinter as tk
+from tkinter import ttk
+
+from pynput import keyboard
+
+from . import __version__, config, settings
+
+APP_NAME = "Sumit Speak"
+
+_open_lock = threading.Lock()
+_is_open = False
+
+_EXAMPLE_SPOKEN = "“So um, send the file today — oh sorry, send the file by this evening.”"
+_EXAMPLE_CLEAN = "Send the file by this evening."
+_EXAMPLE_ASIS = "So um, send the file today — oh sorry, send the file by this evening."
+
+
+def open_settings(on_applied=None):
+    global _is_open
+    with _open_lock:
+        if _is_open:
+            return
+        _is_open = True
+
+    def _run():
+        global _is_open
+        try:
+            _SettingsWindow(on_applied).run()
+        finally:
+            with _open_lock:
+                _is_open = False
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def _hotkey_display(key):
+    name = getattr(key, "name", None)
+    if name:
+        return name
+    return getattr(key, "char", "?") or "?"
+
+
+class _SettingsWindow:
+    def __init__(self, on_applied):
+        self.on_applied = on_applied
+        self.pending_hotkey = None
+        self._capturing = False
+
+    def run(self):
+        self.root = tk.Tk()
+        self.root.title(f"{APP_NAME} — Settings")
+        self.root.geometry("600x480")
+        self.root.minsize(520, 420)
+
+        nb = ttk.Notebook(self.root)
+        nb.pack(fill="both", expand=True, padx=10, pady=(10, 4))
+        for name, builder in [
+            ("General", self._tab_general),
+            ("Dictionary", self._tab_dictionary),
+            ("Dictation", self._tab_dictation),
+            ("Hotkeys", self._tab_hotkeys),
+            ("Audio", self._tab_audio),
+            ("Output", self._tab_output),
+            ("Models", self._tab_models),
+            ("About", self._tab_about),
+        ]:
+            frame = ttk.Frame(nb, padding=14)
+            nb.add(frame, text=name)
+            builder(frame)
+
+        bar = ttk.Frame(self.root, padding=(10, 4, 10, 10))
+        bar.pack(fill="x")
+        self.saved_label = ttk.Label(bar, text="")
+        self.saved_label.pack(side="left")
+        ttk.Button(bar, text="Close", command=self.root.destroy).pack(side="right")
+        ttk.Button(bar, text="Save and apply", command=self._save).pack(side="right", padx=6)
+
+        self.root.mainloop()
+
+    # ---------------- tabs ----------------
+
+    def _tab_general(self, f):
+        self.var_autostart = tk.BooleanVar(value=config.START_WITH_WINDOWS)
+        self.var_sounds = tk.BooleanVar(value=config.PLAY_SOUNDS)
+        ttk.Checkbutton(
+            f, text=f"Start “{APP_NAME}” when Windows starts",
+            variable=self.var_autostart,
+        ).pack(anchor="w", pady=4)
+        ttk.Checkbutton(
+            f, text="Play a sound when recording starts and stops",
+            variable=self.var_sounds,
+        ).pack(anchor="w", pady=4)
+
+    def _tab_dictionary(self, f):
+        ttk.Label(
+            f, wraplength=520,
+            text=f"When you say the word on the left, “{APP_NAME}” "
+                 "types the text on the right.",
+        ).pack(anchor="w")
+
+        self.dict_tree = ttk.Treeview(
+            f, columns=("spoken", "typed"), show="headings", height=8
+        )
+        self.dict_tree.heading("spoken", text="Spoken")
+        self.dict_tree.heading("typed", text="Typed")
+        self.dict_tree.column("spoken", width=160)
+        self.dict_tree.column("typed", width=300)
+        self.dict_tree.pack(fill="both", expand=True, pady=8)
+        for spoken, typed in config.DICTIONARY.items():
+            self.dict_tree.insert("", "end", values=(spoken, typed))
+
+        row = ttk.Frame(f)
+        row.pack(fill="x")
+        self.dict_spoken = ttk.Entry(row, width=18)
+        self.dict_spoken.pack(side="left")
+        ttk.Label(row, text=" → ").pack(side="left")
+        self.dict_typed = ttk.Entry(row, width=32)
+        self.dict_typed.pack(side="left", fill="x", expand=True)
+        ttk.Button(row, text="Add", command=self._dict_add).pack(side="left", padx=6)
+        ttk.Button(row, text="Remove selected", command=self._dict_remove).pack(side="left")
+
+    def _dict_add(self):
+        spoken = self.dict_spoken.get().strip()
+        typed = self.dict_typed.get().strip()
+        if not spoken or not typed:
+            return
+        self.dict_tree.insert("", "end", values=(spoken, typed))
+        self.dict_spoken.delete(0, "end")
+        self.dict_typed.delete(0, "end")
+
+    def _dict_remove(self):
+        for item in self.dict_tree.selection():
+            self.dict_tree.delete(item)
+
+    def _tab_dictation(self, f):
+        self.var_cleanup = tk.StringVar(value=config.CLEANUP_MODE)
+        ttk.Radiobutton(
+            f, text="Cleaned up — slips and repetitions removed. "
+                    "Your meaning is never changed.",
+            variable=self.var_cleanup, value="cleaned_up",
+            command=self._update_example,
+        ).pack(anchor="w", pady=4)
+        ttk.Radiobutton(
+            f, text="As spoken — exactly what you said, word for word.",
+            variable=self.var_cleanup, value="as_spoken",
+            command=self._update_example,
+        ).pack(anchor="w", pady=4)
+
+        box = ttk.LabelFrame(f, text="Example", padding=10)
+        box.pack(fill="x", pady=12)
+        ttk.Label(box, text="You said:").pack(anchor="w")
+        ttk.Label(box, text=_EXAMPLE_SPOKEN, wraplength=500,
+                  foreground="grey").pack(anchor="w", pady=(0, 6))
+        ttk.Label(box, text="Appears on screen:").pack(anchor="w")
+        self.example_label = ttk.Label(box, text="", wraplength=500)
+        self.example_label.pack(anchor="w")
+        self._update_example()
+
+    def _update_example(self):
+        clean = self.var_cleanup.get() == "cleaned_up"
+        self.example_label.config(text=_EXAMPLE_CLEAN if clean else _EXAMPLE_ASIS)
+
+    def _tab_hotkeys(self, f):
+        ttk.Label(f, text="Dictation key (hold to talk):").pack(anchor="w")
+        row = ttk.Frame(f)
+        row.pack(anchor="w", pady=6)
+        self.hotkey_btn = ttk.Button(
+            row, text=_hotkey_display(config.HOTKEY), command=self._capture_hotkey
+        )
+        self.hotkey_btn.pack(side="left")
+        ttk.Label(row, text="  Click, then press the key you want to use.",
+                  foreground="grey").pack(side="left")
+        ttk.Label(
+            f, wraplength=520, foreground="grey",
+            text="\nHold the key while speaking; release to insert the text. "
+                 "A press-to-toggle mode is planned for a later version.",
+        ).pack(anchor="w")
+
+    def _capture_hotkey(self):
+        if self._capturing:
+            return
+        self._capturing = True
+        self.hotkey_btn.config(text="Press a key…")
+
+        def on_press(key):
+            name = getattr(key, "name", None) or getattr(key, "char", None)
+            if name:
+                self.pending_hotkey = name
+                self.root.after(0, lambda: self.hotkey_btn.config(text=name))
+            self._capturing = False
+            return False  # stop this capture listener
+
+        keyboard.Listener(on_press=on_press).start()
+
+    def _tab_audio(self, f):
+        ttk.Label(f, text="Microphone:").pack(anchor="w")
+        self._audio_values = [None]
+        names = ["System default"]
+        try:
+            import sounddevice as sd
+
+            for index, dev in enumerate(sd.query_devices()):
+                if dev.get("max_input_channels", 0) > 0:
+                    self._audio_values.append(index)
+                    names.append(f"{dev['name']}")
+        except Exception:
+            pass
+
+        self.audio_combo = ttk.Combobox(f, values=names, state="readonly", width=48)
+        try:
+            self.audio_combo.current(self._audio_values.index(config.INPUT_DEVICE))
+        except ValueError:
+            self.audio_combo.current(0)
+        self.audio_combo.pack(anchor="w", pady=6)
+        ttk.Label(
+            f, wraplength=520, foreground="grey",
+            text="If dictation hears nothing, the wrong microphone is "
+                 "selected. Takes effect from the next dictation.",
+        ).pack(anchor="w")
+
+    def _tab_output(self, f):
+        self.var_insert = tk.StringVar(value=config.INSERT_MODE)
+        self.var_space = tk.BooleanVar(value=config.APPEND_SPACE)
+        self.var_enter = tk.BooleanVar(value=config.PRESS_ENTER_AFTER)
+
+        box1 = ttk.LabelFrame(f, text="Destination", padding=10)
+        box1.pack(fill="x", pady=(0, 10))
+        ttk.Radiobutton(box1, text="Type into the active application",
+                        variable=self.var_insert, value="type").pack(anchor="w", pady=2)
+        ttk.Radiobutton(box1, text="Copy to clipboard only",
+                        variable=self.var_insert, value="clipboard").pack(anchor="w", pady=2)
+
+        box2 = ttk.LabelFrame(f, text="After dictation", padding=10)
+        box2.pack(fill="x")
+        ttk.Checkbutton(box2, text="Add a space after the inserted text",
+                        variable=self.var_space).pack(anchor="w", pady=2)
+        ttk.Checkbutton(box2, text="Press Enter after inserting the text",
+                        variable=self.var_enter).pack(anchor="w", pady=2)
+        ttk.Label(
+            f, wraplength=520, foreground="grey",
+            text="\nUndo: press Ctrl+Z in the target application — each "
+                 "dictation is inserted as a single edit.",
+        ).pack(anchor="w")
+
+    def _tab_models(self, f):
+        tier = "Fast" if "small" in config.MODEL_SIZE or "base" in config.MODEL_SIZE else "Accurate"
+        ttk.Label(f, text=f"Speech model in use: {config.MODEL_SIZE} ({tier})").pack(anchor="w")
+        ttk.Label(
+            f, wraplength=520, foreground="grey",
+            text="\nThe model manager (download, switch, and delete models "
+                 "from here) arrives in a later version. Until then, the "
+                 "model can be changed by editing model_size in "
+                 "settings.json and restarting.",
+        ).pack(anchor="w")
+
+    def _tab_about(self, f):
+        ttk.Label(f, text=f"“{APP_NAME}”").pack(anchor="w")
+        ttk.Label(f, text=f"Version {__version__}").pack(anchor="w", pady=(0, 10))
+        box = ttk.LabelFrame(f, text="Privacy", padding=10)
+        box.pack(fill="x")
+        ttk.Label(
+            box, wraplength=500,
+            text="Dictation is fully offline — your voice never leaves "
+                 "this PC. Audio is transcribed locally and never saved.",
+        ).pack(anchor="w")
+
+    # ---------------- save ----------------
+
+    def _save(self):
+        dictionary = {}
+        for item in self.dict_tree.get_children():
+            spoken, typed = self.dict_tree.item(item, "values")
+            if spoken and typed:
+                dictionary[spoken] = typed
+
+        values = {
+            "start_with_windows": self.var_autostart.get(),
+            "play_sounds": self.var_sounds.get(),
+            "cleanup_mode": self.var_cleanup.get(),
+            "insert_mode": self.var_insert.get(),
+            "append_space": self.var_space.get(),
+            "press_enter_after": self.var_enter.get(),
+            "dictionary": dictionary,
+        }
+        if self.pending_hotkey:
+            values["hotkey"] = self.pending_hotkey
+        try:
+            values["input_device"] = self._audio_values[self.audio_combo.current()]
+        except Exception:
+            pass
+
+        settings.save(values)
+        settings.load_into_config()
+        if self.on_applied:
+            self.on_applied()
+
+        self.saved_label.config(text="Saved ✓")
+        self.root.after(2500, lambda: self.saved_label.config(text=""))

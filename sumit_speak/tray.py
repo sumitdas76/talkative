@@ -26,18 +26,29 @@ def _make_icon_image(color):
 
 
 class TrayApp:
-    def __init__(self, on_quit):
+    def __init__(self, on_quit, on_settings=None):
         self._idle_image = _make_icon_image((70, 130, 180, 255))  # steel blue
         self._recording_image = _make_icon_image((200, 40, 40, 255))  # red
         self._loading_image = _make_icon_image((150, 150, 150, 255))  # grey
 
         self._on_quit = on_quit
+        self._on_settings = on_settings
+        menu_items = []
+        if on_settings is not None:
+            menu_items.append(
+                pystray.MenuItem("Settings…", self._settings, default=True)
+            )
+        menu_items.append(pystray.MenuItem("Quit", self._quit))
         self.icon = pystray.Icon(
             "sumit_speak",
             self._loading_image,
             "Sumit Speak (loading model...)",
-            menu=pystray.Menu(pystray.MenuItem("Quit", self._quit)),
+            menu=pystray.Menu(*menu_items),
         )
+
+    def _settings(self):
+        if self._on_settings is not None:
+            self._on_settings()
 
     def _quit(self):
         self._on_quit()

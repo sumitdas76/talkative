@@ -41,13 +41,40 @@ def _debug_log(**stages):
 
 class SumitSpeakApp:
     def __init__(self):
-        self.recorder = AudioRecorder(sample_rate=config.SAMPLE_RATE)
+        load_settings()
+        self.recorder = AudioRecorder(
+            sample_rate=config.SAMPLE_RATE, device=config.INPUT_DEVICE
+        )
         self.transcriber = None
         self._recording = False
         self._record_start_time = None
         self._running = True
         self._listener = None
-        self.tray = TrayApp(on_quit=self.quit)
+        self.tray = TrayApp(on_quit=self.quit, on_settings=self.open_settings)
+
+    def open_settings(self):
+        from .settings_window import open_settings
+
+        open_settings(on_applied=self._apply_settings)
+
+    def _apply_settings(self):
+        sync_autostart()
+        self.recorder.device = config.INPUT_DEVICE
+        self.tray.notify("Settings saved.")
+
+    def _beep(self, start):
+        if not config.PLAY_SOUNDS:
+            return
+
+        def _play():
+            try:
+                import winsound
+
+                winsound.Beep(880 if start else 440, 70)
+            except Exception:
+                pass
+
+        threading.Thread(target=_play, daemon=True).start()
 
     def _load_model_async(self):
         def _load():
@@ -83,6 +110,7 @@ class SumitSpeakApp:
         self._recording = True
         self._record_start_time = time.time()
         self.tray.set_recording()
+        self._beep(start=True)
 
     def _on_release(self, key):
         if key != config.HOTKEY or not self._recording:
@@ -90,6 +118,7 @@ class SumitSpeakApp:
 
         self._recording = False
         self.tray.set_idle()
+        self._beep(start=False)
         audio = self.recorder.stop()
         duration = time.time() - self._record_start_time
 
@@ -142,7 +171,6 @@ class SumitSpeakApp:
             self.tray.notify("Copied to clipboard — press Ctrl+V to paste.")
 
     def run(self):
-        load_settings()
         sync_autostart()
         self._load_model_async()
         self._listener = keyboard.Listener(

@@ -30,8 +30,12 @@ _KEYS = {
     "append_space": "APPEND_SPACE",
     "press_enter_after": "PRESS_ENTER_AFTER",
     "start_with_windows": "START_WITH_WINDOWS",
+    "play_sounds": "PLAY_SOUNDS",
     "debug_log": "DEBUG_LOG",
 }
+
+# Keys handled outside the type-checked table.
+_SPECIAL_KEYS = ("hotkey", "input_device")
 
 
 def settings_dir():
@@ -87,6 +91,11 @@ def load_into_config(path=None):
         config.HOTKEY = hotkey
         applied["hotkey"] = data["hotkey"]
 
+    # input_device: None (default) or a sounddevice input index / name.
+    if "input_device" in data and isinstance(data["input_device"], (type(None), int, str)):
+        config.INPUT_DEVICE = data["input_device"]
+        applied["input_device"] = data["input_device"]
+
     return applied
 
 
@@ -102,7 +111,7 @@ def save(values, path=None):
         current = {}
 
     for key, value in values.items():
-        if key in _KEYS or key == "hotkey":
+        if key in _KEYS or key in _SPECIAL_KEYS:
             current[key] = value
 
     path.parent.mkdir(parents=True, exist_ok=True)

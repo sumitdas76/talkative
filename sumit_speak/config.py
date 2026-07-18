@@ -97,6 +97,15 @@ APPEND_SPACE = True
 PRESS_ENTER_AFTER = False
 
 # ---------------------------------------------------------------------------
+# Sounds and microphone
+# ---------------------------------------------------------------------------
+# Short beeps when recording starts and stops.
+PLAY_SOUNDS = True
+# None = system default input device; otherwise a sounddevice input index
+# (set via the Audio tab in Settings).
+INPUT_DEVICE = None
+
+# ---------------------------------------------------------------------------
 # Debugging
 # ---------------------------------------------------------------------------
 # Append every dictation's raw Whisper transcript and each pipeline stage's
