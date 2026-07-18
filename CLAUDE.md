@@ -144,6 +144,20 @@ Each stage is a separate module with no cross-dependencies beyond `config.py`
   loading / blue idle / red recording), not loaded from image assets — keep
   it that way so PyInstaller packaging doesn't need extra `--add-data`.
 
+## Deferred / known issues
+
+- **Retraction span ambiguity (parked July 2026, revisit in Phase 3):** the
+  clause-aware similarity heuristic in `self_correction.py` handles the
+  observed live cases, but Whisper's inconsistent punctuation means some
+  retractions are still missed (all-comma loose triggers) or mis-scoped.
+  The user has decided not to iterate further with rules -- the grammar
+  engine (spec Phase 3) is the real fix. The debug.log corpus of real
+  transcripts is the audition data for it.
+- **DEBUG_LOG privacy:** `%LOCALAPPDATA%\SumitSpeak\debug.log` stores
+  transcript text on disk, which contradicts the spec's "nothing is saved"
+  privacy statement. Fine during development; must default off (or be
+  disclosed) before any distribution.
+
 ## Packaging notes
 
 `--collect-all` flags in the pyinstaller command are load-bearing:

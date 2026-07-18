@@ -13,6 +13,7 @@ from .cleanup import collapse_repeats, remove_fillers
 from .dictionary import apply_dictionary, vocabulary_prompt
 from .focus_check import is_focus_editable
 from .self_correction import apply_self_corrections
+from .settings import load_into_config as load_settings
 from .text_inserter import insert_text
 from .transcriber import Transcriber
 from .tray import TrayApp, show_error_popup
@@ -141,6 +142,7 @@ class SumitSpeakApp:
             self.tray.notify("Copied to clipboard — press Ctrl+V to paste.")
 
     def run(self):
+        load_settings()
         sync_autostart()
         self._load_model_async()
         self._listener = keyboard.Listener(
