@@ -306,13 +306,18 @@ first-run try-it-now box (try_it_now.py, first_run_done settings key).
    keys should work. Keep hold-to-talk semantics (spec's toggle mode
    remains deferred).
 
-8. **Bug: hover highlights radio/check rows white (dark theme):** on
-   the Dictation tab (and any tab with radios/checkboxes), hovering
-   paints the whole row light — the clam theme's "active" state
-   background was never mapped. Fix in _apply_theme:
-   style.map("TRadiobutton", background=[("active", bg)]) and the same
-   for "TCheckbutton" (use the hover shade or bg for both themes so no
-   row-highlight appears at all). Quick item — do this one first.
+8. **Bug: hover highlights rows white (dark theme) — audit ALL tabs:**
+   confirmed on Dictation (radios) and General (checkboxes): the clam
+   theme's "active"/hover state background was never mapped, so
+   hovering paints the row light. Fix in _apply_theme with
+   style.map background=[("active", bg)] for TRadiobutton and
+   TCheckbutton — then audit EVERY tab in both themes for the same
+   class of unmapped-state problem on every widget type: combobox
+   (Audio), treeview rows/selection colors (Auto Text), buttons,
+   labelframes, notebook, progressbar (Models, during download),
+   entry fields, and the disabled state of everything. No row should
+   ever highlight on hover; selection colors must be readable in both
+   themes. Quick item — do this one first.
 
 Remaining Phase 4 after the queue: explanatory failure toasts with
 distinct sounds (nothing heard / too short / no editable field),
