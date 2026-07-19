@@ -157,8 +157,10 @@ UPDATE_GRACE_WORDS = 1000
 # Append every dictation's raw Whisper transcript and each pipeline stage's
 # output to %LOCALAPPDATA%\SumitSpeak\debug.log. Development aid for
 # diagnosing cleanup behavior -- the raw transcript is the ground truth the
-# rules operate on. Will become a hidden setting in Phase 2.
-DEBUG_LOG = True
+# rules operate on. MUST default False: it stores dictated text on disk,
+# which would contradict the About tab's privacy statement. Developers
+# opt in per machine via the debug_log settings key.
+DEBUG_LOG = False
 
 # ---------------------------------------------------------------------------
 # Startup
