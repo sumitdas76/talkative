@@ -10,11 +10,11 @@ window exists is ignored.
 
 import threading
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from pynput import keyboard
 
-from . import __version__, config, settings
+from . import __version__, config, model_manager, settings
 
 APP_NAME = "Sumit Speak"
 
@@ -26,7 +26,7 @@ _EXAMPLE_CLEAN = "Send the file by this evening."
 _EXAMPLE_ASIS = "So um, send the file today — oh sorry, send the file by this evening."
 
 
-def open_settings(on_applied=None):
+def open_settings(on_applied=None, model_controller=None):
     global _is_open
     with _open_lock:
         if _is_open:
@@ -36,7 +36,7 @@ def open_settings(on_applied=None):
     def _run():
         global _is_open
         try:
-            _SettingsWindow(on_applied).run()
+            _SettingsWindow(on_applied, model_controller).run()
         finally:
             with _open_lock:
                 _is_open = False
@@ -52,8 +52,9 @@ def _hotkey_display(key):
 
 
 class _SettingsWindow:
-    def __init__(self, on_applied):
+    def __init__(self, on_applied, model_controller=None):
         self.on_applied = on_applied
+        self.model_controller = model_controller
         self.pending_hotkey = None
         self._capturing = False
 
@@ -253,16 +254,193 @@ class _SettingsWindow:
                  "dictation is inserted as a single edit.",
         ).pack(anchor="w")
 
+    # Models tab. Worker threads only write _model_ops / _model_errors;
+    # a ~300ms poll loop on the Tk thread reads them and is the only thing
+    # that touches widgets.
+
     def _tab_models(self, f):
-        tier = "Fast" if "small" in config.MODEL_SIZE or "base" in config.MODEL_SIZE else "Accurate"
-        ttk.Label(f, text=f"Speech model in use: {config.MODEL_SIZE} ({tier})").pack(anchor="w")
-        ttk.Label(
-            f, wraplength=520, foreground="grey",
-            text="\nThe model manager (download, switch, and delete models "
-                 "from here) arrives in a later version. Until then, the "
-                 "model can be changed by editing model_size in "
-                 "settings.json and restarting.",
-        ).pack(anchor="w")
+        self._model_ops = {}     # tier -> "download" | "load" | "delete"
+        self._model_errors = []  # messages appended by workers, shown by the poll
+        self._tiles = {}
+        for tier, info in model_manager.MODELS.items():
+            box = ttk.LabelFrame(
+                f, text=f"{info['label']} — {info['tagline']}", padding=10
+            )
+            box.pack(fill="x", pady=(0, 10))
+            status = ttk.Label(box, text="")
+            status.pack(anchor="w")
+            bar = ttk.Progressbar(box, mode="indeterminate", length=240)
+            row = ttk.Frame(box)
+            row.pack(anchor="w", pady=(6, 0))
+            action = ttk.Button(row)
+            delete = ttk.Button(
+                row, text="Delete",
+                command=lambda t=tier, i=info: self._model_delete(t, i),
+            )
+            self._tiles[tier] = {
+                "info": info, "status": status, "bar": bar,
+                "action": action, "delete": delete, "state": None,
+            }
+        self.storage_label = ttk.Label(f, foreground="grey", text="")
+        self.storage_label.pack(anchor="w", pady=(4, 0))
+        self._poll_models()
+
+    def _model_tile_state(self, tier, size):
+        op = self._model_ops.get(tier)
+        if op is not None:
+            return op
+        if not model_manager.is_downloaded(size):
+            return "none"
+        if size == config.MODEL_SIZE and (
+            self.model_controller is None or self.model_controller.has_model()
+        ):
+            return "in_use"
+        return "not_in_use"
+
+    def _render_model_tile(self, tier):
+        tile = self._tiles[tier]
+        info = tile["info"]
+        state = self._model_tile_state(tier, info["size"])
+        if state == tile["state"]:
+            return
+        tile["state"] = state
+
+        bar, status = tile["bar"], tile["status"]
+        action, delete = tile["action"], tile["delete"]
+        action.pack_forget()
+        delete.pack_forget()
+        if state == "download":
+            status.config(text="Downloading… this can take a few minutes.")
+            bar.pack(anchor="w", pady=(4, 0))
+            bar.start(12)
+            return
+        bar.stop()
+        bar.pack_forget()
+
+        if state == "none":
+            status.config(text=f"Not downloaded ({info['approx']}).")
+            action.config(
+                text="Download",
+                command=lambda: self._model_download(tier, info),
+            )
+            action.pack(side="left")
+        elif state == "load":
+            status.config(text="Loading…")
+        elif state == "delete":
+            status.config(text="Deleting…")
+        elif state == "in_use":
+            status.config(text="In use ✓")
+            delete.pack(side="left")
+        else:  # not_in_use
+            status.config(text="Downloaded, not in use.")
+            action.config(
+                text="Use this model",
+                state="normal" if self.model_controller else "disabled",
+                command=lambda: self._model_use(tier, info),
+            )
+            action.pack(side="left")
+            delete.pack(side="left", padx=6)
+
+    def _poll_models(self):
+        for tier in self._tiles:
+            self._render_model_tile(tier)
+        while self._model_errors:
+            messagebox.showerror(APP_NAME, self._model_errors.pop(0), parent=self.root)
+        self.storage_label.config(
+            text=f"Storage used by models: {model_manager.storage_used_mb():.0f} MB"
+        )
+        self.root.after(300, self._poll_models)
+
+    def _model_download(self, tier, info):
+        self._model_ops[tier] = "download"
+
+        def work():
+            try:
+                model_manager.download(info["size"])
+            except Exception as exc:
+                self._model_errors.append(
+                    f"Could not download the {info['label']} model:\n{exc}"
+                )
+            finally:
+                self._model_ops.pop(tier, None)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _model_use(self, tier, info):
+        if self.model_controller is None:
+            return
+        self._model_ops[tier] = "load"
+        self.model_controller.reload(
+            info["size"], on_done=lambda ok: self._model_ops.pop(tier, None)
+        )
+
+    def _model_delete_worker(self, tier, size):
+        self._model_ops[tier] = "delete"
+
+        def work():
+            try:
+                model_manager.delete(size)
+            finally:
+                self._model_ops.pop(tier, None)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _model_delete(self, tier, info):
+        size = info["size"]
+        other_tier = next(t for t in model_manager.MODELS if t != tier)
+        other = model_manager.MODELS[other_tier]
+
+        if size != config.MODEL_SIZE:
+            if messagebox.askyesno(
+                APP_NAME,
+                f"Delete the {info['label']} model?\n\n"
+                "You can download it again at any time.",
+                parent=self.root,
+            ):
+                self._model_delete_worker(tier, size)
+            return
+
+        if self.model_controller is None:
+            messagebox.showinfo(
+                APP_NAME, "The model currently in use can't be deleted.",
+                parent=self.root,
+            )
+            return
+
+        if model_manager.is_downloaded(other["size"]):
+            if not messagebox.askyesno(
+                APP_NAME,
+                f"The {info['label']} model is currently in use.\n\n"
+                f"“{APP_NAME}” will switch to the {other['label']} model "
+                f"first, then delete {info['label']}. Continue?",
+                parent=self.root,
+            ):
+                return
+            self._model_ops[other_tier] = "load"
+            self._model_ops[tier] = "delete"
+
+            def done(ok):
+                self._model_ops.pop(other_tier, None)
+                if ok:
+                    try:
+                        model_manager.delete(size)
+                    finally:
+                        self._model_ops.pop(tier, None)
+                else:
+                    self._model_ops.pop(tier, None)
+
+            self.model_controller.reload(other["size"], on_done=done)
+            return
+
+        if messagebox.askyesno(
+            APP_NAME,
+            f"The {info['label']} model is the only model downloaded.\n\n"
+            "Deleting it turns dictation off until you download a model "
+            "again. Delete anyway?",
+            icon="warning", parent=self.root,
+        ):
+            self.model_controller.unload()
+            self._model_delete_worker(tier, size)
 
     def _tab_about(self, f):
         ttk.Label(f, text=f"“{APP_NAME}”").pack(anchor="w")

@@ -6,14 +6,13 @@ from pathlib import Path
 
 from pynput import keyboard
 
-from . import config
+from . import config, model_manager, settings
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, remove_fillers
 from .dictionary import apply_dictionary, vocabulary_prompt
 from .focus_check import is_focus_editable
 from .self_correction import apply_self_corrections
-from .settings import load_into_config as load_settings
 from .text_inserter import insert_text
 from .transcriber import Transcriber
 from .tray import TrayApp, show_error_popup
@@ -41,7 +40,7 @@ def _debug_log(**stages):
 
 class SumitSpeakApp:
     def __init__(self):
-        load_settings()
+        settings.load_into_config()
         self.recorder = AudioRecorder(
             sample_rate=config.SAMPLE_RATE, device=config.INPUT_DEVICE
         )
@@ -50,12 +49,20 @@ class SumitSpeakApp:
         self._record_start_time = None
         self._running = True
         self._listener = None
+        self._no_model = False  # active model was deleted; not merely still loading
         self.tray = TrayApp(on_quit=self.quit, on_settings=self.open_settings)
 
     def open_settings(self):
+        from types import SimpleNamespace
+
         from .settings_window import open_settings
 
-        open_settings(on_applied=self._apply_settings)
+        controller = SimpleNamespace(
+            reload=self.reload_model,
+            unload=self.unload_model,
+            has_model=lambda: self.transcriber is not None,
+        )
+        open_settings(on_applied=self._apply_settings, model_controller=controller)
 
     def _apply_settings(self):
         sync_autostart()
@@ -79,9 +86,12 @@ class SumitSpeakApp:
     def _load_model_async(self):
         def _load():
             try:
+                model_manager.migrate_from_hf_cache()
                 self.transcriber = Transcriber(
-                    config.MODEL_SIZE, config.DEVICE, config.COMPUTE_TYPE
+                    config.MODEL_SIZE, config.DEVICE, config.COMPUTE_TYPE,
+                    download_root=str(model_manager.models_dir()),
                 )
+                self._no_model = False
                 self.tray.set_idle()
                 self.tray.notify("Ready. Hold Right Ctrl to dictate.")
             except Exception as exc:
@@ -89,12 +99,61 @@ class SumitSpeakApp:
 
         threading.Thread(target=_load, daemon=True).start()
 
+    def reload_model(self, size, on_done=None):
+        """Background model swap driven by the settings window. Dictation is
+        blocked during the swap; on failure the previous model is restored.
+        The choice is persisted only on success."""
+
+        def _reload():
+            old = self.transcriber
+            self.transcriber = None
+            self.tray.set_loading("switching model...")
+            ok = False
+            try:
+                self.transcriber = Transcriber(
+                    size, config.DEVICE, config.COMPUTE_TYPE,
+                    download_root=str(model_manager.models_dir()),
+                )
+                config.MODEL_SIZE = size
+                settings.save({"model_size": size})
+                self._no_model = False
+                ok = True
+            except Exception as exc:
+                self.transcriber = old
+                show_error_popup(f"Could not switch the speech model:\n{exc}")
+            if self.transcriber is not None:
+                self.tray.set_idle()
+            else:
+                self.tray.set_loading("no model")
+            if on_done is not None:
+                on_done(ok)
+
+        threading.Thread(target=_reload, daemon=True).start()
+
+    def unload_model(self):
+        """Drop the loaded model (the settings window calls this before
+        deleting the only downloaded model). Dictation stays disabled until
+        another model is loaded. gc.collect() releases CTranslate2's mapping
+        of model.bin so the file can actually be deleted."""
+        import gc
+
+        self.transcriber = None
+        self._no_model = True
+        gc.collect()
+        self.tray.set_loading("no model — open Settings, then Models")
+
     def _on_press(self, key):
         if key != config.HOTKEY or self._recording:
             return
 
         if self.transcriber is None:
-            self.tray.notify("Still loading the speech model, please wait...")
+            if self._no_model:
+                self.tray.notify(
+                    "No speech model is installed. Open Settings, then the "
+                    "Models tab, to download one."
+                )
+            else:
+                self.tray.notify("Still loading the speech model, please wait...")
             return
 
         if not is_focus_editable():
