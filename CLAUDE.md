@@ -207,9 +207,22 @@ manifest.json (needs user's account; MANIFEST_URL stays "" until then),
 and publishing the grammar ct2 conversion to HF so its entry becomes
 updatable.**
 
-Remaining Phase 3, in order: manifest repo publication → Inno Setup
-installer (§8) → GitHub repo/Releases → first-run flow. Before any
-distribution: DEBUG_LOG must default off (privacy, see below).
+**Installer (spec §8) built and test-installed** (July 19):
+`installer\SumitSpeak.iss`; compile from the project root with
+`& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\SumitSpeak.iss`
+after a fresh PyInstaller build. Output:
+installer\Output\SumitSpeakSetup.exe (~1.6 GB — bundles the grammar
+engine from this machine's %LOCALAPPDATA%\SumitSpeak\models\grammar,
+plus vc_redist downloaded to installer\redist\, both gitignored).
+Per-user, no UAC; uninstall's remove-data prompt defaults to KEEP under
+/SUPPRESSMSGBOXES. DEBUG_LOG now defaults off; this dev machine keeps it
+on via the debug_log settings key.
+
+Remaining Phase 3: publish the manifest repo on GitHub (gh CLI now
+installed; needs `gh auth login`, then create public repo, upload
+manifest.json from docs/manifest-sample.json, set MANIFEST_URL) →
+GitHub Releases for the installer → first-run flow. Then Phase 4 polish
+(listening pill, failure toasts, try-it-now).
 Note: user changed the hotkey to Left Ctrl (ctrl_l) via the settings UI.
 
 The July 19 session had blanket user approval for kill-rebuild-relaunch
