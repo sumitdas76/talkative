@@ -12,16 +12,19 @@ from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
 from .dictionary import apply_dictionary, vocabulary_prompt
 from .focus_check import is_focus_editable
+from .keynames import friendly as friendly_key
 from .self_correction import apply_self_corrections
 from .text_inserter import insert_text
 from .transcriber import Transcriber
 from .tray import TrayApp, show_error_popup
 
-NO_TARGET_MESSAGE = (
-    "No editable text field is focused.\n\n"
-    "Click into a text box, document, or address bar first, then hold "
-    "Right Ctrl to dictate."
-)
+
+def no_target_message():
+    return (
+        "No editable text field is focused.\n\n"
+        "Click into a text box, document, or address bar first, then hold "
+        f"{friendly_key(config.HOTKEY)} to dictate."
+    )
 
 
 def _tone_wav(freq, seconds, volume, rate=16000):
@@ -77,7 +80,10 @@ class SumitSpeakApp:
         self._tones = {}  # freq -> WAV bytes; kept referenced for SND_ASYNC
         self._jobs = 0  # dictations currently in the pipeline (updater idle check)
         self._swapping = False  # model swap in progress (update install/undo)
-        self.tray = TrayApp(on_quit=self.quit, on_settings=self.open_settings)
+        self.tray = TrayApp(
+            on_quit=self.quit, on_settings=self.open_settings,
+            hotkey_label=friendly_key(config.HOTKEY),
+        )
 
     def open_settings(self):
         from types import SimpleNamespace
@@ -95,6 +101,9 @@ class SumitSpeakApp:
     def _apply_settings(self):
         sync_autostart()
         self.recorder.device = config.INPUT_DEVICE
+        self.tray.set_hotkey_label(friendly_key(config.HOTKEY))
+        if self.transcriber is not None and not self._recording:
+            self.tray.set_idle()  # refresh the tooltip with the new hotkey
         self.tray.notify("Settings saved.")
 
     # kind -> sequence of (freq_hz, seconds). "done" is a rising two-note
@@ -137,7 +146,9 @@ class SumitSpeakApp:
                 )
                 self._no_model = False
                 self.tray.set_idle()
-                self.tray.notify("Ready. Hold Right Ctrl to dictate.")
+                self.tray.notify(
+                    f"Ready. Hold {friendly_key(config.HOTKEY)} to dictate."
+                )
             except Exception as exc:
                 show_error_popup(f"Failed to load speech model:\n{exc}")
 
@@ -244,7 +255,7 @@ class SumitSpeakApp:
             return
 
         if not is_focus_editable():
-            show_error_popup(NO_TARGET_MESSAGE)
+            show_error_popup(no_target_message())
             return
 
         try:
@@ -330,7 +341,7 @@ class SumitSpeakApp:
             return
 
         if not is_focus_editable():
-            show_error_popup(NO_TARGET_MESSAGE)
+            show_error_popup(no_target_message())
             return
 
         insert_text(text)

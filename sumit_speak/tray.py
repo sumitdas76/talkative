@@ -26,7 +26,8 @@ def _make_icon_image(color):
 
 
 class TrayApp:
-    def __init__(self, on_quit, on_settings=None):
+    def __init__(self, on_quit, on_settings=None, hotkey_label="Right Ctrl"):
+        self._hotkey_label = hotkey_label
         self._idle_image = _make_icon_image((70, 130, 180, 255))  # steel blue
         self._recording_image = _make_icon_image((200, 40, 40, 255))  # red
         self._loading_image = _make_icon_image((150, 150, 150, 255))  # grey
@@ -54,9 +55,12 @@ class TrayApp:
         self._on_quit()
         self.icon.stop()
 
+    def set_hotkey_label(self, label):
+        self._hotkey_label = label
+
     def set_idle(self):
         self.icon.icon = self._idle_image
-        self.icon.title = "Sumit Speak (hold Right Ctrl to dictate)"
+        self.icon.title = f"Sumit Speak (hold {self._hotkey_label} to dictate)"
 
     def set_loading(self, note="loading model..."):
         self.icon.icon = self._loading_image

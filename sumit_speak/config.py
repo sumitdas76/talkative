@@ -133,8 +133,9 @@ THEME = "system"
 PLAY_SOUNDS = True
 # Loudness of those tones, 0.0-1.0. They are generated soft sine waves played
 # through the sound mixer -- winsound.Beep was rejected because it plays a
-# harsh square wave at full volume with no volume control.
-SOUND_VOLUME = 0.2
+# harsh square wave at full volume with no volume control. (0.2 was still
+# too loud for the user; halved July 19.)
+SOUND_VOLUME = 0.1
 # None = system default input device; otherwise a sounddevice input index
 # (set via the Audio tab in Settings).
 INPUT_DEVICE = None

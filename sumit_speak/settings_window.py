@@ -15,6 +15,7 @@ from tkinter import messagebox, ttk
 from pynput import keyboard
 
 from . import __version__, config, model_manager, settings, updater
+from .keynames import friendly as _friendly_key_name
 
 APP_NAME = "Sumit Speak"
 
@@ -48,10 +49,7 @@ def open_settings(on_applied=None, model_controller=None):
 
 
 def _hotkey_display(key):
-    name = getattr(key, "name", None)
-    if name:
-        return name
-    return getattr(key, "char", "?") or "?"
+    return _friendly_key_name(key)
 
 
 class _SettingsWindow:
@@ -269,7 +267,8 @@ class _SettingsWindow:
             name = getattr(key, "name", None) or getattr(key, "char", None)
             if name:
                 self.pending_hotkey = name
-                self.root.after(0, lambda: self.hotkey_btn.config(text=name))
+                shown = _friendly_key_name(name)
+                self.root.after(0, lambda: self.hotkey_btn.config(text=shown))
             self._capturing = False
             return False  # stop this capture listener
 
