@@ -319,6 +319,22 @@ first-run try-it-now box (try_it_now.py, first_run_done settings key).
    ever highlight on hover; selection colors must be readable in both
    themes. Quick item — do this one first.
 
+9. **Optional cloud speech-to-text** for users who want faster results
+   than the local models; local downloaded models remain the
+   default and the choice. Design notes: this is the biggest departure
+   yet from the product's core identity — "fully offline, your voice
+   never leaves this PC" is the headline promise (About tab, README,
+   spec §1), and spec §11 deferred cloud features on purpose. So:
+   strictly opt-in with unmistakable disclosure at enable time; the
+   privacy statement must gain an "unless you choose cloud
+   recognition" clause. To decide when building: provider (OpenAI
+   /Deepgram/Azure etc.), who pays (user's own API key fits the $0
+   principle; Sumit-funded key = cost and abuse risk), where it lives
+   in the UI (a third "Cloud" tile on the Models tab fits the existing
+   tile pattern), and a CloudTranscriber alongside the thin local
+   Transcriber (same one-shot interface; graceful offline fallback to
+   the local model when the network fails).
+
 Remaining Phase 4 after the queue: explanatory failure toasts with
 distinct sounds (nothing heard / too short / no editable field),
 recovery-clipboard toast. Optional later: GitHub Pages download page,
