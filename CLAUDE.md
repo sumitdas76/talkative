@@ -306,6 +306,14 @@ first-run try-it-now box (try_it_now.py, first_run_done settings key).
    keys should work. Keep hold-to-talk semantics (spec's toggle mode
    remains deferred).
 
+8. **Bug: hover highlights radio/check rows white (dark theme):** on
+   the Dictation tab (and any tab with radios/checkboxes), hovering
+   paints the whole row light — the clam theme's "active" state
+   background was never mapped. Fix in _apply_theme:
+   style.map("TRadiobutton", background=[("active", bg)]) and the same
+   for "TCheckbutton" (use the hover shade or bg for both themes so no
+   row-highlight appears at all). Quick item — do this one first.
+
 Remaining Phase 4 after the queue: explanatory failure toasts with
 distinct sounds (nothing heard / too short / no editable field),
 recovery-clipboard toast. Optional later: GitHub Pages download page,
