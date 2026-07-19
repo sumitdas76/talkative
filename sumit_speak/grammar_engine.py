@@ -115,7 +115,18 @@ def _retention_ok(inp, out):
         return True
     dst = set(_WORD.findall(out.lower()))
     kept = sum(1 for w in src if w in dst) / len(src)
-    return kept >= config.GRAMMAR_MIN_RETENTION
+    if kept < config.GRAMMAR_MIN_RETENTION:
+        return False
+    # Additionally, no whole input sentence may vanish. The rule stages
+    # upstream already removed retractions and repeats, so the engine
+    # deleting a full sentence is always damage -- and a short sentence
+    # lost from a long dictation stays above the global bar (seen live:
+    # Qwen2.5-0.5B dropped the opening sentence of a 75-word dictation).
+    for sentence in re.split(r"(?<=[.!?])\s+", inp):
+        words = _WORD.findall(sentence.lower())
+        if len(words) >= 2 and sum(1 for w in words if w in dst) / len(words) < 0.5:
+            return False
+    return True
 
 
 def _length_ok(inp, out):
