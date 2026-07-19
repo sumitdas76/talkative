@@ -38,6 +38,9 @@ def open_settings(on_applied=None, model_controller=None):
         try:
             _SettingsWindow(on_applied, model_controller).run()
         finally:
+            # Revert any unsaved preview mutations (e.g. the live theme
+            # preview writes config.THEME before Save).
+            settings.load_into_config()
             with _open_lock:
                 _is_open = False
 
@@ -63,12 +66,13 @@ class _SettingsWindow:
         self.root.title(f"{APP_NAME} — Settings")
         self.root.geometry("600x480")
         self.root.minsize(520, 420)
+        self._apply_theme()
 
         nb = ttk.Notebook(self.root)
         nb.pack(fill="both", expand=True, padx=10, pady=(10, 4))
         for name, builder in [
             ("General", self._tab_general),
-            ("Dictionary", self._tab_dictionary),
+            ("Auto Text", self._tab_dictionary),
             ("Dictation", self._tab_dictation),
             ("Hotkeys", self._tab_hotkeys),
             ("Audio", self._tab_audio),
@@ -89,19 +93,74 @@ class _SettingsWindow:
 
         self.root.mainloop()
 
+    # ---------------- theme ----------------
+
+    def _effective_theme(self):
+        if config.THEME in ("light", "dark"):
+            return config.THEME
+        try:
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            ) as key:
+                light, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            return "light" if light else "dark"
+        except Exception:
+            return "light"
+
+    def _apply_theme(self):
+        style = ttk.Style(self.root)
+        if self._effective_theme() == "dark":
+            bg, fg, field, raised = "#2b2b2b", "#e6e6e6", "#3c3c3c", "#454545"
+            style.theme_use("clam")
+            self.root.configure(bg=bg)
+            style.configure(".", background=bg, foreground=fg,
+                            fieldbackground=field, bordercolor="#555555",
+                            lightcolor=bg, darkcolor=bg)
+            style.configure("TNotebook.Tab", background=raised, foreground=fg,
+                            padding=(10, 4))
+            style.map("TNotebook.Tab", background=[("selected", "#5a5a5a")])
+            style.configure("TButton", background=raised)
+            style.map("TButton", background=[("active", "#5a5a5a")])
+            style.configure("Treeview", background=field, foreground=fg,
+                            fieldbackground=field)
+            style.configure("Treeview.Heading", background=raised, foreground=fg)
+            style.map("TCombobox", fieldbackground=[("readonly", field)],
+                      foreground=[("readonly", fg)])
+        else:
+            style.theme_use("vista" if "vista" in style.theme_names() else "clam")
+            self.root.configure(bg=ttk.Style(self.root).lookup("TFrame", "background") or "SystemButtonFace")
+
     # ---------------- tabs ----------------
 
     def _tab_general(self, f):
         self.var_autostart = tk.BooleanVar(value=config.START_WITH_WINDOWS)
         self.var_sounds = tk.BooleanVar(value=config.PLAY_SOUNDS)
+        self.var_theme = tk.StringVar(value=config.THEME)
         ttk.Checkbutton(
             f, text=f"Start “{APP_NAME}” when Windows starts",
             variable=self.var_autostart,
         ).pack(anchor="w", pady=4)
         ttk.Checkbutton(
-            f, text="Play a sound when recording starts and stops",
+            f, text="Play sounds when recording starts, stops, and when "
+                    "text is inserted",
             variable=self.var_sounds,
         ).pack(anchor="w", pady=4)
+
+        box = ttk.LabelFrame(f, text="Appearance", padding=10)
+        box.pack(fill="x", pady=(10, 0))
+        for label, value in [("Light", "light"), ("Dark", "dark"),
+                             ("Follow Windows setting", "system")]:
+            ttk.Radiobutton(
+                box, text=label, variable=self.var_theme, value=value,
+                command=self._theme_changed,
+            ).pack(anchor="w", pady=2)
+
+    def _theme_changed(self):
+        config.THEME = self.var_theme.get()
+        self._apply_theme()
 
     def _tab_dictionary(self, f):
         ttk.Label(
@@ -512,6 +571,7 @@ class _SettingsWindow:
         values = {
             "start_with_windows": self.var_autostart.get(),
             "play_sounds": self.var_sounds.get(),
+            "theme": self.var_theme.get(),
             "cleanup_mode": self.var_cleanup.get(),
             "insert_mode": self.var_insert.get(),
             "append_space": self.var_space.get(),

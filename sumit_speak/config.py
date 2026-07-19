@@ -99,6 +99,8 @@ REPEAT_SIMILARITY = 0.75
 # The terms are also fed to Whisper as vocabulary hints so they are more
 # likely to be *heard* correctly in the first place.
 DICTIONARY = {
+    "asap": "as soon as possible",
+    "AI": "artificial intelligence",
     "Captivate": "Adobe Captivate",
     "PPT": "PowerPoint",
     "Sumit": "Sumit Chatterjee",
@@ -123,7 +125,11 @@ PRESS_ENTER_AFTER = False
 # ---------------------------------------------------------------------------
 # Sounds and microphone
 # ---------------------------------------------------------------------------
-# Short tones when recording starts and stops.
+# Settings window appearance: "light", "dark", or "system" (follow the
+# Windows app theme).
+THEME = "system"
+
+# Short tones when recording starts/stops and when text is inserted.
 PLAY_SOUNDS = True
 # Loudness of those tones, 0.0-1.0. They are generated soft sine waves played
 # through the sound mixer -- winsound.Beep was rejected because it plays a

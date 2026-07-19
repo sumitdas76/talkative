@@ -97,7 +97,16 @@ class SumitSpeakApp:
         self.recorder.device = config.INPUT_DEVICE
         self.tray.notify("Settings saved.")
 
-    def _beep(self, start):
+    # kind -> sequence of (freq_hz, seconds). "done" is a rising two-note
+    # chime, distinct from the single start/stop tones, played after the
+    # text lands in the target application.
+    _SOUNDS = {
+        "start": [(880, 0.07)],
+        "stop": [(440, 0.07)],
+        "done": [(660, 0.08), (880, 0.10)],
+    }
+
+    def _beep(self, kind):
         if not config.PLAY_SOUNDS:
             return
 
@@ -105,14 +114,14 @@ class SumitSpeakApp:
             try:
                 import winsound
 
-                freq = 880 if start else 440
-                # Cached per frequency: SND_ASYNC needs the buffer to stay
-                # alive while the sound plays, and building it isn't free.
-                tone = self._tones.get(freq)
-                if tone is None:
-                    tone = _tone_wav(freq, 0.07, config.SOUND_VOLUME)
-                    self._tones[freq] = tone
-                winsound.PlaySound(tone, winsound.SND_MEMORY | winsound.SND_ASYNC)
+                for freq, seconds in self._SOUNDS[kind]:
+                    # Cached: building the WAV isn't free.
+                    tone = self._tones.get((freq, seconds))
+                    if tone is None:
+                        tone = _tone_wav(freq, seconds, config.SOUND_VOLUME)
+                        self._tones[(freq, seconds)] = tone
+                    # Synchronous playback so multi-note sequences chain.
+                    winsound.PlaySound(tone, winsound.SND_MEMORY)
             except Exception:
                 pass
 
@@ -247,7 +256,7 @@ class SumitSpeakApp:
         self._recording = True
         self._record_start_time = time.time()
         self.tray.set_recording()
-        self._beep(start=True)
+        self._beep("start")
 
     def _on_release(self, key):
         if key != config.HOTKEY or not self._recording:
@@ -255,7 +264,7 @@ class SumitSpeakApp:
 
         self._recording = False
         self.tray.set_idle()
-        self._beep(start=False)
+        self._beep("stop")
         audio = self.recorder.stop()
         duration = time.time() - self._record_start_time
 
@@ -325,6 +334,7 @@ class SumitSpeakApp:
             return
 
         insert_text(text)
+        self._beep("done")
         updater.note_words(len(text.split()))
         if config.INSERT_MODE == "clipboard":
             self.tray.notify("Copied to clipboard — press Ctrl+V to paste.")

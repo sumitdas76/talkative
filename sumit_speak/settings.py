@@ -34,6 +34,7 @@ _KEYS = {
     "press_enter_after": "PRESS_ENTER_AFTER",
     "start_with_windows": "START_WITH_WINDOWS",
     "play_sounds": "PLAY_SOUNDS",
+    "theme": "THEME",
     "debug_log": "DEBUG_LOG",
 }
 

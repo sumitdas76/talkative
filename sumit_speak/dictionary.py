@@ -43,7 +43,13 @@ def apply_dictionary(text, entries=None):
     def _replace(match):
         matched = match.group(0)
         typed = lookup[_normalize(matched)]
-        if matched[:1].isupper() and typed[:1].islower():
+        # Capitalize only at an actual sentence start -- "the matched text
+        # is uppercase" is the wrong signal (acronyms like "AI" are always
+        # uppercase and must not capitalize a lowercase expansion
+        # mid-sentence).
+        before = text[: match.start()].rstrip()
+        at_sentence_start = not before or before[-1] in ".!?"
+        if at_sentence_start and typed[:1].islower():
             typed = typed[0].upper() + typed[1:]
         return typed
 
