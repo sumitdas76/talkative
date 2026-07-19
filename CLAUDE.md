@@ -179,13 +179,13 @@ model tiles, and the **grammar engine** (spec Phase 3 step 2):
   few-shot leash prompt, deterministic guards (digit runs verbatim, ≥70%
   word retention, length bounds) that fall back to rules-only on any
   violation. Invisible in UI. Loads in background at startup.
-- Two auditioned candidates installed under %LOCALAPPDATA%\SumitSpeak\
-  models: `grammar-15` (Qwen2.5-1.5B int8, most faithful, +2-6s) and
-  `grammar-05` (Qwen2.5-0.5B, +0.5-3s, weaker). Qwen3-0.6B was
-  disqualified (mangled numbers). Active one = `grammar_model` key in
-  settings.json + app restart. **User is A/B testing latency vs accuracy
-  — the decision (and removal of the loser) is the next resume point.**
-  debug.log now logs per-dictation transcribe/grammar seconds for this.
+- **A/B decided (live test, July 19): Qwen2.5-1.5B int8 won** and lives
+  in `<models>/grammar` (~1.5 GB; ~2s grammar pass on short dictations,
+  ~8s on long ones). Qwen2.5-0.5B was removed after it silently deleted
+  an opening sentence in live use (that failure also motivated the
+  per-sentence retention guard); Qwen3-0.6B was disqualified earlier for
+  mangling numbers. debug.log logs per-dictation transcribe/grammar
+  seconds.
 - Conversion recipe (dev-only): scratchpad venv with torch-cpu +
   transformers + ctranslate2, `ct2-transformers-converter --model
   Qwen/... --quantization int8 --copy_files tokenizer.json
@@ -193,8 +193,9 @@ model tiles, and the **grammar engine** (spec Phase 3 step 2):
 - settings.json is read utf-8-sig (a BOM once silently reset all
   settings).
 
-Remaining Phase 3 after the engine decision: updater + manifest (spec §7)
-→ Inno Setup installer (§8) → GitHub repo/Releases → first-run flow.
+Remaining Phase 3, in order: updater + manifest (spec §7) → Inno Setup
+installer (§8) → GitHub repo/Releases → first-run flow. Before any
+distribution: DEBUG_LOG must default off (privacy, see below).
 Note: user changed the hotkey to Left Ctrl (ctrl_l) via the settings UI.
 
 The July 19 session had blanket user approval for kill-rebuild-relaunch
