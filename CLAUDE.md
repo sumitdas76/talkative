@@ -252,6 +252,30 @@ first-run try-it-now box (try_it_now.py, first_run_done settings key).
    locks), cleaned_up silently degrades to rules-only (already the
    graceful-absence contract).
 
+2. **In-use tile must be visually unmistakable:** replace the "In use ✓"
+   text with a strong graphical selected state (accent border + filled
+   header or badge on the active tile). User finds the current text not
+   eye-catching.
+
+3. **New app icon:** the current EXE icon is PyInstaller's default (the
+   "feather pen" the user dislikes) — none was ever set. Design a
+   modern .ico, pass it via --icon to PyInstaller and SetupIconFile in
+   the .iss, and restyle the code-drawn PIL tray circles to match (keep
+   them code-drawn — no --add-data). Also use it for the settings
+   window iconbitmap.
+
+4. **In-app feedback channel (two-way):** a Feedback button in
+   About/Help — user types text, clicks Send, Sumit gets it with a
+   Gmail notification; Sumit's reply appears back inside the sender's
+   app. Design notes agreed July 19: this is the app's FIRST outbound
+   data path — the About privacy statement must be amended (send is
+   user-initiated only). Candidate $0/no-server transport: send via a
+   free form-to-email endpoint (arrives in Gmail); replies published
+   by Sumit as JSON in the public sumit-speak-updates repo keyed by an
+   anonymous random per-install ID; the app polls it alongside the
+   update manifest and shows the reply. Transport to be finalized
+   before building.
+
 Remaining Phase 4 after the queue: explanatory failure toasts with
 distinct sounds (nothing heard / too short / no editable field),
 recovery-clipboard toast. Optional later: GitHub Pages download page,
