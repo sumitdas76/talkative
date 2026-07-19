@@ -209,8 +209,9 @@ updatable.**
 
 **Installer (spec §8) built and test-installed** (July 19):
 `installer\SumitSpeak.iss`; compile from the project root with
-`& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\SumitSpeak.iss`
-after a fresh PyInstaller build. Output:
+`& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer\SumitSpeak.iss`
+(per-user winget install — NOT under Program Files) after a fresh
+PyInstaller build. Output:
 installer\Output\SumitSpeakSetup.exe (~1.6 GB — bundles the grammar
 engine from this machine's %LOCALAPPDATA%\SumitSpeak\models\grammar,
 plus vc_redist downloaded to installer\redist\, both gitignored).
@@ -218,11 +219,17 @@ Per-user, no UAC; uninstall's remove-data prompt defaults to KEEP under
 /SUPPRESSMSGBOXES. DEBUG_LOG now defaults off; this dev machine keeps it
 on via the debug_log settings key.
 
-Remaining Phase 3: publish the manifest repo on GitHub (gh CLI now
-installed; needs `gh auth login`, then create public repo, upload
-manifest.json from docs/manifest-sample.json, set MANIFEST_URL) →
-GitHub Releases for the installer → first-run flow. Then Phase 4 polish
-(listening pill, failure toasts, try-it-now).
+**Update manifest is LIVE** (July 19): public repo
+https://github.com/sumitdas76/sumit-speak-updates holds manifest.json
+(all models at baseline "1"); MANIFEST_URL in config points at its raw
+URL and the live fetch was verified (no update offered at baseline).
+gh CLI installed and authed as sumitdas76. Publishing an update = edit
+manifest.json in the browser, bump a version string, commit.
+
+Remaining: GitHub Releases upload of the installer + download page →
+first-run flow. Then Phase 4 polish (listening pill, failure toasts,
+try-it-now). The source repo itself has no remote — pushing it public
+is the user's call, not required by the update system.
 Note: user changed the hotkey to Left Ctrl (ctrl_l) via the settings UI.
 
 The July 19 session had blanket user approval for kill-rebuild-relaunch
