@@ -276,6 +276,17 @@ first-run try-it-now box (try_it_now.py, first_run_done settings key).
    update manifest and shows the reply. Transport to be finalized
    before building.
 
+5. **Spoken cue when no editable field is focused:** when the user
+   starts dictating with nothing typable selected, play a friendly
+   female voice saying (improved wording, roughly) "No text box is
+   selected — click where you want your words to go, then try again."
+   Notes: use Windows' built-in offline SAPI TTS (pywin32 already
+   shipped; prefer a female voice like Zira, fall back to the default
+   voice), speak asynchronously, and consider replacing the current
+   blocking error popup with voice + toast (aligns with spec §10.3
+   failure-toast plan). Applies to both focus checks (hotkey press and
+   pre-insert). Volume should respect/scale with SOUND_VOLUME.
+
 Remaining Phase 4 after the queue: explanatory failure toasts with
 distinct sounds (nothing heard / too short / no editable field),
 recovery-clipboard toast. Optional later: GitHub Pages download page,
