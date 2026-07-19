@@ -12,9 +12,13 @@ class AudioRecorder:
         self.device = device  # None = system default input
         self._stream = None
         self._frames = []
+        # RMS of the most recent chunk, 0.0-1.0-ish; read by the listening
+        # pill's animation loop. Plain float write is atomic enough.
+        self.level = 0.0
 
     def _callback(self, indata, frames, time_info, status):
         self._frames.append(indata.copy())
+        self.level = float(np.sqrt(np.mean(indata ** 2)))
 
     def start(self):
         self._frames = []

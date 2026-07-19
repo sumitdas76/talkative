@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pynput import keyboard
 
-from . import config, grammar_engine, model_manager, settings, updater
+from . import config, grammar_engine, model_manager, pill, settings, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -149,6 +149,7 @@ class SumitSpeakApp:
                 self.tray.notify(
                     f"Ready. Hold {friendly_key(config.HOTKEY)} to dictate."
                 )
+                try_it_now.maybe_show()
             except Exception as exc:
                 show_error_popup(f"Failed to load speech model:\n{exc}")
 
@@ -267,6 +268,7 @@ class SumitSpeakApp:
         self._recording = True
         self._record_start_time = time.time()
         self.tray.set_recording()
+        pill.show(lambda: self.recorder.level)
         self._beep("start")
 
     def _on_release(self, key):
@@ -275,6 +277,7 @@ class SumitSpeakApp:
 
         self._recording = False
         self.tray.set_idle()
+        pill.hide()
         self._beep("stop")
         audio = self.recorder.stop()
         duration = time.time() - self._record_start_time

@@ -170,3 +170,6 @@ DEBUG_LOG = False
 # ---------------------------------------------------------------------------
 # Synced to the per-user Windows Run registry key at every launch.
 START_WITH_WINDOWS = False
+
+# Set (persisted) after the first-run "try it now" box has been shown once.
+FIRST_RUN_DONE = False
