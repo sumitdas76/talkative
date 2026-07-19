@@ -20,12 +20,14 @@ MODELS = {
         "label": "Fast",
         "tagline": "Instant response",
         "approx": "about 244 MB",
+        "latency": "Text appears about 2–3 seconds after you stop speaking.",
     },
     "accurate": {
         "size": "large-v3-turbo",
         "label": "Accurate",
         "tagline": "Best recognition, a bit slower",
         "approx": "about 1.6 GB",
+        "latency": "Text appears about 8–10 seconds after you stop speaking.",
     },
 }
 

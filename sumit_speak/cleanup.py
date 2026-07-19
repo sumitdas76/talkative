@@ -78,3 +78,20 @@ def collapse_repeats(text):
     if len(kept) == len(sentences):
         return text
     return " ".join(kept)
+
+
+def finish_sentence(text):
+    """Minimal finishing touches for cleaned_up mode: capitalize the first
+    letter and add a terminal period when the dictation ends mid-word style
+    (Whisper omits both on long spontaneous speech). Never touches interior
+    punctuation -- restructuring is the future grammar engine's job."""
+    if not text:
+        return text
+    text = text.strip()
+    if text[:1].islower():
+        text = text[0].upper() + text[1:]
+    if text[-1:].isalnum() or text[-1:] == "%":
+        text += "."
+    elif text[-1:] in ",;:":
+        text = text[:-1] + "."
+    return text

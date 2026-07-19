@@ -9,7 +9,7 @@ from pynput import keyboard
 from . import config, model_manager, settings
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
-from .cleanup import collapse_repeats, remove_fillers
+from .cleanup import collapse_repeats, finish_sentence, remove_fillers
 from .dictionary import apply_dictionary, vocabulary_prompt
 from .focus_check import is_focus_editable
 from .self_correction import apply_self_corrections
@@ -22,6 +22,30 @@ NO_TARGET_MESSAGE = (
     "Click into a text box, document, or address bar first, then hold "
     "Right Ctrl to dictate."
 )
+
+
+def _tone_wav(freq, seconds, volume, rate=16000):
+    """A soft mono sine tone as in-memory WAV bytes, with a 5ms fade in/out
+    so it doesn't click."""
+    import io
+    import math
+    import struct
+    import wave
+
+    n = int(rate * seconds)
+    fade = max(1, int(rate * 0.005))
+    amp = 32767 * max(0.0, min(1.0, volume))
+    frames = bytearray()
+    for i in range(n):
+        env = min(1.0, i / fade, (n - i) / fade)
+        frames += struct.pack("<h", int(amp * env * math.sin(2 * math.pi * freq * i / rate)))
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(bytes(frames))
+    return buf.getvalue()
 
 
 def _debug_log(**stages):
@@ -50,6 +74,7 @@ class SumitSpeakApp:
         self._running = True
         self._listener = None
         self._no_model = False  # active model was deleted; not merely still loading
+        self._tones = {}  # freq -> WAV bytes; kept referenced for SND_ASYNC
         self.tray = TrayApp(on_quit=self.quit, on_settings=self.open_settings)
 
     def open_settings(self):
@@ -77,7 +102,14 @@ class SumitSpeakApp:
             try:
                 import winsound
 
-                winsound.Beep(880 if start else 440, 70)
+                freq = 880 if start else 440
+                # Cached per frequency: SND_ASYNC needs the buffer to stay
+                # alive while the sound plays, and building it isn't free.
+                tone = self._tones.get(freq)
+                if tone is None:
+                    tone = _tone_wav(freq, 0.07, config.SOUND_VOLUME)
+                    self._tones[freq] = tone
+                winsound.PlaySound(tone, winsound.SND_MEMORY | winsound.SND_ASYNC)
             except Exception:
                 pass
 
@@ -187,9 +219,12 @@ class SumitSpeakApp:
         threading.Thread(target=self._process_audio, args=(audio,), daemon=True).start()
 
     def _process_audio(self, audio):
+        prompt = " ".join(
+            p for p in (config.PUNCTUATION_PROMPT, vocabulary_prompt()) if p
+        ) or None
         try:
             text = self.transcriber.transcribe(
-                audio, config.SAMPLE_RATE, initial_prompt=vocabulary_prompt()
+                audio, config.SAMPLE_RATE, initial_prompt=prompt
             )
         except Exception as exc:
             show_error_popup(f"Transcription failed:\n{exc}")
@@ -206,6 +241,7 @@ class SumitSpeakApp:
             after_corrections = text
             text = collapse_repeats(text)
             after_collapse = text
+            text = finish_sentence(text)
         else:
             after_fillers = after_corrections = after_collapse = text
 

@@ -267,6 +267,8 @@ class _SettingsWindow:
                 f, text=f"{info['label']} — {info['tagline']}", padding=10
             )
             box.pack(fill="x", pady=(0, 10))
+            ttk.Label(box, text=info["latency"], foreground="grey",
+                      wraplength=500).pack(anchor="w")
             status = ttk.Label(box, text="")
             status.pack(anchor="w")
             bar = ttk.Progressbar(box, mode="indeterminate", length=240)

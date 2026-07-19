@@ -13,6 +13,16 @@ COMPUTE_TYPE = "int8"
 
 SAMPLE_RATE = 16000
 
+# Fed to Whisper as decoder context (initial_prompt) so it continues in the
+# same style: punctuated, capitalized sentences. Whisper reliably punctuates
+# read-aloud speech but often drops all punctuation on long spontaneous
+# dictation; this seed text counteracts that. Deliberately plain, neutral
+# wording -- distinctive words in a prompt can leak into transcripts.
+PUNCTUATION_PROMPT = (
+    "Okay, here is my next note. I dictate in complete sentences, with "
+    "commas where needed, and each sentence ends with a period."
+)
+
 # Presses shorter than this are treated as accidental taps and discarded.
 MIN_RECORDING_SECONDS = 0.3
 
@@ -99,8 +109,12 @@ PRESS_ENTER_AFTER = False
 # ---------------------------------------------------------------------------
 # Sounds and microphone
 # ---------------------------------------------------------------------------
-# Short beeps when recording starts and stops.
+# Short tones when recording starts and stops.
 PLAY_SOUNDS = True
+# Loudness of those tones, 0.0-1.0. They are generated soft sine waves played
+# through the sound mixer -- winsound.Beep was rejected because it plays a
+# harsh square wave at full volume with no volume control.
+SOUND_VOLUME = 0.2
 # None = system default input device; otherwise a sounddevice input index
 # (set via the Audio tab in Settings).
 INPUT_DEVICE = None
