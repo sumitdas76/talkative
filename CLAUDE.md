@@ -287,6 +287,25 @@ first-run try-it-now box (try_it_now.py, first_run_done settings key).
    failure-toast plan). Applies to both focus checks (hotkey press and
    pre-insert). Volume should respect/scale with SOUND_VOLUME.
 
+6. **Audio tab: output-device dropdown** alongside the microphone one —
+   headphones, Bluetooth earphones, speakers. Notes: winsound always
+   uses the system default output, so the tones (and the future spoken
+   cue of #5) must move to sounddevice playback (sd.play with device=,
+   already a dependency) honoring a new output_device settings key;
+   same "System default" first entry and query_devices filtering on
+   max_output_channels.
+
+7. **Hotkeys: one- OR two-key chord for dictation** (press-and-hold a
+   single key or a combination of two). Page design left to Claude.
+   Notes: listener must track the pressed-key set (all chord keys down
+   → start; any released → stop+transcribe); capture UI records
+   whichever chord the user holds; settings "hotkey" grows a list form
+   (["ctrl_l","alt_l"]) while staying backward compatible with the
+   plain string; keynames.friendly needs a chord form ("Left Ctrl +
+   Left Alt"); modifier-only chords are the expected case but any two
+   keys should work. Keep hold-to-talk semantics (spec's toggle mode
+   remains deferred).
+
 Remaining Phase 4 after the queue: explanatory failure toasts with
 distinct sounds (nothing heard / too short / no editable field),
 recovery-clipboard toast. Optional later: GitHub Pages download page,
