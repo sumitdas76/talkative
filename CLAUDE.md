@@ -233,10 +233,29 @@ SumitSpeakSetup.exe (1.57 GB) on the v1.0.1 release. Includes Phase 4's
 listening pill (pill.py — no-activate floating level indicator) and
 first-run try-it-now box (try_it_now.py, first_run_done settings key).
 
-Remaining Phase 4: explanatory failure toasts with distinct sounds
-(nothing heard / too short / no editable field), recovery-clipboard
-toast. Optional later: GitHub Pages download page, code signing
-(~$70-300/yr) to silence SmartScreen.
+**Next session — user's change-request queue (start here, in order):**
+
+1. **Models tab redesign:** Fast and Accurate tiles side by side
+   (currently stacked), and below them a new section for the grammar
+   engine with a Delete button. Rationale (user's): every speech model
+   is deletable but the grammar engine's 1.5 GB is not reclaimable.
+   Design notes agreed July 19: (a) this relaxes spec §5's
+   "engine invisible in UI" decision — keep the spec's benefit-framing
+   wording (e.g. "cleanup files", never "AI"/"LLM"; "grammar model" is
+   also to be avoided) — exact label to decide when building;
+   (b) deleting is currently a one-way door (engine ships only in the
+   installer, no in-app re-download) — either add a strong
+   reinstall-to-restore warning or first publish the ct2 conversion to
+   a HF repo so the tile gets a Download button like the speech tiles
+   (the update manifest's grammar entry wants that hf_repo anyway);
+   (c) on delete: grammar_engine.unload() + gc before rmtree (file
+   locks), cleaned_up silently degrades to rules-only (already the
+   graceful-absence contract).
+
+Remaining Phase 4 after the queue: explanatory failure toasts with
+distinct sounds (nothing heard / too short / no editable field),
+recovery-clipboard toast. Optional later: GitHub Pages download page,
+code signing (~$70-300/yr) to silence SmartScreen.
 Note: user changed the hotkey to Left Ctrl (ctrl_l) via the settings UI.
 
 The July 19 session had blanket user approval for kill-rebuild-relaunch
