@@ -111,27 +111,39 @@ class _SettingsWindow:
             return "light"
 
     def _apply_theme(self):
+        # clam in both modes: the native vista theme draws tabs itself and
+        # ignores color styling, and the active tab must stand out.
         style = ttk.Style(self.root)
+        style.theme_use("clam")
         if self._effective_theme() == "dark":
             bg, fg, field, raised = "#2b2b2b", "#e6e6e6", "#3c3c3c", "#454545"
-            style.theme_use("clam")
-            self.root.configure(bg=bg)
-            style.configure(".", background=bg, foreground=fg,
-                            fieldbackground=field, bordercolor="#555555",
-                            lightcolor=bg, darkcolor=bg)
-            style.configure("TNotebook.Tab", background=raised, foreground=fg,
-                            padding=(10, 4))
-            style.map("TNotebook.Tab", background=[("selected", "#5a5a5a")])
-            style.configure("TButton", background=raised)
-            style.map("TButton", background=[("active", "#5a5a5a")])
-            style.configure("Treeview", background=field, foreground=fg,
-                            fieldbackground=field)
-            style.configure("Treeview.Heading", background=raised, foreground=fg)
-            style.map("TCombobox", fieldbackground=[("readonly", field)],
-                      foreground=[("readonly", fg)])
+            border, hover = "#555555", "#5a5a5a"
         else:
-            style.theme_use("vista" if "vista" in style.theme_names() else "clam")
-            self.root.configure(bg=ttk.Style(self.root).lookup("TFrame", "background") or "SystemButtonFace")
+            bg, fg, field, raised = "#f0f0f0", "#1a1a1a", "#ffffff", "#dcdcdc"
+            border, hover = "#b0b0b0", "#cccccc"
+        accent, accent_fg = "#4682b4", "#ffffff"  # steel blue, matches the tray icon
+
+        self.root.configure(bg=bg)
+        style.configure(".", background=bg, foreground=fg,
+                        fieldbackground=field, bordercolor=border,
+                        lightcolor=bg, darkcolor=bg)
+        # The selected tab: accent color, white bold label, slightly taller.
+        style.configure("TNotebook.Tab", background=raised, foreground=fg,
+                        padding=(12, 5), font=("Segoe UI", 9))
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", accent), ("active", hover)],
+            foreground=[("selected", accent_fg)],
+            font=[("selected", ("Segoe UI", 9, "bold"))],
+            expand=[("selected", (1, 1, 1, 0))],
+        )
+        style.configure("TButton", background=raised)
+        style.map("TButton", background=[("active", hover)])
+        style.configure("Treeview", background=field, foreground=fg,
+                        fieldbackground=field)
+        style.configure("Treeview.Heading", background=raised, foreground=fg)
+        style.map("TCombobox", fieldbackground=[("readonly", field)],
+                  foreground=[("readonly", fg)])
 
     # ---------------- tabs ----------------
 
