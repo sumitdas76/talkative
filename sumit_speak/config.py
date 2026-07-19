@@ -134,6 +134,17 @@ SOUND_VOLUME = 0.2
 INPUT_DEVICE = None
 
 # ---------------------------------------------------------------------------
+# Updates (spec section 7)
+# ---------------------------------------------------------------------------
+# Public manifest describing the current model versions. Empty string
+# disables checking entirely. Fetched at most once a day at startup;
+# offline or malformed is silently ignored.
+MANIFEST_URL = ""  # e.g. https://raw.githubusercontent.com/<user>/sumit-speak-updates/main/manifest.json
+# The replaced model is kept for undo until this many words have been
+# dictated with the new one (usage-based grace, spec section 7.6).
+UPDATE_GRACE_WORDS = 1000
+
+# ---------------------------------------------------------------------------
 # Debugging
 # ---------------------------------------------------------------------------
 # Append every dictation's raw Whisper transcript and each pipeline stage's

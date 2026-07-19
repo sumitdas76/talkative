@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pynput import keyboard
 
-from . import config, grammar_engine, model_manager, settings
+from . import config, grammar_engine, model_manager, settings, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -75,6 +75,8 @@ class SumitSpeakApp:
         self._listener = None
         self._no_model = False  # active model was deleted; not merely still loading
         self._tones = {}  # freq -> WAV bytes; kept referenced for SND_ASYNC
+        self._jobs = 0  # dictations currently in the pipeline (updater idle check)
+        self._swapping = False  # model swap in progress (update install/undo)
         self.tray = TrayApp(on_quit=self.quit, on_settings=self.open_settings)
 
     def open_settings(self):
@@ -86,6 +88,7 @@ class SumitSpeakApp:
             reload=self.reload_model,
             unload=self.unload_model,
             has_model=lambda: self.transcriber is not None,
+            undo_update=lambda: updater.undo_last_update(self.updater_controller()),
         )
         open_settings(on_applied=self._apply_settings, model_controller=controller)
 
@@ -174,8 +177,51 @@ class SumitSpeakApp:
         gc.collect()
         self.tray.set_loading("no model — open Settings, then Models")
 
+    def updater_controller(self):
+        """The narrow surface updater.py drives a model swap through.
+        Synchronous on purpose: the updater thread owns the sequencing."""
+        import gc
+
+        from types import SimpleNamespace
+
+        def unload_speech():
+            self.transcriber = None
+            gc.collect()  # release the model.bin mapping so files can move
+
+        def reload_speech():
+            try:
+                self.transcriber = Transcriber(
+                    config.MODEL_SIZE, config.DEVICE, config.COMPUTE_TYPE,
+                    download_root=str(model_manager.models_dir()),
+                )
+            except Exception as exc:
+                show_error_popup(f"Failed to load speech model:\n{exc}")
+
+        def begin_swap():
+            self._swapping = True
+            self.tray.set_loading("updating...")
+
+        def end_swap(ok):
+            self._swapping = False
+            if self.transcriber is not None:
+                self.tray.set_idle()
+            if ok:
+                self.tray.notify("Update installed.")
+
+        return SimpleNamespace(
+            is_busy=lambda: self._recording or self._jobs > 0,
+            unload_speech=unload_speech,
+            reload_speech=reload_speech,
+            begin_swap=begin_swap,
+            end_swap=end_swap,
+        )
+
     def _on_press(self, key):
         if key != config.HOTKEY or self._recording:
+            return
+
+        if self._swapping:
+            self.tray.notify("Updating — ready in a moment.")
             return
 
         if self.transcriber is None:
@@ -219,6 +265,13 @@ class SumitSpeakApp:
         threading.Thread(target=self._process_audio, args=(audio,), daemon=True).start()
 
     def _process_audio(self, audio):
+        self._jobs += 1
+        try:
+            self._process_audio_inner(audio)
+        finally:
+            self._jobs -= 1
+
+    def _process_audio_inner(self, audio):
         prompt = " ".join(
             p for p in (config.PUNCTUATION_PROMPT, vocabulary_prompt()) if p
         ) or None
@@ -272,6 +325,7 @@ class SumitSpeakApp:
             return
 
         insert_text(text)
+        updater.note_words(len(text.split()))
         if config.INSERT_MODE == "clipboard":
             self.tray.notify("Copied to clipboard — press Ctrl+V to paste.")
 
@@ -281,6 +335,7 @@ class SumitSpeakApp:
         # Separate thread: the grammar engine must never delay dictation
         # readiness; until (unless) it loads, cleaned_up mode is rules-only.
         threading.Thread(target=grammar_engine.load, daemon=True).start()
+        updater.start_background_check(self.updater_controller())
         self._listener = keyboard.Listener(
             on_press=self._on_press, on_release=self._on_release
         )

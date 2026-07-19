@@ -193,7 +193,21 @@ model tiles, and the **grammar engine** (spec Phase 3 step 2):
 - settings.json is read utf-8-sig (a BOM once silently reset all
   settings).
 
-Remaining Phase 3, in order: updater + manifest (spec §7) → Inno Setup
+**Updater (spec §7) implemented and integration-tested** (July 19):
+`updater.py` — daily manifest check (MANIFEST_URL in config, default ""
+= disabled; `manifest_url` settings key overrides, file:// URLs work for
+testing), component-blind dialog, background download to
+<models>/staging, verify-then-swap with idle-wait and automatic revert,
+1000-word grace file, Undo button on the Models tab, permanent
+suppression of undone versions. State: %LOCALAPPDATA%\SumitSpeak\
+updater.json. Publisher format: docs/manifest-sample.json. The full
+download-swap-undo cycle passed an isolated integration test against a
+temp models root. **Not yet done: the actual public GitHub repo hosting
+manifest.json (needs user's account; MANIFEST_URL stays "" until then),
+and publishing the grammar ct2 conversion to HF so its entry becomes
+updatable.**
+
+Remaining Phase 3, in order: manifest repo publication → Inno Setup
 installer (§8) → GitHub repo/Releases → first-run flow. Before any
 distribution: DEBUG_LOG must default off (privacy, see below).
 Note: user changed the hotkey to Left Ctrl (ctrl_l) via the settings UI.

@@ -28,6 +28,7 @@ _KEYS = {
     "enable_repeat_collapse": "ENABLE_REPEAT_COLLAPSE",
     "enable_grammar_engine": "ENABLE_GRAMMAR_ENGINE",
     "grammar_model": "GRAMMAR_MODEL_DIR",
+    "manifest_url": "MANIFEST_URL",
     "insert_mode": "INSERT_MODE",
     "append_space": "APPEND_SPACE",
     "press_enter_after": "PRESS_ENTER_AFTER",

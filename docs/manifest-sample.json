@@ -1,0 +1,28 @@
+{
+  "_comment": "Sumit Speak update manifest (spec section 7). Publish this as manifest.json in a public GitHub repo and set MANIFEST_URL (config.py or the manifest_url settings key) to its raw URL. Publishing an update = bump a version string, adjust size_mb/note, commit in the browser. Rollback = revert the commit. Versions are compared as plain strings: any difference from what the user has installed offers the update. 'note' is the one user-visible line in the (component-blind) dialog - never name the model in it. The grammar entry needs hf_repo set to a HF repo holding the CTranslate2 int8 conversion before it becomes updatable.",
+  "manifest_version": 1,
+  "app": {
+    "version": "1.0",
+    "url": ""
+  },
+  "models": {
+    "speech-fast": {
+      "version": "1",
+      "size_mb": 464,
+      "note": "Improves recognition accuracy.",
+      "hf_repo": "Systran/faster-whisper-small.en"
+    },
+    "speech-accurate": {
+      "version": "1",
+      "size_mb": 1600,
+      "note": "Improves recognition accuracy.",
+      "hf_repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo"
+    },
+    "grammar": {
+      "version": "1",
+      "size_mb": 1500,
+      "note": "Improves cleanup quality.",
+      "hf_repo": ""
+    }
+  }
+}

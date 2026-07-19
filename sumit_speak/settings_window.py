@@ -14,7 +14,7 @@ from tkinter import messagebox, ttk
 
 from pynput import keyboard
 
-from . import __version__, config, model_manager, settings
+from . import __version__, config, model_manager, settings, updater
 
 APP_NAME = "Sumit Speak"
 
@@ -285,6 +285,12 @@ class _SettingsWindow:
             }
         self.storage_label = ttk.Label(f, foreground="grey", text="")
         self.storage_label.pack(anchor="w", pady=(4, 0))
+        self.update_label = ttk.Label(f, foreground="grey", text="")
+        self.update_label.pack(anchor="w")
+        self.undo_btn = ttk.Button(
+            f, text="Undo last update", command=self._undo_update
+        )
+        self._undoing = False
         self._poll_models()
 
     def _model_tile_state(self, tier, size):
@@ -351,7 +357,46 @@ class _SettingsWindow:
         self.storage_label.config(
             text=f"Storage used by models: {model_manager.storage_used_mb():.0f} MB"
         )
+        status = updater.get_status()
+        if status["downloading"]:
+            self.update_label.config(text="An update is downloading in the background…")
+        elif status["last_check"]:
+            self.update_label.config(text=f"Last checked for updates: {status['last_check']}")
+        else:
+            self.update_label.config(text="Updates are checked automatically at startup.")
+        grace = status["grace"]
+        if grace and not self._undoing:
+            self.undo_btn.config(
+                text=f"Undo last update (available for your next "
+                     f"{max(0, grace.get('words_left', 0))} words)",
+                state="normal",
+            )
+            self.undo_btn.pack(anchor="w", pady=(6, 0))
+        elif self._undoing:
+            self.undo_btn.config(text="Undoing…", state="disabled")
+        else:
+            self.undo_btn.pack_forget()
         self.root.after(300, self._poll_models)
+
+    def _undo_update(self):
+        if self._undoing or self.model_controller is None:
+            return
+        if not messagebox.askyesno(
+            APP_NAME,
+            "Go back to the previous version? This update will not be "
+            "offered again.",
+            parent=self.root,
+        ):
+            return
+        self._undoing = True
+
+        def work():
+            try:
+                self.model_controller.undo_update()
+            finally:
+                self._undoing = False
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _model_download(self, tier, info):
         self._model_ops[tier] = "download"
