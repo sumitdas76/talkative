@@ -26,6 +26,7 @@ _KEYS = {
     "self_correction_triggers": "SELF_CORRECTION_TRIGGERS",
     "enable_self_correction": "ENABLE_SELF_CORRECTION",
     "enable_repeat_collapse": "ENABLE_REPEAT_COLLAPSE",
+    "enable_grammar_engine": "ENABLE_GRAMMAR_ENGINE",
     "insert_mode": "INSERT_MODE",
     "append_space": "APPEND_SPACE",
     "press_enter_after": "PRESS_ENTER_AFTER",

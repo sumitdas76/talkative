@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pynput import keyboard
 
-from . import config, model_manager, settings
+from . import config, grammar_engine, model_manager, settings
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -241,9 +241,11 @@ class SumitSpeakApp:
             after_corrections = text
             text = collapse_repeats(text)
             after_collapse = text
+            text = grammar_engine.apply(text)
+            after_grammar = text
             text = finish_sentence(text)
         else:
-            after_fillers = after_corrections = after_collapse = text
+            after_fillers = after_corrections = after_collapse = after_grammar = text
 
         text = apply_dictionary(text)
         _debug_log(
@@ -251,6 +253,7 @@ class SumitSpeakApp:
             fillers=after_fillers,
             corrections=after_corrections,
             collapse=after_collapse,
+            grammar=after_grammar,
             final=text,
         )
 
@@ -268,6 +271,9 @@ class SumitSpeakApp:
     def run(self):
         sync_autostart()
         self._load_model_async()
+        # Separate thread: the grammar engine must never delay dictation
+        # readiness; until (unless) it loads, cleaned_up mode is rules-only.
+        threading.Thread(target=grammar_engine.load, daemon=True).start()
         self._listener = keyboard.Listener(
             on_press=self._on_press, on_release=self._on_release
         )

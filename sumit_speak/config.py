@@ -69,6 +69,15 @@ CLEANUP_MODE = "cleaned_up"
 # "you know" are deliberately excluded -- too often real dictated content.
 FILLER_WORDS = ["um", "uh", "uhm", "erm"]
 
+# Grammar engine (invisible stage 2 of cleaned_up mode; see
+# grammar_engine.py). Off means rules-only even when the model is
+# installed. Missing model silently degrades to rules-only regardless.
+ENABLE_GRAMMAR_ENGINE = True
+# Guard: reject engine output that retains less than this fraction of the
+# input's words (words removed as retractions/repeats count as lost, so
+# don't set this above ~0.7 or legitimate cleanups get rejected).
+GRAMMAR_MIN_RETENTION = 0.7
+
 # Near-repeat collapsing: when two consecutive sentences in one dictation are
 # nearly identical, keep only the second (the speaker restated themselves).
 # Deliberately conservative -- both sentences must share their opening word
