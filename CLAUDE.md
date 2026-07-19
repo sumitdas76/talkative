@@ -226,14 +226,17 @@ URL and the live fetch was verified (no update offered at baseline).
 gh CLI installed and authed as sumitdas76. Publishing an update = edit
 manifest.json in the browser, bump a version string, commit.
 
-**v1.0.0 released** (July 19): public product page
+**v1.0.1 released** (July 19): public product page
 https://github.com/sumitdas76/sumit-speak (README only — the source
 repo still has no remote; publishing code is the user's call) with
-SumitSpeakSetup.exe (1.57 GB) attached to the v1.0.0 release.
+SumitSpeakSetup.exe (1.57 GB) on the v1.0.1 release. Includes Phase 4's
+listening pill (pill.py — no-activate floating level indicator) and
+first-run try-it-now box (try_it_now.py, first_run_done settings key).
 
-Remaining: first-run flow polish, then Phase 4 (listening pill, failure
-toasts, try-it-now box). Optional later: GitHub Pages download page,
-code signing (~$70-300/yr) to silence SmartScreen.
+Remaining Phase 4: explanatory failure toasts with distinct sounds
+(nothing heard / too short / no editable field), recovery-clipboard
+toast. Optional later: GitHub Pages download page, code signing
+(~$70-300/yr) to silence SmartScreen.
 Note: user changed the hotkey to Left Ctrl (ctrl_l) via the settings UI.
 
 The July 19 session had blanket user approval for kill-rebuild-relaunch
