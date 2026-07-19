@@ -171,9 +171,31 @@ and deployed to both EXE copies. Phase 3 wiring done this session:
   into snapshots on Windows, so ~2× model size on disk), model loads from
   the app folder, window builds/polls cleanly, EXE launch smoke test OK.
 
-Still untested live (needs the user at the keyboard): switching models from
-the UI, the delete flows, and the Accurate download (~1.6 GB — get user
-consent before triggering it).
+Later that session: soft volume-controlled tones (config.SOUND_VOLUME),
+punctuation initial_prompt + cleanup.finish_sentence, latency notes on the
+model tiles, and the **grammar engine** (spec Phase 3 step 2):
+
+- `grammar_engine.py` — CTranslate2 Generator + tokenizers (no new deps),
+  few-shot leash prompt, deterministic guards (digit runs verbatim, ≥70%
+  word retention, length bounds) that fall back to rules-only on any
+  violation. Invisible in UI. Loads in background at startup.
+- Two auditioned candidates installed under %LOCALAPPDATA%\SumitSpeak\
+  models: `grammar-15` (Qwen2.5-1.5B int8, most faithful, +2-6s) and
+  `grammar-05` (Qwen2.5-0.5B, +0.5-3s, weaker). Qwen3-0.6B was
+  disqualified (mangled numbers). Active one = `grammar_model` key in
+  settings.json + app restart. **User is A/B testing latency vs accuracy
+  — the decision (and removal of the loser) is the next resume point.**
+  debug.log now logs per-dictation transcribe/grammar seconds for this.
+- Conversion recipe (dev-only): scratchpad venv with torch-cpu +
+  transformers + ctranslate2, `ct2-transformers-converter --model
+  Qwen/... --quantization int8 --copy_files tokenizer.json
+  tokenizer_config.json`.
+- settings.json is read utf-8-sig (a BOM once silently reset all
+  settings).
+
+Remaining Phase 3 after the engine decision: updater + manifest (spec §7)
+→ Inno Setup installer (§8) → GitHub repo/Releases → first-run flow.
+Note: user changed the hotkey to Left Ctrl (ctrl_l) via the settings UI.
 
 The July 19 session had blanket user approval for kill-rebuild-relaunch
 cycles; re-confirm in a new session before stopping a running instance.
