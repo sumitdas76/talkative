@@ -29,8 +29,15 @@ python -m venv .venv
 .\.venv\Scripts\pythonw.exe main.py
 
 # Rebuild the standalone EXE after any source change
-.\.venv\Scripts\pyinstaller --noconfirm --onefile --windowed --name SumitSpeak --collect-all ctranslate2 --collect-all faster_whisper --collect-all av --collect-all tokenizers --collect-all uiautomation --hidden-import win32timezone main.py
+.\.venv\Scripts\python -m PyInstaller --noconfirm --onefile --windowed --name SumitSpeak --collect-all ctranslate2 --collect-all faster_whisper --collect-all av --collect-all tokenizers --collect-all uiautomation --hidden-import win32timezone main.py
 ```
+
+Use `python -m PyInstaller`, NOT the `.\.venv\Scripts\pyinstaller` exe shim:
+the shim is broken in this venv — it exits 1 instantly with **no output at
+all**, which looks like a successful quiet run if the exit code is masked
+(e.g. by piping to `tail`). This once led to deploying a stale day-old EXE.
+After every build, verify `dist\SumitSpeak.exe` has a fresh LastWriteTime
+before copying it anywhere.
 
 There is no linter or CI. A sanity-test script for the pure text-pipeline
 functions (cleanup, dictionary, self-correction) lives in the session
