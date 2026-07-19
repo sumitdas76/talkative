@@ -222,6 +222,7 @@ class SumitSpeakApp:
         prompt = " ".join(
             p for p in (config.PUNCTUATION_PROMPT, vocabulary_prompt()) if p
         ) or None
+        t0 = time.time()
         try:
             text = self.transcriber.transcribe(
                 audio, config.SAMPLE_RATE, initial_prompt=prompt
@@ -229,6 +230,7 @@ class SumitSpeakApp:
         except Exception as exc:
             show_error_popup(f"Transcription failed:\n{exc}")
             return
+        transcribe_secs = time.time() - t0
 
         raw = text
         # Fillers first: "sorry, um, I mean" must become "sorry I mean"
@@ -241,11 +243,14 @@ class SumitSpeakApp:
             after_corrections = text
             text = collapse_repeats(text)
             after_collapse = text
+            t0 = time.time()
             text = grammar_engine.apply(text)
+            grammar_secs = time.time() - t0
             after_grammar = text
             text = finish_sentence(text)
         else:
             after_fillers = after_corrections = after_collapse = after_grammar = text
+            grammar_secs = 0.0
 
         text = apply_dictionary(text)
         _debug_log(
@@ -255,6 +260,8 @@ class SumitSpeakApp:
             collapse=after_collapse,
             grammar=after_grammar,
             final=text,
+            timing=f"transcribe {transcribe_secs:.1f}s, grammar {grammar_secs:.1f}s"
+            + (f" [{config.GRAMMAR_MODEL_DIR}]" if grammar_secs else ""),
         )
 
         if not text:

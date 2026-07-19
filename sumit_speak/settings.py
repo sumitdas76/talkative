@@ -27,6 +27,7 @@ _KEYS = {
     "enable_self_correction": "ENABLE_SELF_CORRECTION",
     "enable_repeat_collapse": "ENABLE_REPEAT_COLLAPSE",
     "enable_grammar_engine": "ENABLE_GRAMMAR_ENGINE",
+    "grammar_model": "GRAMMAR_MODEL_DIR",
     "insert_mode": "INSERT_MODE",
     "append_space": "APPEND_SPACE",
     "press_enter_after": "PRESS_ENTER_AFTER",
@@ -65,7 +66,8 @@ def load_into_config(path=None):
     raw dict that was applied (empty if none)."""
     path = settings_path() if path is None else Path(path)
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig: tolerate a BOM from Notepad or PowerShell hand-edits.
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
     if not isinstance(data, dict):
@@ -105,7 +107,7 @@ def save(values, path=None):
     needed). Unknown keys are ignored."""
     path = settings_path() if path is None else Path(path)
     try:
-        current = json.loads(path.read_text(encoding="utf-8"))
+        current = json.loads(path.read_text(encoding="utf-8-sig"))
         if not isinstance(current, dict):
             current = {}
     except Exception:

@@ -57,7 +57,7 @@ _tokenizer = None
 
 
 def engine_dir():
-    return model_manager.models_dir() / "grammar"
+    return model_manager.models_dir() / config.GRAMMAR_MODEL_DIR
 
 
 def is_installed():

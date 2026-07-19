@@ -73,6 +73,11 @@ FILLER_WORDS = ["um", "uh", "uhm", "erm"]
 # grammar_engine.py). Off means rules-only even when the model is
 # installed. Missing model silently degrades to rules-only regardless.
 ENABLE_GRAMMAR_ENGINE = True
+# Folder name under the app models dir holding the engine model. Normally
+# "grammar"; the July 2026 A/B audition installs two candidates side by
+# side ("grammar-15" = Qwen2.5-1.5B, "grammar-05" = Qwen2.5-0.5B) switched
+# via the grammar_model settings key + app restart.
+GRAMMAR_MODEL_DIR = "grammar"
 # Guard: reject engine output that retains less than this fraction of the
 # input's words (words removed as retractions/repeats count as lost, so
 # don't set this above ~0.7 or legitimate cleanups get rejected).
