@@ -226,10 +226,14 @@ URL and the live fetch was verified (no update offered at baseline).
 gh CLI installed and authed as sumitdas76. Publishing an update = edit
 manifest.json in the browser, bump a version string, commit.
 
-Remaining: GitHub Releases upload of the installer + download page →
-first-run flow. Then Phase 4 polish (listening pill, failure toasts,
-try-it-now). The source repo itself has no remote — pushing it public
-is the user's call, not required by the update system.
+**v1.0.0 released** (July 19): public product page
+https://github.com/sumitdas76/sumit-speak (README only — the source
+repo still has no remote; publishing code is the user's call) with
+SumitSpeakSetup.exe (1.57 GB) attached to the v1.0.0 release.
+
+Remaining: first-run flow polish, then Phase 4 (listening pill, failure
+toasts, try-it-now box). Optional later: GitHub Pages download page,
+code signing (~$70-300/yr) to silence SmartScreen.
 Note: user changed the hotkey to Left Ctrl (ctrl_l) via the settings UI.
 
 The July 19 session had blanket user approval for kill-rebuild-relaunch
