@@ -510,6 +510,38 @@ custom-glyph treatment, expect the identical trap and reuse this pattern
 (unique element name + layout override + module-level create-once guard),
 not the naive same-name override.
 
+## Resume point (end of session, 2026-07-21 ~01:15)
+
+**Published:** v1.1.0 is live on GitHub (source pushed and merged with
+the product-page repo's history, `CHANGELOG.md` added, installer rebuilt
+and published as the new "latest" release). Full detail in the sections
+above; see `CHANGELOG.md` for the user-facing summary of this whole
+session.
+
+**Tray icon:** now shows the mic glyph inside the squircle badge (was a
+plain color block before this fix -- `tray._make_icon_image` draws it at
+4x and downsamples, same technique as everywhere else). Confirmed correct
+by extracting the actual pixels and viewing them, not just by reasoning
+about the code.
+
+**Not yet resolved -- start here next session:** the taskbar icon still
+shows a stale icon (reported as looking like a floppy disk) even though
+the EXE's own embedded icon resource is confirmed correct (extracted and
+viewed directly via `System.Drawing.Icon]::ExtractAssociatedIcon`). This
+points to Windows' icon cache holding onto an old icon for this EXE path
+across the many rebuilds tonight, not a bug in the build. Standard fix:
+clear the icon cache and restart `explorer.exe` -- flagged to the user as
+a real system-wide action (briefly closes/reopens all Explorer windows,
+not just this app) and awaiting their go-ahead before doing it. If a
+pinned taskbar shortcut exists, it may need unpinning/re-pinning too
+(pinned shortcuts can carry their own separately-cached icon reference
+independent of the target EXE).
+
+**Also still open (from the grammar-engine section above):** finding an
+actually faster/different grammar model remains unstarted -- needs its
+own dedicated evaluation pass (download candidates, convert to
+CTranslate2, test against real debug.log transcripts), not a quick swap.
+
 ## Packaging notes
 
 `--collect-all` flags in the pyinstaller command are load-bearing:
