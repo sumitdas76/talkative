@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pynput import keyboard
 
-from . import config, grammar_engine, model_manager, pill, settings, try_it_now, updater
+from . import config, error_toast, feedback, grammar_engine, model_manager, pill, settings, speech, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -14,41 +14,27 @@ from .dictionary import apply_dictionary, vocabulary_prompt
 from .focus_check import is_focus_editable
 from .keynames import friendly as friendly_key
 from .self_correction import apply_self_corrections
+from .spoken_symbols import apply_spoken_symbols
 from .text_inserter import insert_text
 from .transcriber import Transcriber
 from .tray import TrayApp, show_error_popup
 
 
-def no_target_message():
-    return (
-        "No editable text field is focused.\n\n"
-        "Click into a text box, document, or address bar first, then hold "
-        f"{friendly_key(config.HOTKEY)} to dictate."
-    )
+_TONE_RATE = 16000
 
 
-def _tone_wav(freq, seconds, volume, rate=16000):
-    """A soft mono sine tone as in-memory WAV bytes, with a 5ms fade in/out
-    so it doesn't click."""
-    import io
-    import math
-    import struct
-    import wave
+def _tone_samples(freq, seconds, volume, rate=_TONE_RATE):
+    """A soft mono sine tone as float32 samples in [-1, 1], with a 5ms fade
+    in/out so it doesn't click. Played via sounddevice (not winsound, which
+    always uses the system default output regardless of OUTPUT_DEVICE)."""
+    import numpy as np
 
     n = int(rate * seconds)
     fade = max(1, int(rate * 0.005))
-    amp = 32767 * max(0.0, min(1.0, volume))
-    frames = bytearray()
-    for i in range(n):
-        env = min(1.0, i / fade, (n - i) / fade)
-        frames += struct.pack("<h", int(amp * env * math.sin(2 * math.pi * freq * i / rate)))
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(rate)
-        w.writeframes(bytes(frames))
-    return buf.getvalue()
+    t = np.arange(n)
+    env = np.minimum(1.0, np.minimum(t / fade, (n - t) / fade))
+    amp = max(0.0, min(1.0, volume))
+    return (amp * env * np.sin(2 * np.pi * freq * t / rate)).astype("float32")
 
 
 def _debug_log(**stages):
@@ -77,9 +63,10 @@ class SumitSpeakApp:
         self._running = True
         self._listener = None
         self._no_model = False  # active model was deleted; not merely still loading
-        self._tones = {}  # freq -> WAV bytes; kept referenced for SND_ASYNC
+        self._tones = {}  # (freq, seconds) -> generated sample array, cached
         self._jobs = 0  # dictations currently in the pipeline (updater idle check)
         self._swapping = False  # model swap in progress (update install/undo)
+        self._hotkey_pressed = set()  # currently-held keys that are part of config.HOTKEY
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
             hotkey_label=friendly_key(config.HOTKEY),
@@ -101,6 +88,7 @@ class SumitSpeakApp:
     def _apply_settings(self):
         sync_autostart()
         self.recorder.device = config.INPUT_DEVICE
+        self._hotkey_pressed.clear()
         self.tray.set_hotkey_label(friendly_key(config.HOTKEY))
         if self.transcriber is not None and not self._recording:
             self.tray.set_idle()  # refresh the tooltip with the new hotkey
@@ -121,20 +109,35 @@ class SumitSpeakApp:
 
         def _play():
             try:
-                import winsound
+                import sounddevice as sd
 
                 for freq, seconds in self._SOUNDS[kind]:
-                    # Cached: building the WAV isn't free.
+                    # Cached: building the samples isn't free.
                     tone = self._tones.get((freq, seconds))
                     if tone is None:
-                        tone = _tone_wav(freq, seconds, config.SOUND_VOLUME)
+                        tone = _tone_samples(freq, seconds, config.SOUND_VOLUME)
                         self._tones[(freq, seconds)] = tone
-                    # Synchronous playback so multi-note sequences chain.
-                    winsound.PlaySound(tone, winsound.SND_MEMORY)
+                    # Blocking playback so multi-note sequences chain.
+                    sd.play(tone, samplerate=_TONE_RATE,
+                            device=config.OUTPUT_DEVICE, blocking=True)
             except Exception:
                 pass
 
         threading.Thread(target=_play, daemon=True).start()
+
+    def _no_target_cue(self):
+        """Nothing editable is focused. A spoken cue + an on-screen error
+        instead of a blocking popup -- the user's hands are mid-dictation,
+        not reaching for a mouse to dismiss a dialog. The on-screen part is
+        a floating, always-on-top box (error_toast) rather than a Windows
+        tray balloon, which can be silently suppressed or routed straight
+        to Action Center."""
+        speech.speak(
+            "No text box is selected. Click where you want your words to "
+            "go, then try again.",
+            volume=config.SOUND_VOLUME,
+        )
+        error_toast.show("Error! Select a text field before typing.")
 
     def _load_model_async(self):
         def _load():
@@ -238,7 +241,10 @@ class SumitSpeakApp:
         )
 
     def _on_press(self, key):
-        if key != config.HOTKEY or self._recording:
+        if key not in config.HOTKEY:
+            return
+        self._hotkey_pressed.add(key)
+        if self._recording or self._hotkey_pressed != set(config.HOTKEY):
             return
 
         if self._swapping:
@@ -256,7 +262,7 @@ class SumitSpeakApp:
             return
 
         if not is_focus_editable():
-            show_error_popup(no_target_message())
+            self._no_target_cue()
             return
 
         try:
@@ -272,7 +278,10 @@ class SumitSpeakApp:
         self._beep("start")
 
     def _on_release(self, key):
-        if key != config.HOTKEY or not self._recording:
+        if key not in config.HOTKEY:
+            return
+        self._hotkey_pressed.discard(key)
+        if not self._recording:
             return
 
         self._recording = False
@@ -309,6 +318,13 @@ class SumitSpeakApp:
         transcribe_secs = time.time() - t0
 
         raw = text
+        # Symbol words ("underscore", "dot") first, before anything else
+        # sees the text -- this fixes literal-word transcription
+        # ("settings dot py") into the intended identifier
+        # ("settings.py"), and doing it early means the grammar engine's
+        # word-retention guard checks against the already-fused text
+        # instead of expecting "dot" to survive verbatim.
+        text = apply_spoken_symbols(text)
         # Fillers first: "sorry, um, I mean" must become "sorry I mean"
         # before the correction triggers run.
         if config.CLEANUP_MODE == "cleaned_up":
@@ -344,7 +360,7 @@ class SumitSpeakApp:
             return
 
         if not is_focus_editable():
-            show_error_popup(no_target_message())
+            self._no_target_cue()
             return
 
         insert_text(text)
@@ -360,6 +376,12 @@ class SumitSpeakApp:
         # readiness; until (unless) it loads, cleaned_up mode is rules-only.
         threading.Thread(target=grammar_engine.load, daemon=True).start()
         updater.start_background_check(self.updater_controller())
+        feedback.start_background_check(
+            on_reply=lambda text: self.tray.notify(
+                text if len(text) <= 200 else text[:197] + "…",
+                title="Sumit replied",
+            )
+        )
         self._listener = keyboard.Listener(
             on_press=self._on_press, on_release=self._on_release
         )

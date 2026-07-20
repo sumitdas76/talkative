@@ -37,13 +37,14 @@ import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
 
-from . import config, model_manager
+from . import app_icon, config, model_manager, overlay_thread
 
 # Manifest key -> what it is locally. "speech" entries update the
 # faster-whisper repo dirs; "grammar" updates the invisible engine.
+# speech-accurate removed 2026-07-20 along with the Accurate model tier
+# itself (see model_manager.py) -- no longer offered, so no longer checked.
 MANAGED = {
     "speech-fast": {"kind": "speech", "size": "small.en"},
-    "speech-accurate": {"kind": "speech", "size": "large-v3-turbo"},
     "grammar": {"kind": "grammar"},
 }
 
@@ -356,16 +357,23 @@ def undo_last_update(controller):
 # ---------------------------------------------------------------------------
 
 def _show_dialog(entry, on_download, on_cancel):
-    """Component-blind update prompt. Own thread + Tk instance; no grab, no
-    focus stealing."""
+    """Component-blind update prompt. Built as a tk.Toplevel on the shared
+    overlay thread (see overlay_thread.py -- multiple independent tk.Tk()
+    roots across threads caused real crashes), not its own Tk instance;
+    no grab, no focus stealing."""
+    overlay = overlay_thread.get()
+    overlay._ready.wait(timeout=3)
+    if overlay._failed:
+        return
 
-    def run():
+    def build():
         try:
             import tkinter as tk
             from tkinter import ttk
 
-            root = tk.Tk()
+            root = tk.Toplevel(overlay.root)
             root.title("Sumit Speak")
+            app_icon.set_window_icon(root)
             root.resizable(False, False)
             size = entry.get("size_mb")
             note = str(entry.get("note", "")).strip()
@@ -379,23 +387,20 @@ def _show_dialog(entry, on_download, on_cancel):
             ttk.Label(root, text=text, wraplength=360, padding=16).pack()
             row = ttk.Frame(root, padding=(16, 0, 16, 14))
             row.pack(fill="x")
-            done = {"choice": None}
 
             def choose(c):
-                done["choice"] = c
                 root.destroy()
+                (on_download if c == "download" else on_cancel)()
 
             ttk.Button(row, text="Download",
                        command=lambda: choose("download")).pack(side="right")
             ttk.Button(row, text="Not now",
                        command=lambda: choose("cancel")).pack(side="right", padx=8)
             root.protocol("WM_DELETE_WINDOW", lambda: choose("cancel"))
-            root.mainloop()
-            (on_download if done["choice"] == "download" else on_cancel)()
         except Exception:
             pass
 
-    threading.Thread(target=run, daemon=True).start()
+    overlay.build(build)
 
 
 def start_background_check(controller):

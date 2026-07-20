@@ -18,11 +18,57 @@ def show_error_popup(message, title="Sumit Speak"):
     threading.Thread(target=_show, daemon=True).start()
 
 
+def _round_line(d, p0, p1, fill, width):
+    d.line([p0, p1], fill=fill, width=width)
+    r = width / 2
+    for x, y in (p0, p1):
+        d.ellipse((x - r, y - r, x + r, y + r), fill=fill)
+
+
 def _make_icon_image(color):
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    # Squircle badge (rounded square) matching the app icon's silhouette,
+    # with the same mic glyph inside it (redrawn here, not loaded from
+    # assets/generate_icon.py's output -- keeps the tray code-drawn, no
+    # --add-data). State is conveyed by the badge's fill color
+    # (grey/blue/red); the mic glyph is always white. Drawn at 4x and
+    # downsampled for crisp anti-aliased edges at the tiny tray size.
+    scale = 4
+    size = 64 * scale
+    margin = 6 * scale
+    cx = cy = size / 2
+
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.ellipse((8, 8, 56, 56), fill=color)
-    return img
+    d.rounded_rectangle(
+        (margin, margin, size - margin, size - margin),
+        radius=15 * scale, fill=color,
+    )
+
+    white = (255, 255, 255, 255)
+    badge = size - 2 * margin
+    glyph_h = badge * 0.80
+    glyph_top = cy - glyph_h / 2
+
+    head_w = glyph_h * 0.398
+    head_h = glyph_h * 0.627
+    d.rounded_rectangle(
+        (cx - head_w / 2, glyph_top, cx + head_w / 2, glyph_top + head_h),
+        radius=head_w / 2, fill=white,
+    )
+    arc_cy = glyph_top + glyph_h * 0.524
+    arc_r = glyph_h * 0.325
+    stroke = max(2, round(glyph_h * 0.075))
+    d.arc(
+        (cx - arc_r, arc_cy - arc_r, cx + arc_r, arc_cy + arc_r),
+        start=25, end=155, fill=white, width=stroke,
+    )
+    stand_top = glyph_top + glyph_h * 0.831
+    stand_bottom = glyph_top + glyph_h
+    _round_line(d, (cx, stand_top), (cx, stand_bottom), white, stroke)
+    base_half = glyph_h * 0.199
+    _round_line(d, (cx - base_half, stand_bottom), (cx + base_half, stand_bottom), white, stroke)
+
+    return img.resize((64, 64), Image.LANCZOS)
 
 
 class TrayApp:

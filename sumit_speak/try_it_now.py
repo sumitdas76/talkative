@@ -7,13 +7,15 @@ anything. Their first dictation lands here -- a controlled place where
 success is visible -- instead of in some arbitrary app where a
 non-editable field would greet them with an error popup.
 
-Own thread + Tk instance, same pattern as the settings window. Closing it
-(or clicking "Got it") records first_run_done so it never appears again.
+Built as a tk.Toplevel on the shared overlay thread (see overlay_thread.py
+-- multiple independent tk.Tk() roots across threads caused real
+crashes), not its own Tk instance. Closing it (or clicking "Got it")
+records first_run_done so it never appears again.
 """
 
 import threading
 
-from . import config, settings
+from . import app_icon, config, overlay_thread, settings
 from .keynames import friendly
 
 _opened = False
@@ -29,16 +31,31 @@ def maybe_show():
         if _opened:
             return
         _opened = True
-    threading.Thread(target=_run, daemon=True).start()
+
+    overlay = overlay_thread.get()
+    overlay._ready.wait(timeout=3)
+    if overlay._failed:
+        _mark_done()
+        return
+    overlay.build(lambda: _build(overlay))
 
 
-def _run():
+def _mark_done():
+    try:
+        config.FIRST_RUN_DONE = True
+        settings.save({"first_run_done": True})
+    except Exception:
+        pass
+
+
+def _build(overlay):
     try:
         import tkinter as tk
         from tkinter import ttk
 
-        root = tk.Tk()
+        root = tk.Toplevel(overlay.root)
         root.title("Sumit Speak")
+        app_icon.set_window_icon(root)
         root.geometry("460x300")
         root.resizable(False, False)
         root.attributes("-topmost", True)
@@ -63,14 +80,12 @@ def _run():
             bar, foreground="grey",
             text="This works in any app — documents, chats, browsers.",
         ).pack(side="left")
-        ttk.Button(bar, text="Got it", command=root.destroy).pack(side="right")
-        root.protocol("WM_DELETE_WINDOW", root.destroy)
-        root.mainloop()
+
+        def close():
+            root.destroy()
+            _mark_done()
+
+        ttk.Button(bar, text="Got it", command=close).pack(side="right")
+        root.protocol("WM_DELETE_WINDOW", close)
     except Exception:
-        pass
-    finally:
-        try:
-            config.FIRST_RUN_DONE = True
-            settings.save({"first_run_done": True})
-        except Exception:
-            pass
+        _mark_done()

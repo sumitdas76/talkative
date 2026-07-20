@@ -29,8 +29,17 @@ python -m venv .venv
 .\.venv\Scripts\pythonw.exe main.py
 
 # Rebuild the standalone EXE after any source change
-.\.venv\Scripts\python -m PyInstaller --noconfirm --onefile --windowed --name SumitSpeak --collect-all ctranslate2 --collect-all faster_whisper --collect-all av --collect-all tokenizers --collect-all uiautomation --hidden-import win32timezone main.py
+.\.venv\Scripts\python -m PyInstaller --noconfirm --onefile --windowed --name SumitSpeak --icon assets\icon.ico --collect-all ctranslate2 --collect-all faster_whisper --collect-all av --collect-all tokenizers --collect-all uiautomation --hidden-import win32timezone main.py
 ```
+
+`--icon assets\icon.ico` sets the EXE's own icon resource (Explorer, taskbar
+pin, Alt-Tab when no window is open). It does NOT change the icon Tk windows
+show while open -- Tk defaults to its own "feather" icon regardless of the
+EXE resource. That's handled separately in code via
+`sumit_speak/app_icon.py`'s `set_window_icon()`, called by each window that
+creates its own `tk.Tk()` root (settings, try-it-now, the updater dialog).
+Regenerate both `assets/icon.ico` and `sumit_speak/app_icon.py` together by
+re-running `assets/generate_icon.py` -- never hand-edit either output.
 
 Use `python -m PyInstaller`, NOT the `.\.venv\Scripts\pyinstaller` exe shim:
 the shim is broken in this venv — it exits 1 instantly with **no output at
@@ -233,107 +242,108 @@ SumitSpeakSetup.exe (1.57 GB) on the v1.0.1 release. Includes Phase 4's
 listening pill (pill.py — no-activate floating level indicator) and
 first-run try-it-now box (try_it_now.py, first_run_done settings key).
 
-**Next session — user's change-request queue (start here, in order):**
+**Change-request queue items 1-8 implemented July 20, 2026** (source-level;
+NOT yet built into the EXE or manually smoke-tested — see "Next session"
+below). Built in dependency order (each item's UI additions finished
+before the theme audit that has to cover them):
 
-1. **Models tab redesign:** Fast and Accurate tiles side by side
-   (currently stacked), and below them a new section for the grammar
-   engine with a Delete button. Rationale (user's): every speech model
-   is deletable but the grammar engine's 1.5 GB is not reclaimable.
-   Design notes agreed July 19: (a) this relaxes spec §5's
-   "engine invisible in UI" decision — keep the spec's benefit-framing
-   wording (e.g. "cleanup files", never "AI"/"LLM"; "grammar model" is
-   also to be avoided) — exact label to decide when building;
-   (b) deleting is currently a one-way door (engine ships only in the
-   installer, no in-app re-download) — either add a strong
-   reinstall-to-restore warning or first publish the ct2 conversion to
-   a HF repo so the tile gets a Download button like the speech tiles
-   (the update manifest's grammar entry wants that hf_repo anyway);
-   (c) on delete: grammar_engine.unload() + gc before rmtree (file
-   locks), cleaned_up silently degrades to rules-only (already the
-   graceful-absence contract).
+- **Models tab redesign (was #1):** Fast/Accurate tiles now side by side
+  (`ttk.Frame` with two equal-weight grid columns) with an "Optimize
+  Narration" section below for the grammar engine (benefit-framed
+  label, no "AI"/"LLM"/"grammar model"/"engine" wording, per the
+  spec's benefit-framing rule; renamed from "Writing cleanup" on
+  2026-07-20 at the user's request — "Grammar Engine" was considered
+  and rejected for breaking that same rule) with a Delete button.
+  `grammar_engine.delete()` added: unload() + gc.collect() before
+  rmtree (Windows file-lock timing). Deleting is still a one-way door
+  in-app (no HF repo published yet) — went with the "strong warning"
+  option from the two agreed on July 19: the confirm dialog says
+  reinstalling Sumit Speak is the only way back.
+- **In-use tile visual state (was #2):** accent-bordered `ttk.LabelFrame`
+  style (`InUse.TLabelframe` / `.Label`) plus a filled "✓ In use" badge
+  (a plain `tk.Label`, not ttk) replaces the old "In use ✓" text.
+- **New app icon (was #3):** `assets/generate_icon.py` draws a mic glyph
+  on a steel-blue squircle (reuses the existing `#4682b4` brand blue, no
+  new palette) and emits `assets/icon.ico` (multi-res, for
+  `--icon`/`SetupIconFile`) plus `sumit_speak/app_icon.py` (a base64 PNG
+  + `set_window_icon()`, since Tk windows show their own default
+  "feather" icon regardless of the EXE's resource icon — wired into
+  settings/try-it-now/updater-dialog). Tray circles restyled from plain
+  ellipses to squircles to match. Re-run the generator script (never
+  hand-edit its two outputs) if the design changes.
+- **Feedback channel (was #4):** `feedback.py` — sends via FormSubmit.co
+  (`https://formsubmit.co/ajax/sumitdas76@gmail.com`, chosen over
+  Web3Forms/Formspree because it needs no signup), tagged with a random
+  persisted `install_id` (settings key, added by this session's testing
+  — already in the real settings.json). Replies are polled once a day
+  from `FEEDBACK_REPLIES_URL` (a `replies.json` file in the
+  sumit-speak-updates repo, same pattern as the update manifest) and
+  shown both as a tray toast and persistently in the About tab. **Two
+  loose ends:** (a) `replies.json` doesn't exist in the repo yet —
+  polling silently finds nothing until Sumit creates it (e.g.
+  `{"replies": {"<install_id>": {"reply_id": "1", "text": "..."}}}`);
+  (b) FormSubmit requires a one-time confirmation click in Gmail on the
+  very first real Send before it starts forwarding — hasn't happened
+  yet, no live Send has been fired.
+- **Spoken no-focus cue (was #5):** `speech.py` — SAPI renders into an
+  `SpMemoryStream` (16kHz/16-bit/mono) instead of playing directly, so
+  the PCM can go through sounddevice and honor `OUTPUT_DEVICE` like the
+  tones do; prefers the "Zira" voice (confirmed present on this
+  machine), falls back to the default. Replaces the old blocking
+  `show_error_popup`/`no_target_message` at both focus-check sites with
+  a toast + spoken cue (`app.py`'s `_no_target_cue`), volume scaled from
+  `SOUND_VOLUME`.
+- **Audio output-device dropdown (was #6):** new `OUTPUT_DEVICE` config
+  + `output_device` settings key, second combobox on the Audio tab
+  (mirrors the mic one, filtered on `max_output_channels`). Tones moved
+  from `winsound` to `sounddevice.play(..., device=OUTPUT_DEVICE,
+  blocking=True)` (`_tone_samples` replaces the old WAV-bytes
+  `_tone_wav`).
+- **Hotkey chords (was #7):** `config.HOTKEY` is now always a tuple (1
+  or 2 pynput Key/KeyCode objects), even for a single key.
+  `settings._parse_hotkey` accepts both the old plain-string format and
+  a new list-of-1-2 format. `app.py`'s listener tracks a
+  `_hotkey_pressed` set restricted to keys that are part of the
+  configured chord; the full set down starts recording, any one release
+  stops it. `keynames.friendly` now also accepts a tuple/list and joins
+  with " + ". Settings' hotkey capture UI holds-and-releases up to two
+  keys (capped, extra keys ignored) instead of firing on the first
+  keypress.
+- **Theme hover-highlight audit (was #8):** the reported bug (clam's
+  unmapped "active" state painting checkbutton/radiobutton rows white)
+  is fixed with `style.map(... background=[("active", bg)])`. Also
+  audited and fixed: button disabled state, Treeview selected-row
+  colors, the Combobox popdown listbox (a raw Tk Listbox — needs
+  `option_add("*TCombobox*Listbox...")`, not `style.configure`),
+  progressbar colors, entry focus border, and the raw feedback `tk.Text`
+  box's colors (including on a live theme switch, which ttk widgets get
+  for free but raw Tk widgets don't).
+- **Cloud speech-to-text (was #9): rejected, not deferred.** Asked
+  directly (provider choice + who pays for the API key), the answer was
+  to skip the concept entirely — Sumit Speak stays local-models-only.
+  Don't re-propose this in a future session without the user raising it
+  first.
 
-2. **In-use tile must be visually unmistakable:** replace the "In use ✓"
-   text with a strong graphical selected state (accent border + filled
-   header or badge on the active tile). User finds the current text not
-   eye-catching.
-
-3. **New app icon:** the current EXE icon is PyInstaller's default (the
-   "feather pen" the user dislikes) — none was ever set. Design a
-   modern .ico, pass it via --icon to PyInstaller and SetupIconFile in
-   the .iss, and restyle the code-drawn PIL tray circles to match (keep
-   them code-drawn — no --add-data). Also use it for the settings
-   window iconbitmap.
-
-4. **In-app feedback channel (two-way):** a Feedback button in
-   About/Help — user types text, clicks Send, Sumit gets it with a
-   Gmail notification; Sumit's reply appears back inside the sender's
-   app. Design notes agreed July 19: this is the app's FIRST outbound
-   data path — the About privacy statement must be amended (send is
-   user-initiated only). Candidate $0/no-server transport: send via a
-   free form-to-email endpoint (arrives in Gmail); replies published
-   by Sumit as JSON in the public sumit-speak-updates repo keyed by an
-   anonymous random per-install ID; the app polls it alongside the
-   update manifest and shows the reply. Transport to be finalized
-   before building.
-
-5. **Spoken cue when no editable field is focused:** when the user
-   starts dictating with nothing typable selected, play a friendly
-   female voice saying (improved wording, roughly) "No text box is
-   selected — click where you want your words to go, then try again."
-   Notes: use Windows' built-in offline SAPI TTS (pywin32 already
-   shipped; prefer a female voice like Zira, fall back to the default
-   voice), speak asynchronously, and consider replacing the current
-   blocking error popup with voice + toast (aligns with spec §10.3
-   failure-toast plan). Applies to both focus checks (hotkey press and
-   pre-insert). Volume should respect/scale with SOUND_VOLUME.
-
-6. **Audio tab: output-device dropdown** alongside the microphone one —
-   headphones, Bluetooth earphones, speakers. Notes: winsound always
-   uses the system default output, so the tones (and the future spoken
-   cue of #5) must move to sounddevice playback (sd.play with device=,
-   already a dependency) honoring a new output_device settings key;
-   same "System default" first entry and query_devices filtering on
-   max_output_channels.
-
-7. **Hotkeys: one- OR two-key chord for dictation** (press-and-hold a
-   single key or a combination of two). Page design left to Claude.
-   Notes: listener must track the pressed-key set (all chord keys down
-   → start; any released → stop+transcribe); capture UI records
-   whichever chord the user holds; settings "hotkey" grows a list form
-   (["ctrl_l","alt_l"]) while staying backward compatible with the
-   plain string; keynames.friendly needs a chord form ("Left Ctrl +
-   Left Alt"); modifier-only chords are the expected case but any two
-   keys should work. Keep hold-to-talk semantics (spec's toggle mode
-   remains deferred).
-
-8. **Bug: hover highlights rows white (dark theme) — audit ALL tabs:**
-   confirmed on Dictation (radios) and General (checkboxes): the clam
-   theme's "active"/hover state background was never mapped, so
-   hovering paints the row light. Fix in _apply_theme with
-   style.map background=[("active", bg)] for TRadiobutton and
-   TCheckbutton — then audit EVERY tab in both themes for the same
-   class of unmapped-state problem on every widget type: combobox
-   (Audio), treeview rows/selection colors (Auto Text), buttons,
-   labelframes, notebook, progressbar (Models, during download),
-   entry fields, and the disabled state of everything. No row should
-   ever highlight on hover; selection colors must be readable in both
-   themes. Quick item — do this one first.
-
-9. **Optional cloud speech-to-text** for users who want faster results
-   than the local models; local downloaded models remain the
-   default and the choice. Design notes: this is the biggest departure
-   yet from the product's core identity — "fully offline, your voice
-   never leaves this PC" is the headline promise (About tab, README,
-   spec §1), and spec §11 deferred cloud features on purpose. So:
-   strictly opt-in with unmistakable disclosure at enable time; the
-   privacy statement must gain an "unless you choose cloud
-   recognition" clause. To decide when building: provider (OpenAI
-   /Deepgram/Azure etc.), who pays (user's own API key fits the $0
-   principle; Sumit-funded key = cost and abuse risk), where it lives
-   in the UI (a third "Cloud" tile on the Models tab fits the existing
-   tile pattern), and a CloudTranscriber alongside the thin local
-   Transcriber (same one-shot interface; graceful offline fallback to
-   the local model when the network fails).
+**Next session — start here:**
+1. Rebuild the EXE (`--icon assets\icon.ico` is now part of the
+   PyInstaller command — see Commands above) and copy to both EXE
+   locations, per the usual gotchas in this file. Two `SumitSpeak.exe`
+   instances were already running when this session's work was done, so
+   none of it has been through a real build or manual smoke test yet —
+   re-confirm kill-rebuild-relaunch approval before stopping them.
+2. Manually exercise: the redesigned Models tab (including deleting/
+   restoring the grammar engine's Delete button warning), the hotkey
+   chord capture UI end-to-end with a real 2-key combo, the output
+   device dropdown actually routing tones to a non-default device, the
+   spoken cue by dictating with nothing focused, and both themes for
+   leftover hover/contrast issues this session's audit might have
+   missed.
+3. When ready, click Send once in the About tab's Feedback box for
+   real, then check sumitdas76@gmail.com for FormSubmit's one-time
+   confirmation link.
+4. Create `replies.json` in the sumit-speak-updates repo (empty
+   `{"replies": {}}` is enough to start) so the reply-polling path has
+   something to find.
 
 Remaining Phase 4 after the queue: explanatory failure toasts with
 distinct sounds (nothing heard / too short / no editable field),
@@ -357,6 +367,148 @@ cycles; re-confirm in a new session before stopping a running instance.
   transcript text on disk, which contradicts the spec's "nothing is saved"
   privacy statement. Fine during development; must default off (or be
   disclosed) before any distribution.
+- **Tk multi-interpreter crashes (root-caused and fixed July 20, 2026,
+  in two passes):** the app crashed repeatedly with the identical fault
+  -- `tcl86t.dll`, exception `0x80000003` (Tcl's `panic()`), same offset
+  every time, confirmed via Windows crash dumps
+  (`%LOCALAPPDATA%\CrashDumps\SumitSpeak.exe.*.dmp`) 4 times across
+  2026-07-19 and 2026-07-20. Root cause: a process should have at most
+  one `tk.Tk()` root -- Tcl/Tk's threading model is fragile when
+  independent interpreters run concurrently on different threads in the
+  same process. Five places each created their own `tk.Tk()` on their
+  own thread: `pill.py` and `error_toast.py` (both persistent background
+  threads), plus `settings_window.py`, `try_it_now.py`, and
+  `updater.py`'s update dialog (each spun one up on open).
+  First pass fixed only `pill.py`/`error_toast.py` via a new
+  `overlay_thread.py` owning one shared root; a crash with the identical
+  signature happened again ~15 minutes later (13 minutes after the last
+  dictation, no dictation activity logged in between -- consistent with
+  Settings being open at the time), confirming the other three were
+  still live risks. Second pass folded all three into the same
+  `overlay_thread.py`: each now builds a `tk.Toplevel` off the one
+  shared root instead of its own interpreter, and instead of blocking on
+  their own `mainloop()` until closed, they hook cleanup (settings:
+  `_on_closed`/revert-preview-mutations; try-it-now:
+  `first_run_done`; update dialog: `on_download`/`on_cancel`) to the
+  window's close action instead. `settings_window.py`'s
+  `_model_delete` also had a latent bug this surfaced: it assumed a
+  second model tier always existed to "switch to first" -- true before
+  the Accurate-tier removal below, not after.
+  Verified with a mixed concurrent stress test -- pill, toast, repeated
+  Settings opens, and repeated update-dialog opens, all cycling at once
+  from separate threads -- with no crash. As before, an intermittent
+  crash can't be proven fixed by a short test; there is no other `tk.Tk()`
+  call left in `sumit_speak/` (`overlay_thread.py` is the only one) so
+  the *known* instances of this bug class are gone, but watch for
+  recurrence.
+
+## Grammar engine behavior change (2026-07-20) and open item
+
+At the user's request, the app now runs **Fast (small.en) only** for
+speech recognition, to lean more on the grammar pass for quality instead.
+First pass only deleted the Accurate (large-v3-turbo) model's downloaded
+files (~1.5 GB freed); the user clarified they wanted the *feature*
+removed, not just its files, so `model_manager.MODELS` now has a single
+"fast" entry (Accurate's entry deleted outright, not just unselected) and
+`updater.MANAGED` no longer has a `speech-accurate` key, so it's not
+checked for updates either. The Models tab's tile layout is no longer
+hardcoded to two side-by-side columns -- it sizes to however many tiers
+exist, so the one remaining tile spans the full width instead of leaving
+an empty half. Re-adding a second tier later is a config change
+(`model_manager.MODELS`), not a UI rewrite.
+
+**Models tab follow-up (2026-07-21):** removed the "in use" accent
+border/badge from the model tile (`InUse.TLabelframe` style deleted too,
+now unused) -- meaningless with only one voice model to distinguish it
+from. In its place, each tile now shows "Version N", reading the same
+`version.txt` marker `updater.installed_version()` already wrote on every
+update (no new tracking added) -- refreshed every poll cycle regardless
+of tile-state caching, so it visibly ticks up if a background update
+swaps in while Settings is open. This was in answer to the user asking
+how an update is reflected in the tile -- previously nothing changed in
+the tile itself during a background update, only a static text line
+below the tiles ("An update is downloading in the background…"); there
+was and still is no per-tile progress bar for updates specifically (the
+tile's own "Downloading…" progress bar is only for the fresh-download
+path via the Download button, a separate code path).
+
+The grammar engine's leash was deliberately loosened to match: it no
+longer only fixes grammar/punctuation, it now rewords genuinely garbled
+or unclear sentences (`grammar_engine._SYSTEM` updated, a new few-shot
+example added, `GRAMMAR_MIN_RETENTION` 0.7→0.4, per-sentence retention
+floor 0.5→0.2). This is a real philosophy shift away from the original
+"never substitute synonyms" strict leash, made with the user's informed
+consent after being shown the tradeoff (the original strict guards exist
+*because* a more liberal model version previously deleted a sentence
+live).
+
+Live-tested against the actual deployed model (Qwen2.5-1.5B int8) before
+shipping, not just designed on paper. Found a real, concrete failure the
+same night: "I want you to take care of this going ahead" →
+"I will take care of this going ahead." — a pronoun swap that flips who's
+responsible for an action, passing the word-retention guards fine since
+the rest of the sentence survives (only "you" vanishes). Added
+`grammar_engine._second_person_ok`: if "you"/"your"/"you're"/etc. appears
+in the input, it must survive in the output, or the guard rejects and
+falls back to unchanged text. Re-tested: catches that exact case, doesn't
+regress the other (good) rewrites. This is a narrow patch for one
+demonstrated failure mode, not a general solve for meaning-inverting
+rewrites — watch debug.log for other patterns (e.g. a similar risk likely
+exists for "I"/"we" swaps, negation flips ("won't" → "will"), or
+conditional/certainty flips ("might" → "will")) and add guards as they
+turn up.
+
+**Open, not done:** the user also asked for "a better, more optimized"
+grammar model and picked "faster, even if slightly less capable" when
+asked what to optimize for. This is unstarted — the existing 1.5B model
+is not swapped. A real attempt needs the same kind of dedicated
+evaluation the July 19 session did (3 candidates compared against real
+debug.log transcripts; two rejected for concrete failures: 0.5B dropped a
+sentence, Qwen3-0.6B mangled numbers) — not a quick swap. Whatever
+candidate is tried should be re-validated against the *loosened* guards
+above (a smaller/faster model is more likely to trip them, not less).
+
+## Checkbox glyph fix (2026-07-21) -- a real ttk theming trap
+
+The clam theme's built-in checkbutton glyph renders as an X rather than a
+checkmark on this Tcl/Tk build. This is not a `style.map` color problem --
+the glyph shape is a baked-in theme resource, not a configurable color --
+so it needed a custom-drawn indicator, same technique as the tray icons
+and app icon (`settings_window._draw_checkbox_glyphs`, PIL, drawn at 4x
+and downsampled for anti-aliasing).
+
+**The trap:** the obvious approach --
+`style.element_create("Checkbutton.indicator", "image", ...)`, reusing
+clam's own element name to override it -- fails immediately with
+`TclError: Duplicate element`, on the very first call in a fresh
+interpreter, not just on re-registration. `"Checkbutton.indicator"` is
+already registered the moment `style.theme_use("clam")` runs (verified:
+`style.element_names()` shows it present immediately after that call,
+before any of this app's code touches it). ttk's image elements don't
+support "same name overrides the built-in" the way `style.configure` does
+for colors.
+
+**The fix:** create the custom glyph under a *different* name
+(`_CHECKBOX_ELEMENT = "SumitCheck.indicator"`), then redefine
+`TCheckbutton`'s layout (`style.layout(...)`) to reference that name in
+place of clam's own `Checkbutton.indicator`, leaving the rest of the
+layout tree (padding, focus ring, label) exactly as clam defines it.
+`style.layout()` is idempotent and safe to call every time
+`_apply_theme()` runs; `style.element_create()` is not -- guarded by a
+module-level `_checkbox_images` flag (not per-window: every Settings
+window now shares one persistent interpreter via `overlay_thread.py`, so
+a per-`_SettingsWindow`-instance guard would itself hit the same
+duplicate-element error the *second* time Settings is ever opened, which
+is exactly the bug this went through before landing on the module-level
+fix). On repeat theme applies, the already-registered PhotoImages are
+repainted in place via `.paste()` rather than recreated, since Tk drops a
+PhotoImage once nothing references it and a fresh `_SettingsWindow`
+instance's own attributes wouldn't survive the window closing.
+
+If radio buttons or other themed indicators ever need the same kind of
+custom-glyph treatment, expect the identical trap and reuse this pattern
+(unique element name + layout override + module-level create-once guard),
+not the naive same-name override.
 
 ## Packaging notes
 

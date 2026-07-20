@@ -24,7 +24,11 @@ _KEY_NAMES = {
 
 
 def friendly(key_or_name):
-    """Display name for a pynput Key/KeyCode or a raw key-name string."""
+    """Display name for a pynput Key/KeyCode, a raw key-name string, or a
+    hotkey chord (tuple/list of 1-2 of the above) -- e.g. "Left Ctrl + Left
+    Alt"."""
+    if isinstance(key_or_name, (tuple, list)):
+        return " + ".join(friendly(k) for k in key_or_name)
     if isinstance(key_or_name, str):
         name = key_or_name
     else:

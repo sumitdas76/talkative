@@ -25,6 +25,7 @@ _KEYS = {
     "dictionary": "DICTIONARY",
     "self_correction_triggers": "SELF_CORRECTION_TRIGGERS",
     "enable_self_correction": "ENABLE_SELF_CORRECTION",
+    "enable_spoken_symbols": "ENABLE_SPOKEN_SYMBOLS",
     "enable_repeat_collapse": "ENABLE_REPEAT_COLLAPSE",
     "enable_grammar_engine": "ENABLE_GRAMMAR_ENGINE",
     "grammar_model": "GRAMMAR_MODEL_DIR",
@@ -37,6 +38,10 @@ _KEYS = {
     "theme": "THEME",
     "first_run_done": "FIRST_RUN_DONE",
     "debug_log": "DEBUG_LOG",
+    "install_id": "INSTALL_ID",
+    "feedback_last_check": "FEEDBACK_LAST_CHECK",
+    "feedback_last_seen": "FEEDBACK_LAST_SEEN",
+    "feedback_last_reply": "FEEDBACK_LAST_REPLY",
 }
 
 # Keys handled outside the type-checked table.
@@ -51,7 +56,7 @@ def settings_path():
     return settings_dir() / "settings.json"
 
 
-def _parse_hotkey(name):
+def _parse_one_key(name):
     """A key name like "ctrl_r" or "f9" (pynput Key attribute), or a single
     character. Returns None if unrecognized."""
     if not isinstance(name, str) or not name:
@@ -62,6 +67,20 @@ def _parse_hotkey(name):
     if len(name) == 1:
         return keyboard.KeyCode.from_char(name)
     return None
+
+
+def _parse_hotkey(value):
+    """A single key name (old settings.json format, kept for backward
+    compatibility) or a list of 1-2 key names (chord). Returns a tuple of
+    1-2 pynput Key/KeyCode objects, or None if unrecognized/empty."""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list) or not (1 <= len(value) <= 2):
+        return None
+    keys = tuple(_parse_one_key(name) for name in value)
+    if any(k is None for k in keys):
+        return None
+    return keys
 
 
 def load_into_config(path=None):
@@ -101,6 +120,11 @@ def load_into_config(path=None):
     if "input_device" in data and isinstance(data["input_device"], (type(None), int, str)):
         config.INPUT_DEVICE = data["input_device"]
         applied["input_device"] = data["input_device"]
+
+    # output_device: None (default) or a sounddevice output index / name.
+    if "output_device" in data and isinstance(data["output_device"], (type(None), int, str)):
+        config.OUTPUT_DEVICE = data["output_device"]
+        applied["output_device"] = data["output_device"]
 
     return applied
 

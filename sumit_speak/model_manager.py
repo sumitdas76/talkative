@@ -7,7 +7,11 @@ Face cache), so deleting them from the UI can't surprise other tools and
 download helper pointed at this folder; the same folder is passed to
 WhisperModel as download_root at load time.
 
-Two tiers only, per the product spec: Fast and Accurate.
+Fast only. The Accurate tier (large-v3-turbo) was removed 2026-07-20 at
+the user's request, in favor of leaning on the grammar engine for quality
+instead of a slower, larger speech model -- not just uninstalled, the
+option itself no longer exists in the UI. See CLAUDE.md for the full
+rationale and the guard changes that went with it in grammar_engine.py.
 """
 
 import os
@@ -20,14 +24,8 @@ MODELS = {
         "label": "Fast",
         "tagline": "Instant response",
         "approx": "about 244 MB",
-        "latency": "Text appears about 2–3 seconds after you stop speaking.",
-    },
-    "accurate": {
-        "size": "large-v3-turbo",
-        "label": "Accurate",
-        "tagline": "Best recognition, a bit slower",
-        "approx": "about 1.6 GB",
-        "latency": "Text appears about 8–10 seconds after you stop speaking.",
+        "latency": "Text appears about 2–3 seconds after you stop speaking. "
+                   "Longer sentences can take a bit more time.",
     },
 }
 

@@ -1,8 +1,11 @@
 from pynput import keyboard
 
-# Hold this key to dictate, release to transcribe + insert.
-# Right Ctrl is rarely bound to anything else system-wide.
-HOTKEY = keyboard.Key.ctrl_r
+# Hold this key (or these two keys together) to dictate, release any of
+# them to transcribe + insert. Always a tuple of 1-2 pynput Key/KeyCode
+# objects, even for a single-key hotkey, so app.py's listener can treat
+# every hotkey as a chord uniformly. Right Ctrl is rarely bound to anything
+# else system-wide.
+HOTKEY = (keyboard.Key.ctrl_r,)
 
 # faster-whisper model. Smaller = faster/less accurate, larger = slower/more accurate.
 # ".en" suffixed models are English-only and a bit faster/more accurate for English speech.
@@ -31,6 +34,12 @@ CLIPBOARD_RESTORE_DELAY = 0.4
 
 # Turn spoken self-correction detection on/off without touching the trigger list.
 ENABLE_SELF_CORRECTION = True
+
+# Convert spoken symbol names ("underscore", "dot", "at sign", ...) into
+# the literal character (spoken_symbols.py) -- on by default, applies in
+# both cleanup modes since it's a transcription-fidelity fix, not a style
+# choice.
+ENABLE_SPOKEN_SYMBOLS = True
 
 # SELF_CORRECTION_TRIGGERS: phrases that signal the speaker is retracting what
 # they just said and the following words should replace it (e.g. "Send it
@@ -81,7 +90,11 @@ GRAMMAR_MODEL_DIR = "grammar"
 # Guard: reject engine output that retains less than this fraction of the
 # input's words (words removed as retractions/repeats count as lost, so
 # don't set this above ~0.7 or legitimate cleanups get rejected).
-GRAMMAR_MIN_RETENTION = 0.7
+# Loosened from 0.7 on 2026-07-20 (see grammar_engine._retention_ok) to
+# allow genuine rewording of garbled/unclear sentences, at the user's
+# request -- accepts more risk of the model changing what was said in
+# exchange for more helpful rewrites.
+GRAMMAR_MIN_RETENTION = 0.4
 
 # Near-repeat collapsing: when two consecutive sentences in one dictation are
 # nearly identical, keep only the second (the speaker restated themselves).
@@ -139,6 +152,11 @@ SOUND_VOLUME = 0.1
 # None = system default input device; otherwise a sounddevice input index
 # (set via the Audio tab in Settings).
 INPUT_DEVICE = None
+# None = system default output device; otherwise a sounddevice output index
+# (set via the Audio tab in Settings). Tones and the spoken no-focus cue are
+# played through sounddevice (not winsound, which always uses the system
+# default output) so this setting actually takes effect.
+OUTPUT_DEVICE = None
 
 # ---------------------------------------------------------------------------
 # Updates (spec section 7)
@@ -153,6 +171,27 @@ MANIFEST_URL = (
 # The replaced model is kept for undo until this many words have been
 # dictated with the new one (usage-based grace, spec section 7.6).
 UPDATE_GRACE_WORDS = 1000
+
+# ---------------------------------------------------------------------------
+# Feedback (spec queue #4) -- the app's only outbound data path, and only
+# ever sent when the user clicks Send in the About tab.
+# ---------------------------------------------------------------------------
+# Random per-install ID, generated once and persisted (see settings.py's
+# "install_id" key). Sent along with feedback so a reply can be matched
+# back to this install; not tied to any personal info.
+INSTALL_ID = ""
+# Public JSON where Sumit hand-publishes replies, keyed by install_id --
+# same repo/workflow as MANIFEST_URL. Empty string disables reply polling.
+FEEDBACK_REPLIES_URL = (
+    "https://raw.githubusercontent.com/sumitdas76/sumit-speak-updates/"
+    "main/replies.json"
+)
+# Date of the last daily reply check, and the id/text of the last reply
+# already shown -- both persisted so a reply is surfaced exactly once and
+# stays visible in Settings across restarts.
+FEEDBACK_LAST_CHECK = ""
+FEEDBACK_LAST_SEEN = ""
+FEEDBACK_LAST_REPLY = ""
 
 # ---------------------------------------------------------------------------
 # Debugging

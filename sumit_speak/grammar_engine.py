@@ -29,14 +29,20 @@ from . import config, model_manager
 _SYSTEM = (
     "You clean up dictated text. Fix grammar and punctuation. Remove word "
     "repetitions, false starts, and spoken self-corrections (keep only what "
-    "the speaker corrected themselves to). Keep the speaker's own words - "
-    "never substitute synonyms, never add information, never change names "
-    "or numbers. Reply with only the cleaned text."
+    "the speaker corrected themselves to). If a sentence is garbled or "
+    "unclear, reword it so it reads clearly, staying as close to the "
+    "speaker's own words and phrasing as you reasonably can. Never add "
+    "information or invent claims the speaker didn't make, never change "
+    "names or numbers, and never drop something the speaker actually said. "
+    "Reply with only the cleaned text."
 )
 
 # Few-shot pairs demonstrating the leash; auditioned July 2026 against the
 # debug.log corpus (they materially improve instruction-following in
-# sub-1B models).
+# sub-1B models). The last pair demonstrates rewording a garbled/unclear
+# sentence (added 2026-07-20, at the user's request, alongside loosening
+# the retention guards below to match -- deliberately accepts more risk of
+# the model guessing wrong than the original strict leash did).
 _SHOTS = [
     ("the report the report needs to go out before the meeting starts",
      "The report needs to go out before the meeting starts."),
@@ -46,6 +52,10 @@ _SHOTS = [
      "time there was a mistake in the numbers and the client noticed it",
      "We should also check the numbers again before we send it, because last "
      "time there was a mistake in the numbers and the client noticed it."),
+    ("there's this issue where when the user clicks the button nothing "
+     "happens sometimes it's kind of random",
+     "There's an issue where clicking the button sometimes does nothing; "
+     "it seems random."),
 ]
 
 _DIGIT_RUN = re.compile(r"\d+")
@@ -97,6 +107,21 @@ def unload():
         _tokenizer = None
 
 
+def delete():
+    """Remove the engine's files from disk. Unloads first and forces a GC
+    pass so ctranslate2 releases its file handles before rmtree -- otherwise
+    the delete fails on Windows with the engine still loaded. Cleaned-up
+    mode silently falls back to rules-only afterward (the graceful-absence
+    contract); there is currently no in-app re-download, only reinstalling
+    Sumit Speak."""
+    import gc
+    import shutil
+
+    unload()
+    gc.collect()
+    shutil.rmtree(engine_dir(), ignore_errors=True)
+
+
 def _build_prompt(text):
     p = f"<|im_start|>system\n{_SYSTEM}<|im_end|>\n"
     for spoken, cleaned in _SHOTS:
@@ -122,15 +147,40 @@ def _retention_ok(inp, out):
     # deleting a full sentence is always damage -- and a short sentence
     # lost from a long dictation stays above the global bar (seen live:
     # Qwen2.5-0.5B dropped the opening sentence of a 75-word dictation).
+    # Both thresholds were loosened 2026-07-20 (0.7->GRAMMAR_MIN_RETENTION,
+    # per-sentence 0.5->0.2) at the user's request, to let the model
+    # genuinely reword garbled/unclear sentences rather than only fix
+    # grammar/punctuation -- real rewording legitimately swaps out most of
+    # a sentence's words, which the old, stricter bars were tuned to
+    # reject. This trades away some of the original protection against the
+    # engine quietly changing what was said; watch debug.log for bad
+    # rewrites and tighten back up if it misfires in practice.
     for sentence in re.split(r"(?<=[.!?])\s+", inp):
         words = _WORD.findall(sentence.lower())
-        if len(words) >= 2 and sum(1 for w in words if w in dst) / len(words) < 0.5:
+        if len(words) >= 2 and sum(1 for w in words if w in dst) / len(words) < 0.2:
             return False
     return True
 
 
 def _length_ok(inp, out):
     return 0.4 * len(inp) <= len(out) <= 1.5 * len(inp) + 20
+
+
+_SECOND_PERSON = re.compile(r"\byou(?:'re|r|rs|rself)?\b", re.IGNORECASE)
+
+
+def _second_person_ok(inp, out):
+    """A "you" in the input must not silently vanish. Word-retention
+    guards don't catch this: rewording that drops "you" can flip who a
+    sentence is about ("I want you to do X" -> "I will do X", seen live
+    2026-07-20 with the loosened retention guards above) while still
+    passing a >=40% word-overlap check, since the rest of the sentence's
+    words survive fine. Pronoun swaps are a uniquely dangerous case
+    because they change who's responsible for something, not just how
+    it's worded."""
+    if _SECOND_PERSON.search(inp) and not _SECOND_PERSON.search(out):
+        return False
+    return True
 
 
 def apply(text):
@@ -164,6 +214,7 @@ def apply(text):
 
     if not out:
         return text
-    if not (_digits_ok(text, out) and _retention_ok(text, out) and _length_ok(text, out)):
+    if not (_digits_ok(text, out) and _retention_ok(text, out)
+             and _length_ok(text, out) and _second_person_ok(text, out)):
         return text
     return out

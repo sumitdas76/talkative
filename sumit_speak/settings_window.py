@@ -3,9 +3,11 @@ Tabbed settings window (tkinter), opened from the tray menu.
 
 Reads current config values, writes settings.json via settings.save, then
 re-applies with settings.load_into_config and notifies the app through the
-on_applied callback. Runs in its own thread with its own Tk instance --
-only that thread touches tkinter objects. A second open request while the
-window exists is ignored.
+on_applied callback. Built as a tk.Toplevel on the shared overlay thread
+(see overlay_thread.py -- multiple independent tk.Tk() roots across
+threads caused real crashes), not its own Tk instance; only that thread
+touches tkinter objects. A second open request while the window exists is
+ignored.
 """
 
 import threading
@@ -13,8 +15,9 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from pynput import keyboard
+from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, config, model_manager, settings, updater
+from . import __version__, app_icon, config, feedback, grammar_engine, model_manager, overlay_thread, settings, updater
 from .keynames import friendly as _friendly_key_name
 
 APP_NAME = "Sumit Speak"
@@ -26,6 +29,99 @@ _EXAMPLE_SPOKEN = "“So um, send the file today — oh sorry, send the file by 
 _EXAMPLE_CLEAN = "Send the file by this evening."
 _EXAMPLE_ASIS = "So um, send the file today — oh sorry, send the file by this evening."
 
+_CHECKBOX_SIZE = 16  # on-screen box size; drawn at 4x and downscaled for crisp anti-aliasing
+
+# A name of our own, not "Checkbutton.indicator" -- that name is already
+# taken the moment the clam theme is activated (it's clam's own built-in
+# element), so creating an element with that exact name always fails with
+# "Duplicate element", even on the very first call in a fresh interpreter.
+# Overriding a built-in glyph means a differently-named custom element
+# plus redefining TCheckbutton's layout to reference it instead (done in
+# _apply_theme, every call -- layout reassignment, unlike element
+# creation, is idempotent and meant to be called repeatedly).
+_CHECKBOX_ELEMENT = "SumitCheck.indicator"
+
+# Module-level, not per-window: every Settings window now shares one
+# persistent Tcl interpreter (overlay_thread.py), so a custom ttk element
+# registered by one window's _apply_theme() is still registered the next
+# time ANY window opens -- style.element_create errors on a duplicate
+# name, it can't just be called again. The PhotoImage handles must
+# likewise outlive any single _SettingsWindow instance (Tk drops a
+# PhotoImage once nothing references it), so they're kept here and
+# repainted in place via .paste() on every theme apply instead of being
+# recreated.
+_checkbox_images = None  # (unchecked_photo, checked_photo) once created
+
+
+def _draw_checkbox_glyphs(field, border, accent, accent_fg):
+    """Draw the checkbox indicator glyphs ourselves (same approach as the
+    tray icons and app icon) instead of relying on the clam theme's
+    built-in checkbutton bitmap, which renders as an X rather than a
+    checkmark on this Tcl/Tk build and isn't something style.map colors
+    can fix -- the glyph shape itself is baked into the theme resource.
+    Returns (unchecked_image, checked_image) as plain PIL Images at final
+    display size."""
+    scale = 4
+    size = _CHECKBOX_SIZE * scale
+    radius = size // 5
+
+    unchecked = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(unchecked)
+    d.rounded_rectangle(
+        (scale, scale, size - scale, size - scale), radius=radius,
+        fill=field, outline=border, width=scale,
+    )
+
+    checked = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(checked)
+    d.rounded_rectangle((0, 0, size - 1, size - 1), radius=radius, fill=accent)
+    d.line(
+        [(size * 0.22, size * 0.52), (size * 0.42, size * 0.72), (size * 0.8, size * 0.26)],
+        fill=accent_fg, width=scale * 2, joint="curve",
+    )
+
+    small = (_CHECKBOX_SIZE, _CHECKBOX_SIZE)
+    return unchecked.resize(small, Image.LANCZOS), checked.resize(small, Image.LANCZOS)
+
+
+def _apply_checkbox_glyphs(style, field, border, accent, accent_fg):
+    global _checkbox_images
+    unchecked_pil, checked_pil = _draw_checkbox_glyphs(field, border, accent, accent_fg)
+    if _checkbox_images is None:
+        unchecked_photo = ImageTk.PhotoImage(unchecked_pil)
+        checked_photo = ImageTk.PhotoImage(checked_pil)
+        _checkbox_images = (unchecked_photo, checked_photo)
+        style.element_create(
+            _CHECKBOX_ELEMENT, "image", unchecked_photo,
+            ("selected", checked_photo),
+        )
+    else:
+        unchecked_photo, checked_photo = _checkbox_images
+        unchecked_photo.paste(unchecked_pil)
+        checked_photo.paste(checked_pil)
+
+    # Swap clam's built-in indicator sub-element for ours in the layout
+    # tree; everything else (padding, focus ring, label) stays exactly as
+    # clam defines it. Safe to call every time -- unlike element_create,
+    # layout reassignment is meant to be repeatable.
+    style.layout("TCheckbutton", [
+        ("Checkbutton.padding", {"sticky": "nswe", "children": [
+            (_CHECKBOX_ELEMENT, {"side": "left", "sticky": ""}),
+            ("Checkbutton.focus", {"side": "left", "sticky": "w", "children": [
+                ("Checkbutton.label", {"sticky": "nswe"}),
+            ]}),
+        ]}),
+    ])
+
+
+def _on_closed():
+    global _is_open
+    # Revert any unsaved preview mutations (e.g. the live theme preview
+    # writes config.THEME before Save).
+    settings.load_into_config()
+    with _open_lock:
+        _is_open = False
+
 
 def open_settings(on_applied=None, model_controller=None):
     global _is_open
@@ -34,18 +130,20 @@ def open_settings(on_applied=None, model_controller=None):
             return
         _is_open = True
 
-    def _run():
-        global _is_open
-        try:
-            _SettingsWindow(on_applied, model_controller).run()
-        finally:
-            # Revert any unsaved preview mutations (e.g. the live theme
-            # preview writes config.THEME before Save).
-            settings.load_into_config()
-            with _open_lock:
-                _is_open = False
+    overlay = overlay_thread.get()
+    overlay._ready.wait(timeout=3)
+    if overlay._failed:
+        with _open_lock:
+            _is_open = False
+        return
 
-    threading.Thread(target=_run, daemon=True).start()
+    def _build():
+        try:
+            _SettingsWindow(on_applied, model_controller, overlay).build()
+        except Exception:
+            _on_closed()
+
+    overlay.build(_build)
 
 
 def _hotkey_display(key):
@@ -53,15 +151,17 @@ def _hotkey_display(key):
 
 
 class _SettingsWindow:
-    def __init__(self, on_applied, model_controller=None):
+    def __init__(self, on_applied, model_controller, overlay):
         self.on_applied = on_applied
         self.model_controller = model_controller
+        self.overlay = overlay
         self.pending_hotkey = None
         self._capturing = False
 
-    def run(self):
-        self.root = tk.Tk()
+    def build(self):
+        self.root = tk.Toplevel(self.overlay.root)
         self.root.title(f"{APP_NAME} — Settings")
+        app_icon.set_window_icon(self.root)
         self.root.geometry("600x480")
         self.root.minsize(520, 420)
         self._apply_theme()
@@ -86,10 +186,14 @@ class _SettingsWindow:
         bar.pack(fill="x")
         self.saved_label = ttk.Label(bar, text="")
         self.saved_label.pack(side="left")
-        ttk.Button(bar, text="Close", command=self.root.destroy).pack(side="right")
+        ttk.Button(bar, text="Close", command=self._close).pack(side="right")
         ttk.Button(bar, text="Save and apply", command=self._save).pack(side="right", padx=6)
 
-        self.root.mainloop()
+        self.root.protocol("WM_DELETE_WINDOW", self._close)
+
+    def _close(self):
+        self.root.destroy()
+        _on_closed()
 
     # ---------------- theme ----------------
 
@@ -136,12 +240,67 @@ class _SettingsWindow:
             expand=[("selected", (1, 1, 1, 0))],
         )
         style.configure("TButton", background=raised)
-        style.map("TButton", background=[("active", hover)])
+        style.map(
+            "TButton",
+            background=[("disabled", raised), ("active", hover)],
+            foreground=[("disabled", border)],
+        )
+        # Radiobutton/checkbutton row background was never mapped for the
+        # "active" (hover) state, so clam's built-in light default painted
+        # every row white on hover regardless of theme.
+        style.configure("TCheckbutton", background=bg, foreground=fg)
+        style.configure("TRadiobutton", background=bg, foreground=fg)
+        style.map(
+            "TCheckbutton",
+            background=[("active", bg)],
+            foreground=[("disabled", border)],
+        )
+        _apply_checkbox_glyphs(style, field, border, accent, accent_fg)
+        style.map(
+            "TRadiobutton",
+            background=[("active", bg)],
+            foreground=[("disabled", border)],
+        )
         style.configure("Treeview", background=field, foreground=fg,
                         fieldbackground=field)
         style.configure("Treeview.Heading", background=raised, foreground=fg)
-        style.map("TCombobox", fieldbackground=[("readonly", field)],
-                  foreground=[("readonly", fg)])
+        style.map("Treeview.Heading", background=[("active", hover)])
+        style.map(
+            "Treeview",
+            background=[("selected", accent)],
+            foreground=[("selected", accent_fg)],
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", field), ("disabled", raised)],
+            foreground=[("readonly", fg), ("disabled", border)],
+            background=[("active", hover), ("readonly", field)],
+            arrowcolor=[("disabled", border)],
+        )
+        # The dropdown list popup is a plain Tk Listbox, not a ttk widget --
+        # styled via the option database, not style.configure. Left
+        # unmapped it stays white-on-black in dark mode.
+        self.root.option_add("*TCombobox*Listbox.background", field)
+        self.root.option_add("*TCombobox*Listbox.foreground", fg)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", accent)
+        self.root.option_add("*TCombobox*Listbox.selectForeground", accent_fg)
+        style.map(
+            "TEntry",
+            fieldbackground=[("disabled", raised), ("readonly", field)],
+            foreground=[("disabled", border)],
+            bordercolor=[("focus", accent)],
+        )
+        style.configure("TProgressbar", background=accent, troughcolor=field,
+                        bordercolor=border, lightcolor=accent, darkcolor=accent)
+        self._accent, self._accent_fg = accent, accent_fg
+        self._bg, self._fg, self._field = bg, fg, field
+        # feedback_text is a raw tk.Text (not ttk), so it needs its colors
+        # reapplied by hand on every theme switch, not just at creation.
+        if hasattr(self, "feedback_text"):
+            self.feedback_text.configure(
+                bg=field, fg=fg, insertbackground=fg,
+                selectbackground=accent, selectforeground=accent_fg,
+            )
 
     # ---------------- tabs ----------------
 
@@ -242,37 +401,56 @@ class _SettingsWindow:
         self.example_label.config(text=_EXAMPLE_CLEAN if clean else _EXAMPLE_ASIS)
 
     def _tab_hotkeys(self, f):
-        ttk.Label(f, text="Dictation key (hold to talk):").pack(anchor="w")
+        ttk.Label(f, text="Dictation key(s) (hold to talk):").pack(anchor="w")
         row = ttk.Frame(f)
         row.pack(anchor="w", pady=6)
         self.hotkey_btn = ttk.Button(
             row, text=_hotkey_display(config.HOTKEY), command=self._capture_hotkey
         )
         self.hotkey_btn.pack(side="left")
-        ttk.Label(row, text="  Click, then press the key you want to use.",
+        ttk.Label(row, text="  Click, then hold the key (or two keys "
+                            "together) you want to use.",
                   foreground="grey").pack(side="left")
         ttk.Label(
             f, wraplength=520, foreground="grey",
-            text="\nHold the key while speaking; release to insert the text. "
-                 "A press-to-toggle mode is planned for a later version.",
+            text="\nHold the key (or key combination) while speaking; "
+                 "release to insert the text.",
         ).pack(anchor="w")
 
     def _capture_hotkey(self):
         if self._capturing:
             return
         self._capturing = True
-        self.hotkey_btn.config(text="Press a key…")
+        self.hotkey_btn.config(text="Hold 1 or 2 keys…")
+
+        pressed = []   # currently-held key names during this capture, max 2
+        chosen = []    # the largest simultaneous combination seen so far
+
+        def refresh():
+            shown = " + ".join(_friendly_key_name(n) for n in pressed)
+            text = shown if shown else "Hold 1 or 2 keys…"
+            self.root.after(0, lambda: self.hotkey_btn.config(text=text))
 
         def on_press(key):
             name = getattr(key, "name", None) or getattr(key, "char", None)
-            if name:
-                self.pending_hotkey = name
-                shown = _friendly_key_name(name)
-                self.root.after(0, lambda: self.hotkey_btn.config(text=shown))
+            if not name or name in pressed or len(pressed) >= 2:
+                return
+            pressed.append(name)
+            if len(pressed) > len(chosen):
+                chosen[:] = pressed
+            refresh()
+
+        def on_release(key):
+            name = getattr(key, "name", None) or getattr(key, "char", None)
+            if name in pressed:
+                pressed.remove(name)
+            if pressed or not chosen:
+                return
+            self.pending_hotkey = list(chosen)
             self._capturing = False
             return False  # stop this capture listener
 
-        keyboard.Listener(on_press=on_press).start()
+        keyboard.Listener(on_press=on_press, on_release=on_release).start()
 
     def _tab_audio(self, f):
         ttk.Label(f, text="Microphone:").pack(anchor="w")
@@ -298,6 +476,31 @@ class _SettingsWindow:
             f, wraplength=520, foreground="grey",
             text="If dictation hears nothing, the wrong microphone is "
                  "selected. Takes effect from the next dictation.",
+        ).pack(anchor="w")
+
+        ttk.Label(f, text="Output device:").pack(anchor="w", pady=(14, 0))
+        self._output_values = [None]
+        out_names = ["System default"]
+        try:
+            import sounddevice as sd
+
+            for index, dev in enumerate(sd.query_devices()):
+                if dev.get("max_output_channels", 0) > 0:
+                    self._output_values.append(index)
+                    out_names.append(f"{dev['name']}")
+        except Exception:
+            pass
+
+        self.output_combo = ttk.Combobox(f, values=out_names, state="readonly", width=48)
+        try:
+            self.output_combo.current(self._output_values.index(config.OUTPUT_DEVICE))
+        except ValueError:
+            self.output_combo.current(0)
+        self.output_combo.pack(anchor="w", pady=6)
+        ttk.Label(
+            f, wraplength=520, foreground="grey",
+            text="Where dictation tones and spoken messages play — "
+                 "headphones, Bluetooth earphones, speakers.",
         ).pack(anchor="w")
 
     def _tab_output(self, f):
@@ -332,27 +535,46 @@ class _SettingsWindow:
         self._model_ops = {}     # tier -> "download" | "load" | "delete"
         self._model_errors = []  # messages appended by workers, shown by the poll
         self._tiles = {}
-        for tier, info in model_manager.MODELS.items():
+
+        tiles_row = ttk.Frame(f)
+        tiles_row.pack(fill="x", pady=(0, 10))
+        # Column count follows however many tiers exist (just Fast right
+        # now, since Accurate was removed) rather than assuming two, so a
+        # single tile spans the full width instead of leaving an awkward
+        # empty half.
+        n_tiles = len(model_manager.MODELS)
+        for col in range(max(n_tiles, 1)):
+            tiles_row.columnconfigure(col, weight=1)
+        for col, (tier, info) in enumerate(model_manager.MODELS.items()):
             box = ttk.LabelFrame(
-                f, text=f"{info['label']} — {info['tagline']}", padding=10
+                tiles_row, text=f"{info['label']} - {info['tagline']}", padding=10
             )
-            box.pack(fill="x", pady=(0, 10))
-            ttk.Label(box, text=info["latency"], foreground="grey",
-                      wraplength=500).pack(anchor="w")
+            pad = 0 if n_tiles == 1 else ((0, 6) if col == 0 else (6, 0))
+            box.grid(row=0, column=col, sticky="nsew", padx=pad)
+            latency = ttk.Label(box, text=info["latency"], foreground="grey",
+                                 wraplength=220)
+            latency.pack(anchor="w")
+            version_label = ttk.Label(box, text="", foreground="grey")
+            version_label.pack(anchor="w")
             status = ttk.Label(box, text="")
             status.pack(anchor="w")
-            bar = ttk.Progressbar(box, mode="indeterminate", length=240)
-            row = ttk.Frame(box)
-            row.pack(anchor="w", pady=(6, 0))
-            action = ttk.Button(row)
+            bar = ttk.Progressbar(box, mode="indeterminate", length=180)
+            btn_row = ttk.Frame(box)
+            btn_row.pack(anchor="w", pady=(6, 0))
+            action = ttk.Button(btn_row)
             delete = ttk.Button(
-                row, text="Delete",
+                btn_row, text="Delete",
                 command=lambda t=tier, i=info: self._model_delete(t, i),
             )
             self._tiles[tier] = {
-                "info": info, "status": status, "bar": bar,
+                "info": info, "box": box, "latency": latency,
+                "version_label": version_label,
+                "status": status, "bar": bar,
                 "action": action, "delete": delete, "state": None,
             }
+
+        self._build_grammar_section(f)
+
         self.storage_label = ttk.Label(f, foreground="grey", text="")
         self.storage_label.pack(anchor="w", pady=(4, 0))
         self.update_label = ttk.Label(f, foreground="grey", text="")
@@ -362,6 +584,25 @@ class _SettingsWindow:
         )
         self._undoing = False
         self._poll_models()
+
+    def _build_grammar_section(self, f):
+        box = ttk.LabelFrame(f, text="Optimize Narration", padding=10)
+        box.pack(fill="x", pady=(0, 10))
+        ttk.Label(
+            box,
+            text="Fix grammar and punctuation",
+            foreground="grey", wraplength=500,
+        ).pack(anchor="w")
+        status = ttk.Label(box, text="")
+        status.pack(anchor="w")
+        bar = ttk.Progressbar(box, mode="indeterminate", length=240)
+        btn_row = ttk.Frame(box)
+        btn_row.pack(anchor="w", pady=(6, 0))
+        delete = ttk.Button(btn_row, text="Delete", command=self._grammar_delete)
+        self._grammar_tile = {
+            "box": box, "status": status, "bar": bar, "delete": delete, "state": None,
+        }
+        self._grammar_op = None
 
     def _model_tile_state(self, tier, size):
         op = self._model_ops.get(tier)
@@ -379,10 +620,21 @@ class _SettingsWindow:
         tile = self._tiles[tier]
         info = tile["info"]
         state = self._model_tile_state(tier, info["size"])
+
+        # Refreshed every poll regardless of whether the overall state
+        # changed, so it updates live if a background update swaps the
+        # files in without the tile ever passing through "download".
+        if state in ("in_use", "not_in_use"):
+            ver = updater.installed_version(f"speech-{tier}")
+            tile["version_label"].config(text=f"Version {ver}" if ver else "")
+        else:
+            tile["version_label"].config(text="")
+
         if state == tile["state"]:
             return
         tile["state"] = state
 
+        box = tile["box"]
         bar, status = tile["bar"], tile["status"]
         action, delete = tile["action"], tile["delete"]
         action.pack_forget()
@@ -407,7 +659,9 @@ class _SettingsWindow:
         elif state == "delete":
             status.config(text="Deleting…")
         elif state == "in_use":
-            status.config(text="In use ✓")
+            # No "in use" badge/border -- there's only one voice model now,
+            # so highlighting which one is active is meaningless clutter.
+            status.config(text="Downloaded.")
             delete.pack(side="left")
         else:  # not_in_use
             status.config(text="Downloaded, not in use.")
@@ -419,9 +673,61 @@ class _SettingsWindow:
             action.pack(side="left")
             delete.pack(side="left", padx=6)
 
+    def _grammar_tile_state(self):
+        if self._grammar_op is not None:
+            return self._grammar_op
+        return "installed" if grammar_engine.is_installed() else "none"
+
+    def _render_grammar_tile(self):
+        tile = self._grammar_tile
+        state = self._grammar_tile_state()
+        if state == tile["state"]:
+            return
+        tile["state"] = state
+
+        bar, status, delete = tile["bar"], tile["status"], tile["delete"]
+        delete.pack_forget()
+        if state == "delete":
+            status.config(text="Deleting…")
+            bar.pack(anchor="w", pady=(4, 0))
+            bar.start(12)
+            return
+        bar.stop()
+        bar.pack_forget()
+
+        if state == "none":
+            status.config(
+                text="Not installed. Cleaned-up dictations use basic rules "
+                     "only. Reinstalling Sumit Speak restores this."
+            )
+        else:  # installed
+            status.config(text="Installed.")
+            delete.pack(side="left")
+
+    def _grammar_delete(self):
+        if not messagebox.askyesno(
+            APP_NAME,
+            "Remove the Optimize Narration files?\n\n"
+            "This frees about 1.5 GB. “Cleaned up” dictations will keep "
+            "working with basic rules only. There is no in-app way to "
+            "bring this back — you would need to reinstall Sumit Speak.",
+            icon="warning", parent=self.root,
+        ):
+            return
+        self._grammar_op = "delete"
+
+        def work():
+            try:
+                grammar_engine.delete()
+            finally:
+                self._grammar_op = None
+
+        threading.Thread(target=work, daemon=True).start()
+
     def _poll_models(self):
         for tier in self._tiles:
             self._render_model_tile(tier)
+        self._render_grammar_tile()
         while self._model_errors:
             messagebox.showerror(APP_NAME, self._model_errors.pop(0), parent=self.root)
         self.storage_label.config(
@@ -504,8 +810,12 @@ class _SettingsWindow:
 
     def _model_delete(self, tier, info):
         size = info["size"]
-        other_tier = next(t for t in model_manager.MODELS if t != tier)
-        other = model_manager.MODELS[other_tier]
+        # Not guaranteed to exist -- there's only one tier since Accurate
+        # was removed, but this stays tier-count-agnostic in case another
+        # tier is ever added back.
+        other_tiers = [t for t in model_manager.MODELS if t != tier]
+        other_tier = other_tiers[0] if other_tiers else None
+        other = model_manager.MODELS[other_tier] if other_tier else None
 
         if size != config.MODEL_SIZE:
             if messagebox.askyesno(
@@ -524,7 +834,7 @@ class _SettingsWindow:
             )
             return
 
-        if model_manager.is_downloaded(other["size"]):
+        if other is not None and model_manager.is_downloaded(other["size"]):
             if not messagebox.askyesno(
                 APP_NAME,
                 f"The {info['label']} model is currently in use.\n\n"
@@ -567,8 +877,65 @@ class _SettingsWindow:
         ttk.Label(
             box, wraplength=500,
             text="Dictation is fully offline — your voice never leaves "
-                 "this PC. Audio is transcribed locally and never saved.",
+                 "this PC. Audio is transcribed locally and never saved. "
+                 "The one exception is the Feedback box below: nothing is "
+                 "sent unless you type a message and click Send.",
         ).pack(anchor="w")
+
+        self._build_feedback_section(f)
+
+    def _build_feedback_section(self, f):
+        box = ttk.LabelFrame(f, text="Feedback", padding=10)
+        box.pack(fill="x", pady=(10, 0))
+        ttk.Label(
+            box, wraplength=500, foreground="grey",
+            text="Send a message straight to Sumit. A reply, if there is "
+                 "one, will show up here.",
+        ).pack(anchor="w")
+        self.feedback_text = tk.Text(
+            box, height=4, wrap="word", font=("Segoe UI", 9),
+            bg=self._field, fg=self._fg, insertbackground=self._fg,
+            selectbackground=self._accent, selectforeground=self._accent_fg,
+            relief="solid", borderwidth=1,
+        )
+        self.feedback_text.pack(fill="x", pady=(6, 4))
+        row = ttk.Frame(box)
+        row.pack(anchor="w")
+        self.feedback_send_btn = ttk.Button(
+            row, text="Send", command=self._send_feedback
+        )
+        self.feedback_send_btn.pack(side="left")
+        self.feedback_status = ttk.Label(row, text="", foreground="grey")
+        self.feedback_status.pack(side="left", padx=8)
+
+        if config.FEEDBACK_LAST_REPLY:
+            reply_box = ttk.Frame(box)
+            reply_box.pack(fill="x", pady=(10, 0))
+            ttk.Label(reply_box, text="Sumit replied:",
+                      font=("Segoe UI", 9, "bold")).pack(anchor="w")
+            ttk.Label(reply_box, text=config.FEEDBACK_LAST_REPLY,
+                      wraplength=500).pack(anchor="w")
+
+    def _send_feedback(self):
+        message = self.feedback_text.get("1.0", "end").strip()
+        if not message:
+            return
+        self.feedback_send_btn.config(state="disabled")
+        self.feedback_status.config(text="Sending…")
+
+        def done(ok, error):
+            def update():
+                self.feedback_send_btn.config(state="normal")
+                if ok:
+                    self.feedback_status.config(text="Sent ✓")
+                    self.feedback_text.delete("1.0", "end")
+                else:
+                    self.feedback_status.config(
+                        text="Could not send. Please try again later."
+                    )
+            self.root.after(0, update)
+
+        feedback.send(message, on_done=done)
 
     # ---------------- save ----------------
 
@@ -593,6 +960,10 @@ class _SettingsWindow:
             values["hotkey"] = self.pending_hotkey
         try:
             values["input_device"] = self._audio_values[self.audio_combo.current()]
+        except Exception:
+            pass
+        try:
+            values["output_device"] = self._output_values[self.output_combo.current()]
         except Exception:
             pass
 
