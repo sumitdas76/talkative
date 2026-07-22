@@ -594,12 +594,25 @@ edit to `installer\SumitSpeak.iss` removing the "launch after install"
 optional checkbox task. Neither was touched or investigated this
 session -- review before committing.
 
-**Not a numbered release yet:** `installer\SumitSpeak.iss` is still at
-`MyAppVersion "1.1.0"`; no new installer has been built or published
-for this fix. Next session (or this one, if asked): decide whether to
-cut 1.1.1, which would also need `installer\SumitSpeak.iss`'s version
-bumped and a fresh installer build/publish per the existing release
-process.
+**Published as v1.1.1, same session:** the user pointed out that the
+source-level fix alone wouldn't reach anyone downloading the installer
+from GitHub Releases (still v1.1.0 at that point) -- correct catch, so
+the release was actually cut. `installer\SumitSpeak.iss` bumped to
+`MyAppVersion "1.1.1"`; also picked up the installer's already-pending
+uncommitted edit (removed the `launchafter` Task, so "Launch Sumit
+Speak now" is now the standard Inno finish-page checkbox instead of a
+gated optional task) since the user chose to bundle it in rather than
+set it aside. `CHANGELOG.md`'s `[Unreleased]` section became `[1.1.1] -
+2026-07-22`. Installer rebuilt via `ISCC.exe` from the already-built
+`dist\SumitSpeak.exe` (no PyInstaller rebuild needed -- no source
+changes since the 07:17 build). Both files committed and pushed, then
+`gh release create v1.1.1 installer\Output\SumitSpeakSetup.exe --repo
+sumitdas76/sumit-speak ...` published it as the new "Latest" release
+(verified via `gh release list`) -- confirmed
+https://github.com/sumitdas76/sumit-speak/releases/tag/v1.1.1 is live
+with the 1.6 GB installer attached. Nothing left pending from this fix;
+the docs/scripts reorg (staged, uncommitted) remains the only loose end
+in the working tree, untouched throughout.
 
 ## Packaging notes
 
