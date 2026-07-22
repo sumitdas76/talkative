@@ -594,6 +594,36 @@ edit to `installer\SumitSpeak.iss` removing the "launch after install"
 optional checkbox task. Neither was touched or investigated this
 session -- review before committing.
 
+**v1.1.3 published later the same day (2026-07-22 session #3):** after
+reinstalling v1.1.2, the user noticed the About tab still read "Version
+1.1.0." Root cause: `sumit_speak/__init__.py`'s `__version__` constant
+(read by `settings_window.py`'s About tab, `f"Version {__version__}"`)
+is completely separate from `installer\SumitSpeak.iss`'s
+`MyAppVersion` -- it had been bumped for neither the 1.1.1 nor the
+1.1.2 release, so the in-app version display silently lagged two
+releases behind reality despite the installer itself being correctly
+versioned. Fixed by bumping `__init__.py` to `"1.1.3"` (caught and
+corrected a repeat of the exact same mistake mid-fix: bumped it to
+"1.1.2" first out of habit before catching that the release itself was
+going out as 1.1.3, per the numbering discipline established this
+session of never reusing a version number once its build differs from
+what was actually shipped).
+**Any future release must bump both places, not just the installer:**
+`installer\SumitSpeak.iss`'s `MyAppVersion` AND
+`sumit_speak/__init__.py`'s `__version__`. Consider this a standing
+release-checklist item, not a one-off fix.
+Rebuilt EXE, copied to both the portable (project root) and the
+already-installed (`%LOCALAPPDATA%\Programs\Sumit Speak\`) copies on
+this machine, smoke-tested, rebuilt the installer, committed (3 files:
+`CHANGELOG.md`, `installer\SumitSpeak.iss`, `sumit_speak\__init__.py`),
+pushed (no classifier block this time -- auto mode was off), and
+published via `gh release create` **from PowerShell** (per the
+MinTTY lesson from the v1.1.2 session) -- one retry needed after a
+PowerShell-native-argument quoting error with an embedded `"Version
+1.1.0"` in the release notes text; removing the embedded quotes from
+the notes string fixed it. Confirmed live and marked "Latest":
+https://github.com/sumitdas76/sumit-speak/releases/tag/v1.1.3
+
 **v1.1.2 published later the same day (2026-07-22 session #2):** the
 user reported that dictating with no window actually focused (desktop
 showing, everything minimized) went nowhere with no error shown at
