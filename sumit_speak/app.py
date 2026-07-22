@@ -67,6 +67,7 @@ class SumitSpeakApp:
         self._jobs = 0  # dictations currently in the pipeline (updater idle check)
         self._swapping = False  # model swap in progress (update install/undo)
         self._hotkey_pressed = set()  # currently-held keys that are part of config.HOTKEY
+        self._chord_active = False  # chord already handled for this press-hold, ignore OS key-repeat
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
             hotkey_label=friendly_key(config.HOTKEY),
@@ -89,6 +90,7 @@ class SumitSpeakApp:
         sync_autostart()
         self.recorder.device = config.INPUT_DEVICE
         self._hotkey_pressed.clear()
+        self._chord_active = False
         self.tray.set_hotkey_label(friendly_key(config.HOTKEY))
         if self.transcriber is not None and not self._recording:
             self.tray.set_idle()  # refresh the tooltip with the new hotkey
@@ -244,7 +246,20 @@ class SumitSpeakApp:
         if key not in config.HOTKEY:
             return
         self._hotkey_pressed.add(key)
-        if self._recording or self._hotkey_pressed != set(config.HOTKEY):
+        if self._hotkey_pressed != set(config.HOTKEY):
+            return
+        # Windows re-fires on_press at the OS key-repeat rate for as long as
+        # the chord is held. Without this guard, holding the hotkey over an
+        # unfocused window replayed the whole body (including
+        # _no_target_cue's SAPI/COM call) dozens of times concurrently,
+        # which crashed the app with heap corruption (STATUS_HEAP_CORRUPTION
+        # in ntdll, from concurrent win32com dispatch) -- confirmed via
+        # Windows crash dump 2026-07-22. Only the first physical press of
+        # the chord should be handled; released keys re-arm it.
+        if self._chord_active:
+            return
+        self._chord_active = True
+        if self._recording:
             return
 
         if self._swapping:
@@ -281,6 +296,7 @@ class SumitSpeakApp:
         if key not in config.HOTKEY:
             return
         self._hotkey_pressed.discard(key)
+        self._chord_active = False
         if not self._recording:
             return
 

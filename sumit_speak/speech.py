@@ -22,6 +22,12 @@ from . import config
 
 _SAFT_16kHz_16BIT_MONO = 18  # SpeechAudioFormatType enum, SAPI automation
 _RATE = 16000
+# win32com.client.Dispatch's gencache/type-building isn't safe under
+# concurrent first-use from multiple threads (observed as a heap-corruption
+# crash, 2026-07-22, when repeated hotkey-repeat events raced several
+# speak() calls at once). Each call still gets its own COM apartment/voice;
+# this only serializes the Dispatch/Speak sequence itself.
+_lock = threading.Lock()
 
 
 def speak(text, volume=1.0):
@@ -38,21 +44,22 @@ def speak(text, volume=1.0):
 
             pythoncom.CoInitialize()
             try:
-                fmt = win32com.client.Dispatch("SAPI.SpAudioFormat")
-                fmt.Type = _SAFT_16kHz_16BIT_MONO
-                stream = win32com.client.Dispatch("SAPI.SpMemoryStream")
-                stream.Format = fmt
+                with _lock:
+                    fmt = win32com.client.Dispatch("SAPI.SpAudioFormat")
+                    fmt.Type = _SAFT_16kHz_16BIT_MONO
+                    stream = win32com.client.Dispatch("SAPI.SpMemoryStream")
+                    stream.Format = fmt
 
-                sapi_voice = win32com.client.Dispatch("SAPI.SpVoice")
-                for candidate in sapi_voice.GetVoices():
-                    if "zira" in candidate.GetDescription().lower():
-                        sapi_voice.Voice = candidate
-                        break  # else: fall back to the default voice
-                sapi_voice.Volume = max(0, min(100, int(volume * 100)))
-                sapi_voice.AudioOutputStream = stream
-                sapi_voice.Speak(text)
+                    sapi_voice = win32com.client.Dispatch("SAPI.SpVoice")
+                    for candidate in sapi_voice.GetVoices():
+                        if "zira" in candidate.GetDescription().lower():
+                            sapi_voice.Voice = candidate
+                            break  # else: fall back to the default voice
+                    sapi_voice.Volume = max(0, min(100, int(volume * 100)))
+                    sapi_voice.AudioOutputStream = stream
+                    sapi_voice.Speak(text)
 
-                pcm = np.frombuffer(bytes(stream.GetData()), dtype="<i2")
+                    pcm = np.frombuffer(bytes(stream.GetData()), dtype="<i2")
                 samples = pcm.astype("float32") / 32768.0
                 sd.play(samples, samplerate=_RATE,
                         device=config.OUTPUT_DEVICE, blocking=True)
