@@ -16,7 +16,7 @@
 ;   half-gigabyte left behind).
 
 #define MyAppName "Sumit Speak"
-#define MyAppVersion "1.1.1"
+#define MyAppVersion "1.1.2"
 #define MyAppExeName "SumitSpeak.exe"
 ; The bundled grammar engine is packed in at COMPILE time from the build
 ; machine's installed copy (a plain path, not an install-time constant).

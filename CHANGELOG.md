@@ -2,6 +2,23 @@
 
 All notable changes to Sumit Speak are recorded here.
 
+## [1.1.2] - 2026-07-22
+
+### Fixed
+
+- Dictating with no window actually focused (e.g. desktop showing, all
+  windows minimized) silently went nowhere instead of showing an error.
+  Windows UI Automation reports the last active window's own frame as
+  "focused" in that case rather than reporting nothing, and that frame
+  was incorrectly being treated as an editable text field.
+
+### Changed
+
+- The no-target error is now a simpler on-screen box only (no spoken
+  voice cue), shows for 1.5 seconds instead of 3.5, and lost its "OK"
+  button — the whole box (or clicking elsewhere, or Escape) still
+  dismisses it early.
+
 ## [1.1.1] - 2026-07-22
 
 ### Fixed
