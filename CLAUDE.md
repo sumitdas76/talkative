@@ -28,7 +28,17 @@ python -m venv .venv
 # or, to avoid a console window (matches how the built EXE behaves):
 .\.venv\Scripts\pythonw.exe main.py
 
-# Rebuild the standalone EXE after any source change
+# Rebuild the standalone EXE after any source change, and copy it to
+# every location on this machine (project root, and the installed copy
+# if one exists) -- see scripts/rebuild.ps1 for why this is scripted
+# rather than a single manual command.
+.\scripts\rebuild.ps1
+```
+
+If you need the raw PyInstaller command directly (e.g. debugging the
+build itself, not doing a normal rebuild):
+
+```powershell
 .\.venv\Scripts\python -m PyInstaller --noconfirm --onefile --windowed --name SumitSpeak --icon assets\icon.ico --collect-all ctranslate2 --collect-all faster_whisper --collect-all av --collect-all tokenizers --collect-all uiautomation --hidden-import win32timezone main.py
 ```
 
@@ -54,22 +64,28 @@ scratchpad pattern — exercise those functions with real sentences after
 changing them. App-level verification is manual (run it, dictate something,
 watch the tray icon / target app).
 
-### IMPORTANT: two EXE copies, and the file-lock gotcha
+### IMPORTANT: multiple EXE copies, and the file-lock gotcha
 
-The user keeps a working copy of the EXE at the **project root** (not just
-`dist\`) and launches it from there directly — always copy a fresh build to
-**both** locations:
-
-```powershell
-cp dist/SumitSpeak.exe SumitSpeak.exe
-```
+Up to **three** copies of the EXE can exist on this machine and none of
+them sync automatically: `dist\SumitSpeak.exe` (PyInstaller's raw
+output), the **project root** copy the user actually launches from, and
+an **installed** copy at `%LOCALAPPDATA%\Programs\Sumit Speak\` (from
+testing the Inno Setup installer). `scripts\rebuild.ps1` builds and
+copies to all of these that exist in one step — use it instead of
+running PyInstaller directly and manually `cp`-ing. This exists
+because on 2026-07-22 the installed copy sat two releases behind
+without anyone noticing (source-only fixes and installer bumps kept
+happening while that copy silently went stale) until the About tab
+gave it away.
 
 (Stale `WisprLite.exe` copies from before the rename may still exist; they
 are the old build.)
 
-PyInstaller fails with `PermissionError: Access is denied` if either copy is
-currently running (it can't overwrite a locked EXE). Before rebuilding,
-check for and stop running instances:
+PyInstaller fails with `PermissionError: Access is denied` if any copy is
+currently running (it can't overwrite a locked EXE) — `rebuild.ps1` checks
+for and refuses to run over a live `SumitSpeak` process rather than
+guessing whether it's safe to kill it. Before rebuilding manually, check
+for and stop running instances yourself:
 
 ```powershell
 Get-Process SumitSpeak, WisprLite -ErrorAction SilentlyContinue | Select-Object Id,StartTime,Path
@@ -78,9 +94,9 @@ Get-Process SumitSpeak, WisprLite -ErrorAction SilentlyContinue | Select-Object 
 The user frequently has an instance running to test something live — ask
 before killing it rather than assuming it's safe to stop.
 
-After PyInstaller finishes, do a launch smoke test (start it, confirm the
-process stays alive for a few seconds without exiting, then stop it) — this
-has caught real packaging issues before (missing DLLs, bad hidden imports).
+After rebuilding, do a launch smoke test (start it, confirm the process
+stays alive for a few seconds without exiting, then stop it) — this has
+caught real packaging issues before (missing DLLs, bad hidden imports).
 
 ## Architecture
 
