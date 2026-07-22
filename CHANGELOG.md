@@ -2,6 +2,15 @@
 
 All notable changes to Sumit Speak are recorded here.
 
+## [1.1.3] - 2026-07-22
+
+### Fixed
+
+- The About tab showed "Version 1.1.0" regardless of the actual
+  installed version — `sumit_speak/__init__.py`'s `__version__`
+  constant is separate from the installer's version number and hadn't
+  been updated across the 1.1.1 or 1.1.2 releases.
+
 ## [1.1.2] - 2026-07-22
 
 ### Fixed
