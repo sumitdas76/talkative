@@ -16,7 +16,7 @@
 ;   half-gigabyte left behind).
 
 #define MyAppName "Sumit Speak"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.1"
 #define MyAppExeName "SumitSpeak.exe"
 ; The bundled grammar engine is packed in at COMPILE time from the build
 ; machine's installed copy (a plain path, not an install-time constant).
@@ -40,7 +40,6 @@ SetupIconFile=..\assets\icon.ico
 
 [Tasks]
 Name: "autostart"; Description: "Start {#MyAppName} when Windows starts"
-Name: "launchafter"; Description: "Launch {#MyAppName} now"; Flags: unchecked
 
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -57,7 +56,7 @@ Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; \
     StatusMsg: "Installing system components..."; Check: VCRuntimeMissing
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; \
-    Flags: nowait postinstall skipifsilent; Tasks: launchafter
+    Flags: nowait postinstall skipifsilent
 
 [Code]
 function VCRuntimeMissing: Boolean;

@@ -2,7 +2,7 @@
 
 All notable changes to Sumit Speak are recorded here.
 
-## [Unreleased]
+## [1.1.1] - 2026-07-22
 
 ### Fixed
 
@@ -15,6 +15,12 @@ All notable changes to Sumit Speak are recorded here.
   aren't safe to run at once and corrupting the heap. Only the first
   physical key-down of the hotkey is handled now; the voice cue's COM
   calls are also serialized as a second line of defense.
+
+### Changed
+
+- The installer's "Launch Sumit Speak now" option moved from an opt-in
+  task checkbox to the setup wizard's standard finish-page checkbox
+  (checked by default).
 
 ## [1.1.0] - 2026-07-21
 
