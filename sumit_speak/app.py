@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pynput import keyboard
 
-from . import config, error_toast, feedback, grammar_engine, model_manager, pill, settings, speech, try_it_now, updater
+from . import config, error_toast, feedback, grammar_engine, model_manager, pill, settings, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -128,17 +128,11 @@ class SumitSpeakApp:
         threading.Thread(target=_play, daemon=True).start()
 
     def _no_target_cue(self):
-        """Nothing editable is focused. A spoken cue + an on-screen error
-        instead of a blocking popup -- the user's hands are mid-dictation,
-        not reaching for a mouse to dismiss a dialog. The on-screen part is
-        a floating, always-on-top box (error_toast) rather than a Windows
-        tray balloon, which can be silently suppressed or routed straight
-        to Action Center."""
-        speech.speak(
-            "No text box is selected. Click where you want your words to "
-            "go, then try again.",
-            volume=config.SOUND_VOLUME,
-        )
+        """Nothing editable is focused. An on-screen error instead of a
+        blocking popup -- the user's hands are mid-dictation, not reaching
+        for a mouse to dismiss a dialog. It's a floating, always-on-top box
+        (error_toast) rather than a Windows tray balloon, which can be
+        silently suppressed or routed straight to Action Center."""
         error_toast.show("Error! Select a text field before typing.")
 
     def _load_model_async(self):

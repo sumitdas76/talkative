@@ -40,6 +40,19 @@ def is_focus_editable():
     if control is None or not control.Exists(0, 0):
         return False
 
+    # When nothing in particular is focused (e.g. the desktop is showing,
+    # no app window is active), UIA doesn't report "no control" -- it falls
+    # back to the last active top-level window frame itself. That frame
+    # isn't a text-entry target even though it reports IsEnabled/no
+    # read-only flag, so without this check it silently passed as
+    # "editable," dictation proceeded, and the pasted text had nowhere to
+    # land -- with no error shown, since every other signal looked fine.
+    try:
+        if control.ControlTypeName == "WindowControl":
+            return False
+    except Exception:
+        pass
+
     try:
         if not control.IsEnabled:
             return False
