@@ -2,6 +2,20 @@
 
 All notable changes to Sumit Speak are recorded here.
 
+## [Unreleased]
+
+### Fixed
+
+- A crash (`STATUS_HEAP_CORRUPTION`, confirmed via Windows crash dump)
+  that could happen when holding the dictate hotkey over a window with
+  nothing editable focused. Windows re-fires the key-press event at the
+  OS key-repeat rate for as long as a key is held; since dictation never
+  started in that case, every repeat replayed the no-target handler,
+  including its spoken voice cue — flooding concurrent COM calls that
+  aren't safe to run at once and corrupting the heap. Only the first
+  physical key-down of the hotkey is handled now; the voice cue's COM
+  calls are also serialized as a second line of defense.
+
 ## [1.1.0] - 2026-07-21
 
 ### Added
