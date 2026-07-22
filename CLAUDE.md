@@ -542,6 +542,65 @@ actually faster/different grammar model remains unstarted -- needs its
 own dedicated evaluation pass (download candidates, convert to
 CTranslate2, test against real debug.log transcripts), not a quick swap.
 
+## Resume point (end of session, 2026-07-22)
+
+**Crash fixed and shipped to source (not yet a numbered release):** the
+user reported dictating with no window focused, seeing the red error
+toast, then the app crashing. Root-caused from a live Windows crash
+dump (`%LOCALAPPDATA%\CrashDumps\SumitSpeak.exe.3864.dmp`, captured
+07:09 that morning) by hand-parsing the minidump's exception stream and
+module list (no windbg/cdb available on this machine) -- exception was
+`STATUS_HEAP_CORRUPTION` (`0xC0000374`) faulting inside `ntdll.dll`,
+with `sapi`/`_tkinter`/`tcl86t.dll` strings present, pointing at the
+no-target-focus path (`app._no_target_cue`, which calls `speech.speak`
+-- SAPI via `win32com.client.Dispatch`).
+
+Actual bug: `app.py`'s `_on_press` had no guard against Windows' OS
+key-repeat. While the user held Ctrl over an unfocused window,
+`_recording` never became `True` (recording never starts on that path),
+so *every* repeat event replayed the full handler body, including the
+SAPI/COM voice-cue call -- flooding many concurrent
+`win32com.client.Dispatch` calls in a short window. pywin32's
+gencache/type-building isn't safe under concurrent first-use from
+multiple threads, which is the likely proximate cause of the heap
+corruption. Fixed with a `self._chord_active` guard: only the first
+physical key-down of the configured hotkey chord is handled; a release
+re-arms it (`_on_press`/`_on_release`/`_apply_settings` in `app.py`).
+Also serialized the SAPI `Dispatch`/`Speak` sequence in `speech.py`
+behind a module-level lock as defense-in-depth, independent of whether
+the repeat bug is the only trigger.
+
+**Any future hotkey-triggered handler needs the same repeat-awareness**
+-- `pynput`'s `on_press` does not deduplicate OS auto-repeat on
+Windows; only guard against it once, centrally, if adding new
+press-triggered logic outside the existing chord-active check.
+
+Rebuilt `SumitSpeak.exe` (PyInstaller command must be run from
+PowerShell in this repo, not Bash/Git Bash -- Bash eats the backslash
+in `--icon assets\icon.ico`, silently mangling it to `assetsicon.ico`
+and failing the build), copied to both `dist\` and the project root,
+smoke-tested (launched, stayed alive, left running for the user to
+manually confirm holding the hotkey over an unfocused window no longer
+crashes). Committed as its own commit (`sumit_speak/app.py`,
+`sumit_speak/speech.py` only) and pushed to `origin/main`, along with
+the previously-unpushed 2026-07-21 resume-point commit. `CHANGELOG.md`
+got an `[Unreleased]` section for this fix, also committed and pushed.
+
+**Left alone, still pending in the working tree (not this session's
+work, not committed):** a staged rename of `Wispr Lite - User
+Guide.docx` -> `docs\` and `diagnose_focus.py` -> `scripts\` (repo
+reorg, already `git add`ed from before this session), and an unstaged
+edit to `installer\SumitSpeak.iss` removing the "launch after install"
+optional checkbox task. Neither was touched or investigated this
+session -- review before committing.
+
+**Not a numbered release yet:** `installer\SumitSpeak.iss` is still at
+`MyAppVersion "1.1.0"`; no new installer has been built or published
+for this fix. Next session (or this one, if asked): decide whether to
+cut 1.1.1, which would also need `installer\SumitSpeak.iss`'s version
+bumped and a fresh installer build/publish per the existing release
+process.
+
 ## Packaging notes
 
 `--collect-all` flags in the pyinstaller command are load-bearing:
