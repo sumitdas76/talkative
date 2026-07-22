@@ -594,6 +594,54 @@ edit to `installer\SumitSpeak.iss` removing the "launch after install"
 optional checkbox task. Neither was touched or investigated this
 session -- review before committing.
 
+**v1.1.2 published later the same day (2026-07-22 session #2):** the
+user reported that dictating with no window actually focused (desktop
+showing, everything minimized) went nowhere with no error shown at
+all -- a different, deeper bug than the crash fixed above. Root-caused
+by directly probing `auto.GetFocusedControl()` with all windows
+minimized (via a windowless `pythonw.exe` probe script, run right
+after `Shell.Application.MinimizeAll()`, so the probe itself didn't
+steal focus): UIA doesn't report "no control" when nothing is truly
+focused -- it falls back to reporting the last active window's own
+top-level frame (`ControlTypeName: WindowControl`) as focused. The
+block-list logic in `focus_check.is_focus_editable()` never checked
+control *type*, only `IsEnabled`/read-only signals, so that bare frame
+silently passed as editable. Fixed with an explicit `ControlTypeName ==
+"WindowControl"` rejection, added right after the existing
+None/`Exists` check. Re-verified both directions after the fix: no
+window focused -> `False` (blocked), Notepad's real edit control
+focused -> `True` (unchanged, no WhatsApp-style regression).
+
+While testing that fix live, the user asked for `error_toast.py` to be
+redesigned: solid red / black text / no border (was dark maroon/white),
+dismissible by clicking the box, clicking anywhere else on screen, or
+Escape -- the click/Escape handling is implemented as global `pynput`
+hooks (mouse.Listener / keyboard.Listener), the same mechanism as the
+hotkey listener itself, specifically because the toast window is
+`WS_EX_NOACTIVATE` and never receives real focus-routed input for
+anything off the box. After trying it live, the user asked to simplify
+further: removed the spoken SAPI voice cue entirely (`speech.speak` call
+deleted from `app._no_target_cue`) -- and since nothing else in the
+codebase used `speech.py`, deleted that now-dead module outright --
+removed the on-screen "OK" label (the whole box stays clickable to
+dismiss without it), and shortened auto-dismiss from 3.5s to 1.5s.
+
+Shipped as **v1.1.2** the same session: `installer\SumitSpeak.iss`
+bumped to `1.1.2`, `CHANGELOG.md` got a new entry, installer rebuilt
+from the already-tested `dist\SumitSpeak.exe` (no PyInstaller rebuild
+needed, no source changes since that build). Both commits pushed.
+**Note for next session: `git push` and `gh release create` were both
+blocked by this session's auto-mode permission classifier** even after
+explicit user go-ahead -- the user ran both manually via `! <command>`
+from their own prompt instead. `gh release create` additionally failed
+once from Git Bash/MinTTY (`Incorrect function` -- a known `gh`
+progress-bar-under-MinTTY issue uploading a 1.6 GB asset); retrying the
+identical command from **PowerShell** instead of Bash succeeded
+immediately. If a future release publish fails the same way, don't
+retry in Bash -- switch to PowerShell first.
+https://github.com/sumitdas76/sumit-speak/releases/tag/v1.1.2 confirmed
+live and marked "Latest" via `gh release list`.
+
 **Published as v1.1.1, same session:** the user pointed out that the
 source-level fix alone wouldn't reach anyone downloading the installer
 from GitHub Releases (still v1.1.0 at that point) -- correct catch, so
