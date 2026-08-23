@@ -1,12 +1,12 @@
 """
 Floating "listening" pill (spec section 10.1).
 
-A small always-on-top capsule that appears near the cursor while recording:
-a red dot plus live audio-level bars, so the user can see the app is
-hearing them. Disappears on release. It must never steal keyboard focus
-(the user is mid-dictation into another window) -- the window gets
-WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, no taskbar entry, and is never
-focused.
+A small always-on-top capsule fixed at the bottom-center of the screen
+while recording: a red dot plus live audio-level bars, so the user can see
+the app is hearing them. Disappears on release. It must never steal
+keyboard focus (the user is mid-dictation into another window) -- the
+window gets WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, no taskbar entry, and is
+never focused.
 
 Built as a tk.Toplevel on the shared overlay thread (see overlay_thread.py
 -- multiple independent tk.Tk() roots across threads caused real crashes),
@@ -16,7 +16,6 @@ failed to start. Pill problems must never break dictation.
 """
 
 import ctypes
-import ctypes.wintypes
 import queue
 import threading
 
@@ -31,8 +30,6 @@ _BAR_X0 = round(38 * _SCALE)
 _BAR_RIGHT_MARGIN = round(16 * _SCALE)
 _BAR_HALF_MIN = round(2 * _SCALE)
 _BAR_MAX_MARGIN = round(8 * _SCALE)
-_CURSOR_OFFSET_X = round(18 * _SCALE)
-_CURSOR_OFFSET_Y = round(24 * _SCALE)
 _SCREEN_BOTTOM_MARGIN = round(48 * _SCALE)
 # Chroma-key color: anything painted this exact color becomes fully
 # see-through (Windows-only Tk feature), so the canvas's own rectangular
@@ -129,17 +126,11 @@ class _Pill:
         except Exception:
             pass
 
-    def _place_near_cursor(self):
-        try:
-            point = ctypes.wintypes.POINT()
-            ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
-            x, y = point.x + _CURSOR_OFFSET_X, point.y + _CURSOR_OFFSET_Y
-        except Exception:
-            x = y = 200
+    def _place_bottom_center(self):
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
-        x = max(8, min(x, screen_w - _WIDTH - 8))
-        y = max(8, min(y, screen_h - _HEIGHT - _SCREEN_BOTTOM_MARGIN))
+        x = (screen_w - _WIDTH) // 2
+        y = screen_h - _HEIGHT - _SCREEN_BOTTOM_MARGIN
         self.root.geometry(f"{_WIDTH}x{_HEIGHT}+{x}+{y}")
 
     def _tick(self):
@@ -148,7 +139,7 @@ class _Pill:
                 cmd = self._commands.get_nowait()
                 if cmd == "show" and not self._visible:
                     self._history = [0.0] * _BARS
-                    self._place_near_cursor()
+                    self._place_bottom_center()
                     self.root.deiconify()
                     self._no_activate()
                     self._visible = True
