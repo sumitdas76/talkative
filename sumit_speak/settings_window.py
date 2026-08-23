@@ -17,7 +17,7 @@ from tkinter import messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, config, feedback, grammar_engine, model_manager, overlay_thread, settings, updater
+from . import __version__, app_icon, config, feedback, grammar_engine, history, model_manager, overlay_thread, settings, updater
 from .keynames import friendly as _friendly_key_name
 
 APP_NAME = "Sumit Speak"
@@ -373,32 +373,104 @@ class _SettingsWindow:
             self.dict_tree.delete(item)
 
     def _tab_dictation(self, f):
+        cleanup_box = ttk.LabelFrame(f, text="Cleanup style", padding=10)
+        cleanup_box.pack(fill="x")
         self.var_cleanup = tk.StringVar(value=config.CLEANUP_MODE)
         ttk.Radiobutton(
-            f, text="Cleaned up — slips and repetitions removed. "
+            cleanup_box, text="Cleaned up — slips and repetitions removed. "
                     "Your meaning is never changed.",
             variable=self.var_cleanup, value="cleaned_up",
             command=self._update_example,
         ).pack(anchor="w", pady=4)
         ttk.Radiobutton(
-            f, text="As spoken — exactly what you said, word for word.",
+            cleanup_box, text="As spoken — exactly what you said, word for word.",
             variable=self.var_cleanup, value="as_spoken",
             command=self._update_example,
         ).pack(anchor="w", pady=4)
 
-        box = ttk.LabelFrame(f, text="Example", padding=10)
-        box.pack(fill="x", pady=12)
-        ttk.Label(box, text="You said:").pack(anchor="w")
-        ttk.Label(box, text=_EXAMPLE_SPOKEN, wraplength=500,
+        example_box = ttk.LabelFrame(cleanup_box, text="Example", padding=10)
+        example_box.pack(fill="x", pady=(8, 0))
+        ttk.Label(example_box, text="You said:").pack(anchor="w")
+        ttk.Label(example_box, text=_EXAMPLE_SPOKEN, wraplength=480,
                   foreground="grey").pack(anchor="w", pady=(0, 6))
-        ttk.Label(box, text="Appears on screen:").pack(anchor="w")
-        self.example_label = ttk.Label(box, text="", wraplength=500)
+        ttk.Label(example_box, text="Appears on screen:").pack(anchor="w")
+        self.example_label = ttk.Label(example_box, text="", wraplength=480)
         self.example_label.pack(anchor="w")
         self._update_example()
+
+        recording_box = ttk.LabelFrame(f, text="While recording", padding=10)
+        recording_box.pack(fill="x", pady=(12, 0))
+        self.var_live_preview = tk.BooleanVar(value=config.ENABLE_LIVE_PREVIEW)
+        ttk.Checkbutton(
+            recording_box,
+            text="Show a live preview of what you're saying near your "
+                 "cursor while you hold the hotkey",
+            variable=self.var_live_preview,
+        ).pack(anchor="w")
+
+        history_box = ttk.LabelFrame(f, text="History", padding=10)
+        history_box.pack(fill="x", pady=(12, 0))
+        self.var_history = tk.BooleanVar(value=config.ENABLE_HISTORY)
+        ttk.Checkbutton(
+            history_box, text="Keep a history of what I've dictated",
+            variable=self.var_history,
+        ).pack(anchor="w")
+        ttk.Label(
+            history_box, foreground="grey",
+            text="Saved only on this device. Nothing is sent anywhere.",
+        ).pack(anchor="w", pady=(2, 8))
+        ttk.Button(
+            history_box, text="View history…", command=self._open_history_viewer,
+        ).pack(anchor="w")
 
     def _update_example(self):
         clean = self.var_cleanup.get() == "cleaned_up"
         self.example_label.config(text=_EXAMPLE_CLEAN if clean else _EXAMPLE_ASIS)
+
+    def _open_history_viewer(self):
+        win = tk.Toplevel(self.root)
+        win.title("Dictation history")
+        app_icon.set_window_icon(win)
+        win.geometry("480x360")
+        win.transient(self.root)
+
+        ttk.Label(
+            win, padding=(12, 10, 12, 4),
+            text="What you've dictated, most recent first.",
+        ).pack(anchor="w")
+
+        tree = ttk.Treeview(
+            win, columns=("when", "text"), show="headings", height=10,
+        )
+        tree.heading("when", text="When")
+        tree.heading("text", text="What you said")
+        tree.column("when", width=130)
+        tree.column("text", width=320)
+        tree.pack(fill="both", expand=True, padx=12, pady=4)
+
+        def refresh():
+            tree.delete(*tree.get_children())
+            entries = list(reversed(history.load()))
+            if not entries:
+                tree.insert("", "end", values=("", "No history yet."))
+                return
+            for entry in entries:
+                tree.insert("", "end", values=(entry.get("time", ""), entry.get("text", "")))
+
+        refresh()
+
+        def clear():
+            if messagebox.askyesno(
+                "Clear history", "Delete all saved dictation history? "
+                "This can't be undone."
+            ):
+                history.clear()
+                refresh()
+
+        bar = ttk.Frame(win, padding=(12, 4, 12, 10))
+        bar.pack(fill="x")
+        ttk.Button(bar, text="Clear history", command=clear).pack(side="left")
+        ttk.Button(bar, text="Close", command=win.destroy).pack(side="right")
 
     def _tab_hotkeys(self, f):
         ttk.Label(f, text="Dictation key(s) (hold to talk):").pack(anchor="w")
@@ -878,8 +950,10 @@ class _SettingsWindow:
             box, wraplength=500,
             text="Dictation is fully offline — your voice never leaves "
                  "this PC. Audio is transcribed locally and never saved. "
-                 "The one exception is the Feedback box below: nothing is "
-                 "sent unless you type a message and click Send.",
+                 "Dictation history, if you turn it on in the Dictation "
+                 "tab, is also stored only on this device. The one "
+                 "exception is the Feedback box below: nothing is sent "
+                 "unless you type a message and click Send.",
         ).pack(anchor="w")
 
         self._build_feedback_section(f)
@@ -951,6 +1025,8 @@ class _SettingsWindow:
             "play_sounds": self.var_sounds.get(),
             "theme": self.var_theme.get(),
             "cleanup_mode": self.var_cleanup.get(),
+            "enable_live_preview": self.var_live_preview.get(),
+            "enable_history": self.var_history.get(),
             "insert_mode": self.var_insert.get(),
             "append_space": self.var_space.get(),
             "press_enter_after": self.var_enter.get(),

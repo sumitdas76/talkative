@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pynput import keyboard
 
-from . import config, error_toast, feedback, grammar_engine, model_manager, pill, settings, try_it_now, updater
+from . import config, error_toast, feedback, grammar_engine, history, model_manager, pill, settings, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -68,6 +68,11 @@ class SumitSpeakApp:
         self._swapping = False  # model swap in progress (update install/undo)
         self._hotkey_pressed = set()  # currently-held keys that are part of config.HOTKEY
         self._chord_active = False  # chord already handled for this press-hold, ignore OS key-repeat
+        # Serializes every call to self.transcriber.transcribe(...) -- both
+        # the live-preview loop's and the final one -- so a preview call
+        # in flight at the exact moment of release can't run concurrently
+        # with the final transcribe on the same model instance.
+        self._transcribe_lock = threading.Lock()
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
             hotkey_label=friendly_key(config.HOTKEY),
@@ -285,6 +290,32 @@ class SumitSpeakApp:
         self.tray.set_recording()
         pill.show(lambda: self.recorder.level)
         self._beep("start")
+        if config.ENABLE_LIVE_PREVIEW:
+            threading.Thread(target=self._live_preview_loop, daemon=True).start()
+
+    def _live_preview_loop(self):
+        """Periodically re-transcribes the in-progress recording (raw ASR
+        only -- no cleanup/grammar pass, too slow to run every second, and
+        this is intentionally a rough preview) and pushes the result to the
+        floating pill. Never touches the final pasted text -- that's still
+        produced exactly as before, once, in _process_audio_inner. Exits as
+        soon as recording stops."""
+        while self._recording:
+            time.sleep(config.LIVE_PREVIEW_INTERVAL)
+            if not self._recording:
+                break
+            audio = self.recorder.snapshot(max_seconds=config.LIVE_PREVIEW_WINDOW_SECONDS)
+            if audio.size == 0:
+                continue
+            try:
+                with self._transcribe_lock:
+                    if not self._recording:
+                        break
+                    text = self.transcriber.transcribe(audio, config.SAMPLE_RATE)
+            except Exception:
+                continue
+            if text:
+                pill.set_preview(text)
 
     def _on_release(self, key):
         if key not in config.HOTKEY:
@@ -319,9 +350,10 @@ class SumitSpeakApp:
         ) or None
         t0 = time.time()
         try:
-            text = self.transcriber.transcribe(
-                audio, config.SAMPLE_RATE, initial_prompt=prompt
-            )
+            with self._transcribe_lock:
+                text = self.transcriber.transcribe(
+                    audio, config.SAMPLE_RATE, initial_prompt=prompt
+                )
         except Exception as exc:
             show_error_popup(f"Transcription failed:\n{exc}")
             return
@@ -375,6 +407,8 @@ class SumitSpeakApp:
 
         insert_text(text)
         self._beep("done")
+        if config.ENABLE_HISTORY:
+            history.add(text)
         updater.note_words(len(text.split()))
         if config.INSERT_MODE == "clipboard":
             self.tray.notify("Copied to clipboard — press Ctrl+V to paste.")

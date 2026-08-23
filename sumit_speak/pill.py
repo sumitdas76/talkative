@@ -23,7 +23,14 @@ import threading
 from . import overlay_thread
 
 _SCALE = 0.8  # sized down 20% at the user's request, July 20 2026
-_WIDTH, _HEIGHT = round(172 * _SCALE), round(40 * _SCALE)
+# Width widened from the original 172 (2026-08-23) to fit the live-preview
+# text row added below the bars; _TEXT_HEIGHT reserves that row. The row is
+# always built, even when live preview is off/empty, to avoid the
+# complexity of resizing a live Tk canvas per recording -- it's just blank
+# space in that case.
+_WIDTH, _HEIGHT = round(210 * _SCALE), round(40 * _SCALE)
+_TEXT_HEIGHT = round(54 * _SCALE)
+_TOTAL_HEIGHT = _HEIGHT + _TEXT_HEIGHT
 _BARS = 12
 _DOT_MARGIN = round(14 * _SCALE)
 _DOT_DIAM = round(12 * _SCALE)
@@ -64,10 +71,13 @@ class _Pill:
 
     def show(self, level_source):
         self._level_source = level_source
-        self._commands.put("show")
+        self._commands.put(("show", None))
 
     def hide(self):
-        self._commands.put("hide")
+        self._commands.put(("hide", None))
+
+    def set_preview(self, text):
+        self._commands.put(("preview", text))
 
     # ---- overlay thread ----
 
@@ -83,17 +93,25 @@ class _Pill:
             self.root.attributes("-transparentcolor", _TRANSPARENT_KEY)
             self.root.configure(bg=_TRANSPARENT_KEY)
             self.canvas = tk.Canvas(
-                self.root, width=_WIDTH, height=_HEIGHT,
+                self.root, width=_WIDTH, height=_TOTAL_HEIGHT,
                 highlightthickness=0, bg=_TRANSPARENT_KEY,
             )
             self.canvas.pack()
-            # Capsule background.
+            # Capsule background (rounded top, matching the original pill
+            # shape) plus a flush, square-cornered ledge below it for the
+            # live-preview text row.
             r = _HEIGHT // 2
             self.canvas.create_oval(0, 0, 2 * r, _HEIGHT, fill="#202020", outline="")
             self.canvas.create_oval(_WIDTH - 2 * r, 0, _WIDTH, _HEIGHT,
                                     fill="#202020", outline="")
             self.canvas.create_rectangle(r, 0, _WIDTH - r, _HEIGHT,
                                          fill="#202020", outline="")
+            self.canvas.create_rectangle(r, _HEIGHT, _WIDTH - r, _TOTAL_HEIGHT,
+                                         fill="#202020", outline="")
+            self.preview_text = self.canvas.create_text(
+                r + 6, _HEIGHT + 4, anchor="nw", width=_WIDTH - 2 * r - 12,
+                fill="#cccccc", font=("Segoe UI", 8), justify="left", text="",
+            )
             self.dot = self.canvas.create_oval(
                 _DOT_MARGIN, _DOT_MARGIN,
                 _DOT_MARGIN + _DOT_DIAM, _DOT_MARGIN + _DOT_DIAM,
@@ -139,22 +157,25 @@ class _Pill:
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
         x = max(8, min(x, screen_w - _WIDTH - 8))
-        y = max(8, min(y, screen_h - _HEIGHT - _SCREEN_BOTTOM_MARGIN))
-        self.root.geometry(f"{_WIDTH}x{_HEIGHT}+{x}+{y}")
+        y = max(8, min(y, screen_h - _TOTAL_HEIGHT - _SCREEN_BOTTOM_MARGIN))
+        self.root.geometry(f"{_WIDTH}x{_TOTAL_HEIGHT}+{x}+{y}")
 
     def _tick(self):
         try:
             while True:
-                cmd = self._commands.get_nowait()
-                if cmd == "show" and not self._visible:
+                kind, payload = self._commands.get_nowait()
+                if kind == "show" and not self._visible:
                     self._history = [0.0] * _BARS
+                    self.canvas.itemconfigure(self.preview_text, text="")
                     self._place_near_cursor()
                     self.root.deiconify()
                     self._no_activate()
                     self._visible = True
-                elif cmd == "hide" and self._visible:
+                elif kind == "hide" and self._visible:
                     self.root.withdraw()
                     self._visible = False
+                elif kind == "preview" and self._visible:
+                    self.canvas.itemconfigure(self.preview_text, text=payload)
         except queue.Empty:
             pass
 
@@ -210,5 +231,16 @@ def hide():
         pill = _get()
         if not pill._failed:
             pill.hide()
+    except Exception:
+        pass
+
+
+def set_preview(text):
+    """Update the live-preview text row; no-op if the pill isn't visible or
+    failed to start. Safe from any thread."""
+    try:
+        pill = _get()
+        if not pill._failed:
+            pill.set_preview(text)
     except Exception:
         pass

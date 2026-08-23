@@ -28,6 +28,8 @@ _KEYS = {
     "enable_spoken_symbols": "ENABLE_SPOKEN_SYMBOLS",
     "enable_repeat_collapse": "ENABLE_REPEAT_COLLAPSE",
     "enable_grammar_engine": "ENABLE_GRAMMAR_ENGINE",
+    "enable_live_preview": "ENABLE_LIVE_PREVIEW",
+    "enable_history": "ENABLE_HISTORY",
     "grammar_model": "GRAMMAR_MODEL_DIR",
     "manifest_url": "MANIFEST_URL",
     "insert_mode": "INSERT_MODE",
