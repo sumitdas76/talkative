@@ -1,10 +1,10 @@
-; Sumit Speak installer (product spec section 8).
-; Build:  ISCC.exe installer\SumitSpeak.iss   (from the project root, after
+; Talkative installer (product spec section 8).
+; Build:  ISCC.exe installer\Talkative.iss   (from the project root, after
 ; a fresh PyInstaller build in dist\).
 ;
 ; Decisions from the spec, deliberately:
 ; - Per-user install: no admin prompt, no UAC. Installs under
-;   %LOCALAPPDATA%\Programs\Sumit Speak.
+;   %LOCALAPPDATA%\Programs\Talkative.
 ; - The grammar engine (~1.5 GB, invisible in the UI) is bundled so
 ;   "Cleaned up" works from the very first dictation. The speech model is
 ;   NOT bundled -- the app downloads it on first run (the app owns
@@ -15,12 +15,12 @@
 ; - Uninstall asks whether to also remove models and settings (no
 ;   half-gigabyte left behind).
 
-#define MyAppName "Sumit Speak"
+#define MyAppName "Talkative"
 #define MyAppVersion "1.1.3"
-#define MyAppExeName "SumitSpeak.exe"
+#define MyAppExeName "Talkative.exe"
 ; The bundled grammar engine is packed in at COMPILE time from the build
 ; machine's installed copy (a plain path, not an install-time constant).
-#define GrammarSource GetEnv("LOCALAPPDATA") + "\SumitSpeak\models\grammar"
+#define GrammarSource GetEnv("LOCALAPPDATA") + "\Talkative\models\grammar"
 
 [Setup]
 AppId={{7E1B3C52-9A44-4E0B-B7D1-52B4A46C1F0D}
@@ -31,7 +31,7 @@ DefaultDirName={userpf}\{#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=Output
-OutputBaseFilename=SumitSpeakSetup
+OutputBaseFilename=TalkativeSetup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -45,7 +45,7 @@ Name: "autostart"; Description: "Start {#MyAppName} when Windows starts"
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 ; Grammar engine into the app-owned model folder; never overwrite one the
 ; user already has (it may be newer via the update system).
-Source: "{#GrammarSource}\*"; DestDir: "{localappdata}\SumitSpeak\models\grammar"; \
+Source: "{#GrammarSource}\*"; DestDir: "{localappdata}\Talkative\models\grammar"; \
     Flags: recursesubdirs onlyifdoesntexist nocompression
 Source: "redist\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
@@ -77,10 +77,10 @@ begin
     only seeds the setting on a fresh install so the two never fight. }
   if (CurStep = ssPostInstall) and WizardIsTaskSelected('autostart') then
   begin
-    SettingsFile := ExpandConstant('{localappdata}\SumitSpeak\settings.json');
+    SettingsFile := ExpandConstant('{localappdata}\Talkative\settings.json');
     if not FileExists(SettingsFile) then
     begin
-      ForceDirectories(ExpandConstant('{localappdata}\SumitSpeak'));
+      ForceDirectories(ExpandConstant('{localappdata}\Talkative'));
       SaveStringToFile(SettingsFile, '{' + #13#10 +
         '  "start_with_windows": true' + #13#10 + '}' + #13#10, False);
     end;
@@ -96,6 +96,6 @@ begin
     if SuppressibleMsgBox('Also remove the downloaded speech models and your '
               + 'settings?' + #13#10 + 'This frees up to 4 GB of disk space.',
               mbConfirmation, MB_YESNO, IDNO) = IDYES then
-      DelTree(ExpandConstant('{localappdata}\SumitSpeak'), True, True, True);
+      DelTree(ExpandConstant('{localappdata}\Talkative'), True, True, True);
   end;
 end;

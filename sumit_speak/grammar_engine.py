@@ -113,7 +113,7 @@ def delete():
     the delete fails on Windows with the engine still loaded. Cleaned-up
     mode silently falls back to rules-only afterward (the graceful-absence
     contract); there is currently no in-app re-download, only reinstalling
-    Sumit Speak."""
+    Talkative."""
     import gc
     import shutil
 

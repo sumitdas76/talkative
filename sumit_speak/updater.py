@@ -23,7 +23,7 @@ publishing act. Client side, in this module:
   update" with a word countdown; using it restores the old version and
   permanently suppresses that update. Only one step back is ever kept.
 
-State lives in %LOCALAPPDATA%\\SumitSpeak\\updater.json:
+State lives in %LOCALAPPDATA%\\Talkative\\updater.json:
 { "last_check": "2026-07-19", "snoozed": {"grammar@2": "2026-07-26"},
   "suppressed": ["grammar@2"],
   "grace": {"key": "grammar", "version": "2", "words_left": 640} }
@@ -372,7 +372,7 @@ def _show_dialog(entry, on_download, on_cancel):
             from tkinter import ttk
 
             root = tk.Toplevel(overlay.root)
-            root.title("Sumit Speak")
+            root.title("Talkative")
             app_icon.set_window_icon(root)
             root.resizable(False, False)
             size = entry.get("size_mb")

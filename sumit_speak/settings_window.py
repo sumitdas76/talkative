@@ -20,7 +20,7 @@ from PIL import Image, ImageDraw, ImageTk
 from . import __version__, app_icon, config, feedback, grammar_engine, history, model_manager, overlay_thread, settings, updater
 from .keynames import friendly as _friendly_key_name
 
-APP_NAME = "Sumit Speak"
+APP_NAME = "Talkative"
 
 _open_lock = threading.Lock()
 _is_open = False
@@ -760,7 +760,7 @@ class _SettingsWindow:
         if state == "none":
             status.config(
                 text="Not installed. Cleaned-up dictations use basic rules "
-                     "only. Reinstalling Sumit Speak restores this."
+                     "only. Reinstalling Talkative restores this."
             )
         else:  # installed
             status.config(text="Installed.")
@@ -772,7 +772,7 @@ class _SettingsWindow:
             "Remove the Optimize Narration files?\n\n"
             "This frees about 1.5 GB. “Cleaned up” dictations will keep "
             "working with basic rules only. There is no in-app way to "
-            "bring this back — you would need to reinstall Sumit Speak.",
+            "bring this back — you would need to reinstall Talkative.",
             icon="warning", parent=self.root,
         ):
             return

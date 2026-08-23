@@ -65,7 +65,7 @@ def send(message, on_done=None):
             body = json.dumps({
                 "message": message,
                 "install_id": install_id(),
-                "_subject": "Sumit Speak feedback",
+                "_subject": "Talkative feedback",
             }).encode("utf-8")
             req = urllib.request.Request(FORM_ENDPOINT, data=body, headers=_HEADERS)
             with urllib.request.urlopen(req, timeout=10) as r:

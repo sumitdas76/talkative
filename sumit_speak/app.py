@@ -1,8 +1,6 @@
 import datetime
-import os
 import threading
 import time
-from pathlib import Path
 
 from pynput import keyboard
 
@@ -41,7 +39,7 @@ def _debug_log(**stages):
     if not config.DEBUG_LOG:
         return
     try:
-        folder = Path(os.environ.get("LOCALAPPDATA", ".")) / "SumitSpeak"
+        folder = settings.settings_dir()
         folder.mkdir(exist_ok=True)
         with open(folder / "debug.log", "a", encoding="utf-8") as f:
             f.write(datetime.datetime.now().isoformat(timespec="seconds") + "\n")
@@ -53,6 +51,9 @@ def _debug_log(**stages):
 
 class SumitSpeakApp:
     def __init__(self):
+        # Must run before anything else touches the data folder -- the
+        # very next line reads settings.json out of it.
+        settings.migrate_data_folder()
         settings.load_into_config()
         self.recorder = AudioRecorder(
             sample_rate=config.SAMPLE_RATE, device=config.INPUT_DEVICE

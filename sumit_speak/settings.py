@@ -1,12 +1,16 @@
 """
 User settings: JSON overrides for config defaults.
 
-Stored at %LOCALAPPDATA%\\SumitSpeak\\settings.json, outside the EXE, so
+Stored at %LOCALAPPDATA%\\Talkative\\settings.json, outside the EXE, so
 behavior can change without a rebuild -- the settings UI writes this file,
 and editing it by hand works too. config.py remains the source of defaults;
 this module overlays whatever valid keys the file contains at startup.
 Missing file, malformed JSON, or unknown keys silently fall back to
 defaults: settings must never be able to break dictation.
+
+settings_dir() is the single source of truth for the app's data folder --
+model_manager.py and history.py both reuse it rather than recomputing the
+path themselves, so a future rename only needs to change it here.
 """
 
 import json
@@ -50,11 +54,30 @@ _SPECIAL_KEYS = ("hotkey", "input_device")
 
 
 def settings_dir():
-    return Path(os.environ.get("LOCALAPPDATA", ".")) / "SumitSpeak"
+    return Path(os.environ.get("LOCALAPPDATA", ".")) / "Talkative"
 
 
 def settings_path():
     return settings_dir() / "settings.json"
+
+
+def migrate_data_folder():
+    """One-time move of the pre-rename (2026-08-23) %LOCALAPPDATA%\\
+    SumitSpeak folder to the new %LOCALAPPDATA%\\Talkative folder --
+    settings, history, debug.log, updater state, and downloaded models all
+    live under here, so this must run before anything else touches the
+    data folder (first line of app startup, before load_into_config()). A
+    plain directory rename, not a copy, so it's fast even with multi-GB
+    models inside. No-op (and safe to call every launch) once migrated, or
+    if there's nothing to migrate, or if the new folder already has
+    something in it -- never overwrites."""
+    old = Path(os.environ.get("LOCALAPPDATA", ".")) / "SumitSpeak"
+    new = settings_dir()
+    try:
+        if old.exists() and not new.exists():
+            old.rename(new)
+    except Exception:
+        pass
 
 
 def _parse_one_key(name):

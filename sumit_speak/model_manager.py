@@ -1,7 +1,7 @@
 """
 App-owned speech model storage.
 
-Models live in %LOCALAPPDATA%\\SumitSpeak\\models (not the shared Hugging
+Models live in %LOCALAPPDATA%\\Talkative\\models (not the shared Hugging
 Face cache), so deleting them from the UI can't surprise other tools and
 "storage used" is accurate. Downloads go through faster-whisper's own
 download helper pointed at this folder; the same folder is passed to
@@ -17,6 +17,8 @@ rationale and the guard changes that went with it in grammar_engine.py.
 import os
 import shutil
 from pathlib import Path
+
+from .settings import settings_dir
 
 MODELS = {
     "fast": {
@@ -38,7 +40,7 @@ def tier_for_size(size):
 
 
 def models_dir():
-    d = Path(os.environ.get("LOCALAPPDATA", ".")) / "SumitSpeak" / "models"
+    d = settings_dir() / "models"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

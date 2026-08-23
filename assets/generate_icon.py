@@ -1,4 +1,4 @@
-"""Generates the Sumit Speak app icon.
+"""Generates the Talkative app icon.
 
 Run from the project root:  .venv\\Scripts\\python assets\\generate_icon.py
 

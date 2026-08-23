@@ -1,4 +1,4 @@
-# Sumit Speak
+# Talkative
 
 Hold-to-talk dictation for Windows that runs **entirely on your PC**.
 
@@ -10,7 +10,7 @@ corrections are cleaned up on the way.
 ## Privacy
 
 Dictation is fully offline — your voice never leaves your PC. Audio is
-transcribed locally and never saved. At startup, Sumit Speak checks for
+transcribed locally and never saved. At startup, Talkative checks for
 improved models; nothing about you — no audio, no text — is ever sent.
 
 The one exception: the Feedback box in Settings → About. If you type a
@@ -19,7 +19,7 @@ sent — never automatically, only when you choose to.
 
 ## Download
 
-Get **SumitSpeakSetup.exe** from the
+Get **TalkativeSetup.exe** from the
 [latest release](https://github.com/sumitdas76/sumit-speak/releases/latest).
 
 The installer is not code-signed yet, so Windows SmartScreen may warn you:

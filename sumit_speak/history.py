@@ -8,15 +8,15 @@ try/except and fails silently.
 """
 
 import json
-import os
 from datetime import datetime
-from pathlib import Path
+
+from .settings import settings_dir
 
 MAX_ENTRIES = 200
 
 
 def _path():
-    return Path(os.environ.get("LOCALAPPDATA", ".")) / "SumitSpeak" / "history.json"
+    return settings_dir() / "history.json"
 
 
 def load():

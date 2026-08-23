@@ -1,6 +1,25 @@
 # Changelog
 
-All notable changes to Sumit Speak are recorded here.
+All notable changes to Talkative (formerly Sumit Speak) are recorded here.
+
+## [Unreleased]
+
+### Changed
+
+- Renamed the app from Sumit Speak to Talkative: display name, tray
+  tooltip, window titles, the EXE (now `Talkative.exe`), and the
+  install/data folders. A one-time, automatic migration moves existing
+  settings, history, and downloaded models from the old
+  `%LOCALAPPDATA%\SumitSpeak` folder to the new
+  `%LOCALAPPDATA%\Talkative` folder on first launch after updating — no
+  re-download needed. Feedback channel, update manifest, and the
+  GitHub-hosted repos are unchanged for now.
+
+### Added
+
+- Opt-in, local-only dictation history (Settings → Dictation → History):
+  keeps a log of what you've dictated, viewable and clearable from
+  Settings. Off by default.
 
 ## [1.1.3] - 2026-07-22
 

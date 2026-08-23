@@ -4,17 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Sumit Speak (formerly Wispr Lite): a Windows tray app for hold-to-talk local
-dictation. Hold **Right Ctrl**, speak, release — audio is transcribed offline
-via faster-whisper, cleaned up (fillers, spoken corrections, near-repeats,
-personal dictionary), and pasted (clipboard + simulated Ctrl+V) into whatever
-control currently has focus. No network calls except the one-time model
-download from Hugging Face on first run.
+Talkative (formerly Sumit Speak, formerly Wispr Lite -- renamed again
+2026-08-23; the Python package, internal class names, and the GitHub repos
+still say "sumit_speak"/"sumit-speak", not renamed in this pass): a Windows
+tray app for hold-to-talk local dictation. Hold **Right Ctrl**, speak,
+release — audio is transcribed offline via faster-whisper, cleaned up
+(fillers, spoken corrections, near-repeats, personal dictionary), and
+pasted (clipboard + simulated Ctrl+V) into whatever control currently has
+focus. No network calls except the one-time model download from Hugging
+Face on first run.
 
 The full product direction (settings UI, model manager, update system,
 grammar engine) is specced in the "Sumit Speak — Product Specification"
-artifact from the July 2026 consulting sessions; Phase 1 (engine features,
-no UI) is implemented.
+artifact from the July 2026 consulting sessions (written under the old
+name; the spec itself was never renamed); Phase 1 (engine features, no UI)
+is implemented.
 
 ## Commands
 
@@ -39,7 +43,7 @@ If you need the raw PyInstaller command directly (e.g. debugging the
 build itself, not doing a normal rebuild):
 
 ```powershell
-.\.venv\Scripts\python -m PyInstaller --noconfirm --onefile --windowed --name SumitSpeak --icon assets\icon.ico --collect-all ctranslate2 --collect-all faster_whisper --collect-all av --collect-all tokenizers --collect-all uiautomation --hidden-import win32timezone main.py
+.\.venv\Scripts\python -m PyInstaller --noconfirm --onefile --windowed --name Talkative --icon assets\icon.ico --collect-all ctranslate2 --collect-all faster_whisper --collect-all av --collect-all tokenizers --collect-all uiautomation --hidden-import win32timezone main.py
 ```
 
 `--icon assets\icon.ico` sets the EXE's own icon resource (Explorer, taskbar
@@ -55,7 +59,7 @@ Use `python -m PyInstaller`, NOT the `.\.venv\Scripts\pyinstaller` exe shim:
 the shim is broken in this venv — it exits 1 instantly with **no output at
 all**, which looks like a successful quiet run if the exit code is masked
 (e.g. by piping to `tail`). This once led to deploying a stale day-old EXE.
-After every build, verify `dist\SumitSpeak.exe` has a fresh LastWriteTime
+After every build, verify `dist\Talkative.exe` has a fresh LastWriteTime
 before copying it anywhere.
 
 There is no linter or CI. A sanity-test script for the pure text-pipeline
@@ -67,9 +71,9 @@ watch the tray icon / target app).
 ### IMPORTANT: multiple EXE copies, and the file-lock gotcha
 
 Up to **three** copies of the EXE can exist on this machine and none of
-them sync automatically: `dist\SumitSpeak.exe` (PyInstaller's raw
+them sync automatically: `dist\Talkative.exe` (PyInstaller's raw
 output), the **project root** copy the user actually launches from, and
-an **installed** copy at `%LOCALAPPDATA%\Programs\Sumit Speak\` (from
+an **installed** copy at `%LOCALAPPDATA%\Programs\Talkative\` (from
 testing the Inno Setup installer). `scripts\rebuild.ps1` builds and
 copies to all of these that exist in one step — use it instead of
 running PyInstaller directly and manually `cp`-ing. This exists
@@ -78,17 +82,17 @@ without anyone noticing (source-only fixes and installer bumps kept
 happening while that copy silently went stale) until the About tab
 gave it away.
 
-(Stale `WisprLite.exe` copies from before the rename may still exist; they
-are the old build.)
+(Stale `WisprLite.exe` and `SumitSpeak.exe` copies from before each rename
+may still exist; they are old builds under the app's previous names.)
 
 PyInstaller fails with `PermissionError: Access is denied` if any copy is
 currently running (it can't overwrite a locked EXE) — `rebuild.ps1` checks
-for and refuses to run over a live `SumitSpeak` process rather than
+for and refuses to run over a live `Talkative` process rather than
 guessing whether it's safe to kill it. Before rebuilding manually, check
 for and stop running instances yourself:
 
 ```powershell
-Get-Process SumitSpeak, WisprLite -ErrorAction SilentlyContinue | Select-Object Id,StartTime,Path
+Get-Process Talkative, SumitSpeak, WisprLite -ErrorAction SilentlyContinue | Select-Object Id,StartTime,Path
 ```
 
 The user frequently has an instance running to test something live — ask

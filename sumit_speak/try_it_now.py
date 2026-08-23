@@ -54,7 +54,7 @@ def _build(overlay):
         from tkinter import ttk
 
         root = tk.Toplevel(overlay.root)
-        root.title("Sumit Speak")
+        root.title("Talkative")
         app_icon.set_window_icon(root)
         root.geometry("460x300")
         root.resizable(False, False)

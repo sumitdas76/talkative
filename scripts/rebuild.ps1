@@ -1,4 +1,4 @@
-# Rebuild SumitSpeak.exe and copy it to every known location on this
+# Rebuild Talkative.exe and copy it to every known location on this
 # machine, so the portable copy and the installed copy can never
 # silently drift apart the way they did on 2026-07-22 (the installed
 # copy sat two releases behind before anyone noticed the About tab
@@ -10,32 +10,32 @@
 
 $ErrorActionPreference = "Stop"
 
-$running = Get-Process SumitSpeak -ErrorAction SilentlyContinue
+$running = Get-Process Talkative -ErrorAction SilentlyContinue
 if ($running) {
-    Write-Host "SumitSpeak is currently running (PID $($running.Id -join ', '))."
+    Write-Host "Talkative is currently running (PID $($running.Id -join ', '))."
     Write-Host "Stop it first (this script won't kill it for you), then re-run."
     exit 1
 }
 
 & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --onefile --windowed `
-    --name SumitSpeak --icon assets\icon.ico `
+    --name Talkative --icon assets\icon.ico `
     --collect-all ctranslate2 --collect-all faster_whisper --collect-all av `
     --collect-all tokenizers --collect-all uiautomation `
     --hidden-import win32timezone main.py
 
-$built = Get-Item dist\SumitSpeak.exe
-Write-Host "Built dist\SumitSpeak.exe ($($built.LastWriteTime))"
+$built = Get-Item dist\Talkative.exe
+Write-Host "Built dist\Talkative.exe ($($built.LastWriteTime))"
 
-Copy-Item dist\SumitSpeak.exe SumitSpeak.exe -Force
+Copy-Item dist\Talkative.exe Talkative.exe -Force
 Write-Host "Copied to project root."
 
-$installedDir = "$env:LOCALAPPDATA\Programs\Sumit Speak"
-$installedExe = Join-Path $installedDir "SumitSpeak.exe"
+$installedDir = "$env:LOCALAPPDATA\Programs\Talkative"
+$installedExe = Join-Path $installedDir "Talkative.exe"
 if (Test-Path $installedExe) {
-    Copy-Item dist\SumitSpeak.exe $installedExe -Force
+    Copy-Item dist\Talkative.exe $installedExe -Force
     Write-Host "Copied to installed location: $installedExe"
 } else {
     Write-Host "No installed copy found at $installedDir -- skipped (nothing to keep in sync)."
 }
 
-Write-Host "Done. Remember: this only updates the app EXE, not the installer -- rebuild installer\SumitSpeak.iss separately if you're publishing a release."
+Write-Host "Done. Remember: this only updates the app EXE, not the installer -- rebuild installer\Talkative.iss separately if you're publishing a release."
