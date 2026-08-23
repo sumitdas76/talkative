@@ -183,6 +183,22 @@ def _second_person_ok(inp, out):
     return True
 
 
+def _question_ok(inp, out):
+    """A "?" in the input must not silently vanish. Retention/length guards
+    don't catch a question turned into an asserted answer -- the rest of
+    the sentence's words survive fine, only the question mark and the
+    interrogative framing are gone. Seen live 2026-08-16: "will there be
+    any difference in sound quality?" -> "there will be no difference in
+    sound quality." (a fabricated answer to an unasked question, not a
+    grammar fix). Doesn't require the same count -- merging two questions
+    into one ("Can I check X? Are they Y?" -> "Can I check X to see if
+    they're Y?") is a legitimate rewrite and only needs at least one "?"
+    to survive."""
+    if "?" in inp and "?" not in out:
+        return False
+    return True
+
+
 def apply(text):
     """Clean `text` through the engine; on any failure or guard rejection
     return it unchanged. Blocking (seconds on CPU) -- call from the
@@ -215,6 +231,7 @@ def apply(text):
     if not out:
         return text
     if not (_digits_ok(text, out) and _retention_ok(text, out)
-             and _length_ok(text, out) and _second_person_ok(text, out)):
+             and _length_ok(text, out) and _second_person_ok(text, out)
+             and _question_ok(text, out)):
         return text
     return out
