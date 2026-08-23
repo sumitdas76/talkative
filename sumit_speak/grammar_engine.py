@@ -167,6 +167,9 @@ def _length_ok(inp, out):
 
 
 _SECOND_PERSON = re.compile(r"\byou(?:'re|r|rs|rself)?\b", re.IGNORECASE)
+_FIRST_PERSON = re.compile(
+    r"\b(?:i|i'm|i've|i'll|i'd|my|me|myself|we|we're|we've|we'll|we'd|"
+    r"our|ours|ourselves)\b", re.IGNORECASE)
 
 
 def _second_person_ok(inp, out):
@@ -179,6 +182,24 @@ def _second_person_ok(inp, out):
     because they change who's responsible for something, not just how
     it's worded."""
     if _SECOND_PERSON.search(inp) and not _SECOND_PERSON.search(out):
+        return False
+    return True
+
+
+def _no_invented_second_person(inp, out):
+    """The mirror-image bug, and far more common in practice: the model
+    turning the speaker's own first-person statement/question into one
+    about the listener -- "If I create videos..., will there be a
+    difference?" -> "If you create videos..., there will be a
+    difference." Confirmed live 2026-08-23: roughly a dozen "If I..."
+    dictations in one debug.log sample all got rewritten this way, all
+    passing every other guard since the rest of each sentence's words
+    survive (only the subject changes). Only fires when the input has no
+    "you" of its own to begin with -- a real "I ... you ..." sentence can
+    legitimately keep or rephrase around an existing "you"."""
+    if _SECOND_PERSON.search(inp):
+        return True
+    if _FIRST_PERSON.search(inp) and _SECOND_PERSON.search(out):
         return False
     return True
 
@@ -232,6 +253,6 @@ def apply(text):
         return text
     if not (_digits_ok(text, out) and _retention_ok(text, out)
              and _length_ok(text, out) and _second_person_ok(text, out)
-             and _question_ok(text, out)):
+             and _question_ok(text, out) and _no_invented_second_person(text, out)):
         return text
     return out
