@@ -16,7 +16,7 @@
 ;   half-gigabyte left behind).
 
 #define MyAppName "Talkative"
-#define MyAppVersion "1.1.3"
+#define MyAppVersion "1.2.0"
 #define MyAppExeName "Talkative.exe"
 ; The bundled grammar engine is packed in at COMPILE time from the build
 ; machine's installed copy (a plain path, not an install-time constant).
