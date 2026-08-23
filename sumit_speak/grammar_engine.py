@@ -167,9 +167,6 @@ def _length_ok(inp, out):
 
 
 _SECOND_PERSON = re.compile(r"\byou(?:'re|r|rs|rself)?\b", re.IGNORECASE)
-_FIRST_PERSON = re.compile(
-    r"\b(?:i|i'm|i've|i'll|i'd|my|me|myself|we|we're|we've|we'll|we'd|"
-    r"our|ours|ourselves)\b", re.IGNORECASE)
 
 
 def _second_person_ok(inp, out):
@@ -194,12 +191,21 @@ def _no_invented_second_person(inp, out):
     difference." Confirmed live 2026-08-23: roughly a dozen "If I..."
     dictations in one debug.log sample all got rewritten this way, all
     passing every other guard since the rest of each sentence's words
-    survive (only the subject changes). Only fires when the input has no
-    "you" of its own to begin with -- a real "I ... you ..." sentence can
-    legitimately keep or rephrase around an existing "you"."""
-    if _SECOND_PERSON.search(inp):
-        return True
-    if _FIRST_PERSON.search(inp) and _SECOND_PERSON.search(out):
+    survive (only the subject changes).
+
+    Counts rather than just checking presence, because a subtler variant
+    of the same bug survives a presence-only check: a sentence with "you"
+    in one clause can still get a *second*, invented "you" planted on a
+    different clause that was actually about "I" -- "before I do that,
+    what I want you to do is explain..." -> "before you do that, what I
+    want you to do is..." (found live 2026-08-23 during the faster-model
+    evaluation). The input already has one "you", so a presence check
+    passes; a count check (2 > 1) catches it. A legitimate rewrite that
+    merely repeats or keeps an existing "you" never needs to *increase*
+    the count, so this doesn't have to special-case the zero-"you"
+    case separately -- it's the same rule (0 -> >=1 is also an
+    increase)."""
+    if len(_SECOND_PERSON.findall(out)) > len(_SECOND_PERSON.findall(inp)):
         return False
     return True
 
