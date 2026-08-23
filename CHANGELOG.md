@@ -2,6 +2,15 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [1.2.1] - 2026-08-23
+
+### Fixed
+
+- The "listening" pill (the floating indicator that appears while
+  holding the hotkey) followed the mouse cursor around the screen
+  instead of staying put. It's now fixed at the bottom-center of the
+  screen.
+
 ## [1.2.0] - 2026-08-23
 
 ### Changed
