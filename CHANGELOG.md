@@ -2,7 +2,7 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
-## [Unreleased]
+## [1.2.0] - 2026-08-23
 
 ### Changed
 
@@ -14,12 +14,30 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   `%LOCALAPPDATA%\Talkative` folder on first launch after updating — no
   re-download needed. Feedback channel, update manifest, and the
   GitHub-hosted repos are unchanged for now.
+- Dictation tab reorganized into labeled sections (Dictation style /
+  History) instead of a flat list.
 
 ### Added
 
 - Opt-in, local-only dictation history (Settings → Dictation → History):
   keeps a log of what you've dictated, viewable and clearable from
   Settings. Off by default.
+
+### Fixed
+
+- The "Cleaned up" grammar pass could fabricate an answer to a question
+  instead of just cleaning it up (e.g. turning "will there be any
+  difference?" into an invented "there will be no difference."). Added
+  a guard rejecting any rewrite that drops every "?" from the input.
+- The grammar pass could turn the speaker's own first-person statement
+  into one about the listener (e.g. "If I create videos... will there
+  be a difference?" became "If you create videos... there will be a
+  difference"). Added a guard blocking any invented "you" the input
+  never had.
+- A subtler version of the same bug survived the first guard: a
+  sentence that already had one legitimate "you" could still get a
+  *second*, invented "you" planted on an unrelated clause. The guard
+  now compares "you" counts rather than just presence.
 
 ## [1.1.3] - 2026-07-22
 
