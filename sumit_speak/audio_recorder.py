@@ -43,22 +43,3 @@ class AudioRecorder:
             return np.array([], dtype="float32")
 
         return np.concatenate(self._frames, axis=0).flatten()
-
-    def snapshot(self, max_seconds=None):
-        """Concatenate whatever has been recorded so far without stopping
-        the stream -- for the live-preview loop. `list(self._frames)` takes
-        a shallow copy of the list at this instant; the audio callback may
-        keep appending to the *original* list afterward, but that doesn't
-        mutate our copy, so this is safe to call from another thread
-        without a lock (same reasoning as the existing cross-thread read of
-        `self.level`). `max_seconds`, if given, trims to the most recent
-        window so a long recording doesn't make each preview call slower."""
-        frames = list(self._frames)
-        if not frames:
-            return np.array([], dtype="float32")
-        audio = np.concatenate(frames, axis=0).flatten()
-        if max_seconds is not None:
-            max_samples = int(self.sample_rate * max_seconds)
-            if audio.size > max_samples:
-                audio = audio[-max_samples:]
-        return audio

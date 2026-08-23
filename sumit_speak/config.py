@@ -97,17 +97,6 @@ GRAMMAR_MODEL_DIR = "grammar"
 GRAMMAR_MIN_RETENTION = 0.4
 
 # ---------------------------------------------------------------------------
-# Live preview: a rough, raw-ASR-only re-transcription shown in the
-# floating pill while the hotkey is still held (see pill.py / app.py's
-# _live_preview_loop). Never affects the final pasted text -- purely a
-# read-only overlay refreshed on a timer.
-# ---------------------------------------------------------------------------
-ENABLE_LIVE_PREVIEW = True
-LIVE_PREVIEW_INTERVAL = 1.0  # seconds between preview re-transcriptions
-LIVE_PREVIEW_WINDOW_SECONDS = 12  # only the most recent N seconds are ever
-# re-transcribed, so a long recording doesn't slow each preview tick down
-
-# ---------------------------------------------------------------------------
 # Dictation history: an opt-in, local-only log of the final text from each
 # dictation (what was actually pasted), for the user's own reference. MUST
 # default False -- same "nothing is saved" privacy stance as DEBUG_LOG,

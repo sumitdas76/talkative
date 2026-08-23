@@ -373,7 +373,7 @@ class _SettingsWindow:
             self.dict_tree.delete(item)
 
     def _tab_dictation(self, f):
-        cleanup_box = ttk.LabelFrame(f, text="Cleanup style", padding=10)
+        cleanup_box = ttk.LabelFrame(f, text="Dictation style", padding=10)
         cleanup_box.pack(fill="x")
         self.var_cleanup = tk.StringVar(value=config.CLEANUP_MODE)
         ttk.Radiobutton(
@@ -398,18 +398,8 @@ class _SettingsWindow:
         self.example_label.pack(anchor="w")
         self._update_example()
 
-        recording_box = ttk.LabelFrame(f, text="While recording", padding=10)
-        recording_box.pack(fill="x", pady=(12, 0))
-        self.var_live_preview = tk.BooleanVar(value=config.ENABLE_LIVE_PREVIEW)
-        ttk.Checkbutton(
-            recording_box,
-            text="Show a live preview of what you're saying near your "
-                 "cursor while you hold the hotkey",
-            variable=self.var_live_preview,
-        ).pack(anchor="w")
-
         history_box = ttk.LabelFrame(f, text="History", padding=10)
-        history_box.pack(fill="x", pady=(12, 0))
+        history_box.pack(fill="x", pady=(16, 0))
         self.var_history = tk.BooleanVar(value=config.ENABLE_HISTORY)
         ttk.Checkbutton(
             history_box, text="Keep a history of what I've dictated",
@@ -1025,7 +1015,6 @@ class _SettingsWindow:
             "play_sounds": self.var_sounds.get(),
             "theme": self.var_theme.get(),
             "cleanup_mode": self.var_cleanup.get(),
-            "enable_live_preview": self.var_live_preview.get(),
             "enable_history": self.var_history.get(),
             "insert_mode": self.var_insert.get(),
             "append_space": self.var_space.get(),
