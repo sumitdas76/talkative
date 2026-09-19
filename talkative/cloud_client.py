@@ -42,6 +42,49 @@ def _headers(content_type):
     }
 
 
+def _trim_trailing_silence(audio, sample_rate, threshold=0.01,
+                            frame_ms=30, pad_ms=300, min_keep_secs=0.3):
+    """Drop trailing near-silence from `audio` before sending it to Cloud.
+
+    Groq's hosted whisper-large-v3-turbo (like Whisper-family models
+    generally) reliably hallucinates a stock closing phrase -- "Thank
+    you." was the one observed live, 2026-09-19, 5-for-5 reproducible --
+    when fed trailing silence, a known artifact of training on captioned
+    video data. faster-whisper's own vad_filter already prevents this in
+    Local mode; Cloud had no equivalent, so it's done here instead,
+    client-side, before the audio ever leaves this device.
+
+    Deliberately conservative: a coarse energy check, not real VAD, and it
+    leaves `audio` completely unchanged whenever the signal is ambiguous
+    (barely any audio, no clear loud region, or trimming would leave next
+    to nothing) rather than risk cutting real trailing speech -- e.g. a
+    dictation that genuinely ends "...thank you." must not be shortened.
+    """
+    if audio is None or audio.size == 0:
+        return audio
+    frame = max(1, int(sample_rate * frame_ms / 1000))
+    n_frames = audio.size // frame
+    if n_frames < 2:
+        return audio
+
+    last_loud = -1
+    for i in range(n_frames):
+        chunk = audio[i * frame:(i + 1) * frame]
+        rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
+        if rms >= threshold:
+            last_loud = i
+
+    if last_loud == -1 or last_loud >= n_frames - 1:
+        # All silence, or already ends on a loud frame -- nothing to trim.
+        return audio
+
+    pad = int(sample_rate * pad_ms / 1000)
+    cutoff = min(audio.size, (last_loud + 1) * frame + pad)
+    if cutoff < sample_rate * min_keep_secs:
+        return audio
+    return audio[:cutoff]
+
+
 def _wav_bytes(audio, sample_rate):
     """float32 numpy array in [-1, 1] -> 16-bit PCM WAV bytes, via the
     stdlib wave module (no new dependency needed)."""
@@ -60,6 +103,7 @@ def transcribe(audio, sample_rate, initial_prompt=None):
     """Same contract as Transcriber.transcribe(): returns the transcript
     string, raises on failure (the app.py call site already handles that
     the same way it handles a local transcription failure)."""
+    audio = _trim_trailing_silence(audio, sample_rate)
     body = _wav_bytes(audio, sample_rate)
     url = config.CLOUD_ENDPOINT_URL.rstrip("/") + "/transcribe"
     req = urllib.request.Request(url, data=body, headers=_headers("audio/wav"))

@@ -228,6 +228,27 @@ misses (e.g. "collars" heard as "colors") remain -- normal Whisper-family
 ASR noise, not a regression from this change, and not fixable via
 `dictionary.py` without breaking legitimate uses of the substituted word.
 
+**Controlled A/B testing (2026-09-19)** found Cloud (Groq) and Local
+(faster-whisper `small.en`) roughly tied on word accuracy given the exact
+same audio (same buffer sent to both, via `cloud_client.transcribe()` and
+a standalone `Transcriber` -- see the session's throwaway test script,
+not checked into the repo), but surfaced one reproducible, fixable Cloud-
+only bug: **trailing-silence hallucination**. Groq's endpoint reliably
+appended a stock closing phrase ("Thank you." every time observed) when a
+dictation ended in silence before the recording stopped -- a well-known
+Whisper-family artifact from training on captioned video, 5-for-5
+reproducible in testing. Local never did this once, because
+faster-whisper's own `vad_filter=True` already drops trailing silence
+before the model ever sees it. Fixed the same way for Cloud:
+`cloud_client.py`'s new `_trim_trailing_silence()` does a coarse
+energy-based trim of trailing near-silence from the audio buffer
+*client-side, before it's sent* -- deliberately conservative (leaves
+audio completely unchanged on any ambiguous signal) because blindly
+stripping a trailing "Thank you." from the *text* instead would risk
+deleting a genuinely spoken one, which a dictation tool ending an email
+with "Thank you." would hit constantly. Root-cause fix, not a text-level
+guard.
+
 **The real cost ceiling is not the shared secret or the quota** -- it's
 each upstream provider's own free-tier cap hard-erroring rather than
 billing, as long as neither account has billing enabled: Workers AI's

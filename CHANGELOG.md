@@ -32,6 +32,15 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   instead of Cloudflare's smaller base Whisper model -- noticeably better
   punctuation and accuracy on live testing.
 
+### Fixed
+
+- Cloud transcription would reliably tack on a hallucinated "Thank you."
+  when a dictation ended in silence (a known Whisper-family artifact from
+  training on captioned video). Fixed by trimming trailing near-silence
+  from the audio client-side before it's sent to Cloud at all -- the same
+  root-cause fix Local mode already had via faster-whisper's own
+  `vad_filter`.
+
 - Default processing mode is now Cloud, not Local -- a deliberate product
   decision, not just a new option (see CLAUDE.md's "Cloud-by-default
   processing" section for the mechanics and cost ceiling).
