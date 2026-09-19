@@ -34,6 +34,14 @@ _KEYS = {
     "enable_grammar_engine": "ENABLE_GRAMMAR_ENGINE",
     "enable_history": "ENABLE_HISTORY",
     "grammar_model": "GRAMMAR_MODEL_DIR",
+    "processing_mode": "PROCESSING_MODE",
+    "cloud_endpoint_url": "CLOUD_ENDPOINT_URL",
+    "grammar_source": "GRAMMAR_SOURCE",
+    # Not exposed in the settings UI -- set by hand-editing settings.json
+    # if it ever needs to differ from the shipped default. Still listed
+    # here so load_into_config() picks it up.
+    "cloud_shared_secret": "CLOUD_SHARED_SECRET",
+    "cloud_notice_done": "CLOUD_NOTICE_DONE",
     "manifest_url": "MANIFEST_URL",
     "insert_mode": "INSERT_MODE",
     "append_space": "APPEND_SPACE",

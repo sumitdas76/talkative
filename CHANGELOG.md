@@ -2,6 +2,42 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [Unreleased]
+
+### Added
+
+- Cloud processing (Settings → General → Processing): speech-to-text and
+  grammar cleanup now run by default on a remote Cloudflare Worker instead
+  of on-device, so a fresh install skips the model download and its
+  ~1-2GB RAM. Local remains fully supported -- switch back any time in
+  Settings, with a "Download local models" button to fetch the
+  faster-whisper and grammar models on demand -- and stays fully
+  offline/no-network when selected. Cloud requests are capped by a
+  per-install daily quota; a one-time notice on first Cloud use explains
+  the mode and points at the Local download.
+- Settings → General → Processing: a new checkbox lets Cloud transcription
+  pair with the local grammar engine instead of Cloud's own grammar model,
+  for a Cloud-STT + local-grammar mix (needs the local grammar model
+  downloaded; falls back to Cloud grammar automatically if it isn't).
+
+### Changed
+
+- Cloud transcription now runs on Groq's hosted `whisper-large-v3-turbo`
+  instead of Cloudflare's smaller base Whisper model -- noticeably better
+  punctuation and accuracy on live testing.
+
+- Default processing mode is now Cloud, not Local -- a deliberate product
+  decision, not just a new option (see CLAUDE.md's "Cloud-by-default
+  processing" section for the mechanics and cost ceiling).
+- Finished the Sumit Speak → Talkative rename that [1.2.0] deliberately
+  left incomplete: the Python package (`sumit_speak/` → `talkative/`), the
+  internal app class, and both GitHub repos (`sumit-speak` → `talkative`,
+  `sumit-speak-updates` → `talkative-updates`) now all say Talkative.
+  Update manifest and feedback-reply URLs updated to match; the
+  FormSubmit feedback endpoint's Referer header was deliberately left
+  pointing at the old repo URL, which GitHub still redirects, rather than
+  risk re-triggering FormSubmit's account activation.
+
 ## [1.2.1] - 2026-08-23
 
 ### Fixed

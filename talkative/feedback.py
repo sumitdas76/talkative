@@ -9,7 +9,7 @@ This is the app's only outbound network path, and only ever runs when the
 user clicks Send (see the About tab's privacy note).
 
 Receive: replies are not pushed anywhere -- Sumit publishes them by hand as
-JSON in the public sumit-speak-updates repo (the same repo/workflow as the
+JSON in the public talkative-updates repo (the same repo/workflow as the
 update manifest), keyed by this install's anonymous id. The app polls that
 file at most once a day, alongside the update check, and surfaces a new
 reply exactly once.

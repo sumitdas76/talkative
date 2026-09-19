@@ -4,7 +4,7 @@ import time
 
 from pynput import keyboard
 
-from . import config, error_toast, feedback, grammar_engine, history, model_manager, pill, settings, try_it_now, updater
+from . import cloud_client, cloud_notice, config, error_toast, feedback, grammar_engine, history, model_manager, pill, settings, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -17,6 +17,12 @@ from .text_inserter import insert_text
 from .transcriber import Transcriber
 from .tray import TrayApp, show_error_popup
 
+
+# Placeholder assigned to self.transcriber in cloud mode so the existing
+# "self.transcriber is None" readiness gate in _on_press still works, even
+# though nothing ever calls .transcribe() on it -- _process_audio_inner
+# branches on _cloud_active() before it would.
+_CLOUD_TRANSCRIBER = object()
 
 _TONE_RATE = 16000
 
@@ -49,7 +55,7 @@ def _debug_log(**stages):
         pass
 
 
-class SumitSpeakApp:
+class TalkativeApp:
     def __init__(self):
         # Must run before anything else touches the data folder -- the
         # very next line reads settings.json out of it.
@@ -93,9 +99,60 @@ class SumitSpeakApp:
         self._hotkey_pressed.clear()
         self._chord_active = False
         self.tray.set_hotkey_label(friendly_key(config.HOTKEY))
+        self._sync_processing_mode()
         if self.transcriber is not None and not self._recording:
             self.tray.set_idle()  # refresh the tooltip with the new hotkey
         self.tray.notify("Settings saved.")
+
+    def _cloud_active(self):
+        return config.PROCESSING_MODE == "cloud" and bool(config.CLOUD_ENDPOINT_URL)
+
+    def _grammar_uses_local(self):
+        """True when the grammar cleanup stage should run on the local
+        engine -- always in Local processing mode, and also in Cloud mode
+        when GRAMMAR_SOURCE == "local" and the local model is actually
+        installed (falls back to Cloud grammar otherwise)."""
+        if not self._cloud_active():
+            return True
+        return config.GRAMMAR_SOURCE == "local" and grammar_engine.is_installed()
+
+    def _enter_cloud_mode(self):
+        self.transcriber = _CLOUD_TRANSCRIBER
+        self._no_model = False
+        self.tray.set_mode_label("Cloud")
+        self.tray.set_idle()
+        self.tray.notify(f"Ready (cloud). Hold {friendly_key(config.HOTKEY)} to dictate.")
+        cloud_notice.maybe_show()
+
+    def _sync_processing_mode(self):
+        """Switch local <-> cloud model state after Settings is saved. A
+        no-op when the mode didn't actually change -- called on every save,
+        not just ones that touch Processing."""
+        import gc
+
+        if self._cloud_active():
+            if self.transcriber is not _CLOUD_TRANSCRIBER:
+                self.transcriber = None
+                gc.collect()  # release the local model.bin mapping, if any
+                self._enter_cloud_mode()
+            self._sync_grammar_source()
+        elif self.transcriber is _CLOUD_TRANSCRIBER:
+            self.transcriber = None
+            self._load_model_async()
+            threading.Thread(target=grammar_engine.load, daemon=True).start()
+
+    def _sync_grammar_source(self):
+        """While Cloud transcription is active, load or unload the local
+        grammar engine to match GRAMMAR_SOURCE -- independent of whether
+        the transcriber itself just switched, so toggling GRAMMAR_SOURCE
+        alone (without touching PROCESSING_MODE) still takes effect. Local
+        transcribe mode always wants the engine loaded and is handled by
+        the other branch of _sync_processing_mode, so this only runs from
+        the Cloud branch."""
+        if config.GRAMMAR_SOURCE == "local":
+            threading.Thread(target=grammar_engine.load, daemon=True).start()
+        else:
+            grammar_engine.unload()
 
     # kind -> sequence of (freq_hz, seconds). "done" is a rising two-note
     # chime, distinct from the single start/stop tones, played after the
@@ -145,6 +202,7 @@ class SumitSpeakApp:
                     download_root=str(model_manager.models_dir()),
                 )
                 self._no_model = False
+                self.tray.set_mode_label("Local")
                 self.tray.set_idle()
                 self.tray.notify(
                     f"Ready. Hold {friendly_key(config.HOTKEY)} to dictate."
@@ -320,9 +378,14 @@ class SumitSpeakApp:
         ) or None
         t0 = time.time()
         try:
-            text = self.transcriber.transcribe(
-                audio, config.SAMPLE_RATE, initial_prompt=prompt
-            )
+            if self._cloud_active():
+                text = cloud_client.transcribe(
+                    audio, config.SAMPLE_RATE, initial_prompt=prompt
+                )
+            else:
+                text = self.transcriber.transcribe(
+                    audio, config.SAMPLE_RATE, initial_prompt=prompt
+                )
         except Exception as exc:
             show_error_popup(f"Transcription failed:\n{exc}")
             return
@@ -347,13 +410,18 @@ class SumitSpeakApp:
             text = collapse_repeats(text)
             after_collapse = text
             t0 = time.time()
-            text = grammar_engine.apply(text)
+            grammar_used_local = self._grammar_uses_local()
+            if grammar_used_local:
+                text = grammar_engine.apply(text)
+            else:
+                text = cloud_client.grammar_apply(text)
             grammar_secs = time.time() - t0
             after_grammar = text
             text = finish_sentence(text)
         else:
             after_fillers = after_corrections = after_collapse = after_grammar = text
             grammar_secs = 0.0
+            grammar_used_local = False
 
         text = apply_dictionary(text)
         _debug_log(
@@ -364,7 +432,8 @@ class SumitSpeakApp:
             grammar=after_grammar,
             final=text,
             timing=f"transcribe {transcribe_secs:.1f}s, grammar {grammar_secs:.1f}s"
-            + (f" [{config.GRAMMAR_MODEL_DIR}]" if grammar_secs else ""),
+            + (f" [{config.GRAMMAR_MODEL_DIR if grammar_used_local else 'cloud'}]"
+               if grammar_secs else ""),
         )
 
         if not text:
@@ -384,10 +453,14 @@ class SumitSpeakApp:
 
     def run(self):
         sync_autostart()
-        self._load_model_async()
-        # Separate thread: the grammar engine must never delay dictation
-        # readiness; until (unless) it loads, cleaned_up mode is rules-only.
-        threading.Thread(target=grammar_engine.load, daemon=True).start()
+        if self._cloud_active():
+            self._enter_cloud_mode()
+            self._sync_grammar_source()
+        else:
+            self._load_model_async()
+            # Separate thread: the grammar engine must never delay dictation
+            # readiness; until (unless) it loads, cleaned_up mode is rules-only.
+            threading.Thread(target=grammar_engine.load, daemon=True).start()
         updater.start_background_check(self.updater_controller())
         feedback.start_background_check(
             on_reply=lambda text: self.tray.notify(

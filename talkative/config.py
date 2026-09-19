@@ -87,6 +87,11 @@ ENABLE_GRAMMAR_ENGINE = True
 # side ("grammar-15" = Qwen2.5-1.5B, "grammar-05" = Qwen2.5-0.5B) switched
 # via the grammar_model settings key + app restart.
 GRAMMAR_MODEL_DIR = "grammar"
+# Public Hugging Face repo holding the CTranslate2 int8 conversion, so the
+# engine can be downloaded on demand (grammar_engine.download()) instead of
+# only ever arriving bundled in the installer. Empty string disables the
+# Download button (falls back to "reinstall Talkative" as the only path).
+GRAMMAR_HF_REPO = "sumitdas76/talkative-grammar"
 # Guard: reject engine output that retains less than this fraction of the
 # input's words (words removed as retractions/repeats count as lost, so
 # don't set this above ~0.7 or legitimate cleanups get rejected).
@@ -95,6 +100,36 @@ GRAMMAR_MODEL_DIR = "grammar"
 # request -- accepts more risk of the model changing what was said in
 # exchange for more helpful rewrites.
 GRAMMAR_MIN_RETENTION = 0.4
+
+# ---------------------------------------------------------------------------
+# Processing: "cloud" (default, ships out of the box -- see cloud/ and
+# CHANGELOG.md) vs "local" (fully offline, downloaded separately from
+# Settings -> General -> Processing). "cloud" skips loading the local
+# Whisper and grammar models entirely (no RAM, no download) and instead
+# sends audio and text to CLOUD_ENDPOINT_URL (a Cloudflare Worker) for the
+# same two steps. Empty CLOUD_ENDPOINT_URL is treated as "not configured"
+# and falls back to local processing even if PROCESSING_MODE is "cloud".
+# ---------------------------------------------------------------------------
+PROCESSING_MODE = "cloud"
+CLOUD_ENDPOINT_URL = "https://talkative-cloud.sumitdas76.workers.dev"
+# Decouples the grammar cleanup stage from PROCESSING_MODE: "auto" (default)
+# follows it (Cloud transcribe -> Cloud grammar, Local -> local
+# grammar_engine). "local" forces the local grammar_engine even while
+# transcription runs on Cloud, for a Cloud-STT + local-grammar mix (falls
+# back to Cloud grammar at runtime if the local grammar model isn't
+# downloaded -- see app.py's _grammar_uses_local()). Meaningless when
+# PROCESSING_MODE is already "local" -- that path always uses the local
+# engine regardless of this setting.
+GRAMMAR_SOURCE = "auto"
+# Sent as the X-Shared-Secret header on every cloud request -- a soft
+# deterrent only (it ships inside a public EXE, so treat it as
+# extractable), not real auth. The real protection is the Worker's
+# per-install daily quota plus Workers AI's own free-tier hard cap -- see
+# cloud/worker.js's module docstring.
+CLOUD_SHARED_SECRET = "zw5qf1UUIexr2i2NckpwGlsMOCE0SICICiL0dS6qy40"
+# One-time notice shown the first time Cloud mode actually activates,
+# explaining Local can be downloaded separately (see cloud_notice.py).
+CLOUD_NOTICE_DONE = False
 
 # ---------------------------------------------------------------------------
 # Dictation history: an opt-in, local-only log of the final text from each
@@ -173,7 +208,7 @@ OUTPUT_DEVICE = None
 # disables checking entirely. Fetched at most once a day at startup;
 # offline or malformed is silently ignored.
 MANIFEST_URL = (
-    "https://raw.githubusercontent.com/sumitdas76/sumit-speak-updates/"
+    "https://raw.githubusercontent.com/sumitdas76/talkative-updates/"
     "main/manifest.json"
 )
 # The replaced model is kept for undo until this many words have been
@@ -191,7 +226,7 @@ INSTALL_ID = ""
 # Public JSON where Sumit hand-publishes replies, keyed by install_id --
 # same repo/workflow as MANIFEST_URL. Empty string disables reply polling.
 FEEDBACK_REPLIES_URL = (
-    "https://raw.githubusercontent.com/sumitdas76/sumit-speak-updates/"
+    "https://raw.githubusercontent.com/sumitdas76/talkative-updates/"
     "main/replies.json"
 )
 # Date of the last daily reply check, and the id/text of the last reply

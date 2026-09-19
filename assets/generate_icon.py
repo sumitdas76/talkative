@@ -5,7 +5,7 @@ Run from the project root:  .venv\\Scripts\\python assets\\generate_icon.py
 Produces:
   - assets/icon.ico              multi-resolution .ico for PyInstaller --icon
                                   and the installer's SetupIconFile
-  - sumit_speak/app_icon.py      base64 PNG + set_window_icon() helper, used
+  - talkative/app_icon.py        base64 PNG + set_window_icon() helper, used
                                   to set the taskbar/title-bar icon on the
                                   app's Tk windows (Tk's own default icon is
                                   the "feather" PyInstaller/Tcl mark, not the
@@ -146,7 +146,7 @@ def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     icon = build_icon()
     save_ico(icon, os.path.join(root, "assets", "icon.ico"))
-    save_runtime_module(icon, os.path.join(root, "sumit_speak", "app_icon.py"))
+    save_runtime_module(icon, os.path.join(root, "talkative", "app_icon.py"))
     # Also drop a PNG preview for quick visual review at real sizes.
     preview_sizes = [16, 32, 48, 128, 256]
     strip = Image.new("RGBA", (sum(preview_sizes) + 20, 260), (30, 30, 30, 255))
@@ -156,7 +156,7 @@ def main():
         strip.paste(thumb, (x, 260 - s - 5), thumb)
         x += s + 5
     strip.save(os.path.join(root, "assets", "icon_preview.png"))
-    print("Wrote assets/icon.ico, sumit_speak/app_icon.py, assets/icon_preview.png")
+    print("Wrote assets/icon.ico, talkative/app_icon.py, assets/icon_preview.png")
 
 
 if __name__ == "__main__":

@@ -5,22 +5,22 @@
 ; Decisions from the spec, deliberately:
 ; - Per-user install: no admin prompt, no UAC. Installs under
 ;   %LOCALAPPDATA%\Programs\Talkative.
-; - The grammar engine (~1.5 GB, invisible in the UI) is bundled so
-;   "Cleaned up" works from the very first dictation. The speech model is
-;   NOT bundled -- the app downloads it on first run (the app owns
-;   download/retry machinery; a dead installer download would leave a
-;   broken install).
-; - The installer never touches the network. The VC++ runtime is bundled
-;   and installed silently only when absent.
+; - Neither the speech model nor the grammar engine is bundled (changed
+;   2026-09-13, see CHANGELOG.md): the app ships defaulting to Cloud
+;   processing, which needs neither. Both are downloadable on demand from
+;   Settings -> General -> Processing if the user switches to Local (the
+;   app owns download/retry machinery for both -- a dead installer
+;   download would leave a broken install). This also shrinks the
+;   installer from ~1.6 GB to a small base.
+; - The installer itself never touches the network -- only the app does,
+;   post-install, and only when the user opts into Local. The VC++
+;   runtime is bundled and installed silently only when absent.
 ; - Uninstall asks whether to also remove models and settings (no
 ;   half-gigabyte left behind).
 
 #define MyAppName "Talkative"
 #define MyAppVersion "1.2.1"
 #define MyAppExeName "Talkative.exe"
-; The bundled grammar engine is packed in at COMPILE time from the build
-; machine's installed copy (a plain path, not an install-time constant).
-#define GrammarSource GetEnv("LOCALAPPDATA") + "\Talkative\models\grammar"
 
 [Setup]
 AppId={{7E1B3C52-9A44-4E0B-B7D1-52B4A46C1F0D}
@@ -43,10 +43,6 @@ Name: "autostart"; Description: "Start {#MyAppName} when Windows starts"
 
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-; Grammar engine into the app-owned model folder; never overwrite one the
-; user already has (it may be newer via the update system).
-Source: "{#GrammarSource}\*"; DestDir: "{localappdata}\Talkative\models\grammar"; \
-    Flags: recursesubdirs onlyifdoesntexist nocompression
 Source: "redist\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]

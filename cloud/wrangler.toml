@@ -1,0 +1,29 @@
+name = "talkative-cloud"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+
+[ai]
+binding = "AI"
+
+[[kv_namespaces]]
+binding = "QUOTA"
+id = "da428417d9474fd790660e43f10bd272"
+
+# Set both secrets once, per environment, before deploying:
+#   wrangler secret put SHARED_SECRET
+#   wrangler secret put GROQ_API_KEY
+# Never commit either secret value itself. GROQ_API_KEY is a free-tier key
+# from https://console.groq.com (no card required) -- /transcribe calls
+# Groq's hosted whisper-large-v3-turbo with it instead of Workers AI (see
+# worker.js's module comment for why, added 2026-09-19).
+#
+# Cost ceiling note: as long as neither this Cloudflare account nor the
+# Groq account has billing enabled, each provider's own free-tier cap
+# hard-errors rather than silently billing -- Workers AI's (10,000
+# neurons/day, account-wide, still backs /grammar) and Groq's (~2,000
+# requests/day, no card, backs /transcribe). That is the real backstop
+# against the shared secret being extracted from the public EXE. The
+# per-install QUOTA below is a fairness cap on top of that (so one
+# runaway/abusive install can't burn the whole day's shared budget), not
+# the primary cost defense. Do not add a payment method to either account
+# without re-deriving what that changes.

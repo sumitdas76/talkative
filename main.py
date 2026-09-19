@@ -1,8 +1,8 @@
-from sumit_speak.app import SumitSpeakApp
+from talkative.app import TalkativeApp
 
 
 def main():
-    app = SumitSpeakApp()
+    app = TalkativeApp()
     app.run()
 
 

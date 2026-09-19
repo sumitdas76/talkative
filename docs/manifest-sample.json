@@ -1,5 +1,5 @@
 {
-  "_comment": "Sumit Speak update manifest (spec section 7). Publish this as manifest.json in a public GitHub repo and set MANIFEST_URL (config.py or the manifest_url settings key) to its raw URL. Publishing an update = bump a version string, adjust size_mb/note, commit in the browser. Rollback = revert the commit. Versions are compared as plain strings: any difference from what the user has installed offers the update. 'note' is the one user-visible line in the (component-blind) dialog - never name the model in it. The grammar entry needs hf_repo set to a HF repo holding the CTranslate2 int8 conversion before it becomes updatable.",
+  "_comment": "Talkative update manifest (spec section 7). Publish this as manifest.json in a public GitHub repo and set MANIFEST_URL (config.py or the manifest_url settings key) to its raw URL. Publishing an update = bump a version string, adjust size_mb/note, commit in the browser. Rollback = revert the commit. Versions are compared as plain strings: any difference from what the user has installed offers the update. 'note' is the one user-visible line in the (component-blind) dialog - never name the model in it. The grammar entry's hf_repo (sumitdas76/talkative-grammar) is also the source grammar_engine.download() fetches from for the on-demand Settings download, not just for updates.",
   "manifest_version": 1,
   "app": {
     "version": "1.0",
@@ -22,7 +22,7 @@
       "version": "1",
       "size_mb": 1500,
       "note": "Improves cleanup quality.",
-      "hf_repo": ""
+      "hf_repo": "sumitdas76/talkative-grammar"
     }
   }
 }

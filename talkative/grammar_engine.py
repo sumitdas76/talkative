@@ -29,12 +29,15 @@ from . import config, model_manager
 _SYSTEM = (
     "You clean up dictated text. Fix grammar and punctuation. Remove word "
     "repetitions, false starts, and spoken self-corrections (keep only what "
-    "the speaker corrected themselves to). If a sentence is garbled or "
-    "unclear, reword it so it reads clearly, staying as close to the "
-    "speaker's own words and phrasing as you reasonably can. Never add "
-    "information or invent claims the speaker didn't make, never change "
-    "names or numbers, and never drop something the speaker actually said. "
-    "Reply with only the cleaned text."
+    "the speaker corrected themselves to). Most sentences are already "
+    "clear and should only get grammar and punctuation fixes -- leave the "
+    "speaker's own words, idioms, and phrasing alone even if a plainer or "
+    "more formal version occurs to you. Only reword a sentence when it is "
+    "genuinely garbled or hard to follow (missing words, tangled syntax), "
+    "and even then stay as close to the speaker's own words as you "
+    "reasonably can. Never add information or invent claims the speaker "
+    "didn't make, never change names or numbers, and never drop something "
+    "the speaker actually said. Reply with only the cleaned text."
 )
 
 # Few-shot pairs demonstrating the leash; auditioned July 2026 against the
@@ -75,6 +78,19 @@ def is_installed():
     return (d / "model.bin").is_file() and (d / "tokenizer.json").is_file()
 
 
+def download():
+    """Fetch the engine's files from config.GRAMMAR_HF_REPO into
+    engine_dir(). Blocking, no progress callback -- same contract as
+    model_manager.download() for the speech model; the UI shows an
+    indeterminate progress bar, not a percentage. Raises on failure (empty
+    GRAMMAR_HF_REPO, network error, etc.) -- callers must catch."""
+    if not config.GRAMMAR_HF_REPO:
+        raise RuntimeError("No grammar engine download source is configured.")
+    from huggingface_hub import snapshot_download
+
+    snapshot_download(repo_id=config.GRAMMAR_HF_REPO, local_dir=str(engine_dir()))
+
+
 def load():
     """Load the engine if installed. Idempotent, thread-safe, never raises.
     Returns True when the engine is ready. Call from a background thread at
@@ -112,8 +128,8 @@ def delete():
     pass so ctranslate2 releases its file handles before rmtree -- otherwise
     the delete fails on Windows with the engine still loaded. Cleaned-up
     mode silently falls back to rules-only afterward (the graceful-absence
-    contract); there is currently no in-app re-download, only reinstalling
-    Talkative."""
+    contract); download() (Settings -> Models) re-fetches it from
+    config.GRAMMAR_HF_REPO any time."""
     import gc
     import shutil
 
@@ -226,6 +242,19 @@ def _question_ok(inp, out):
     return True
 
 
+def validate(inp, out):
+    """Run all six deterministic guards against an (input, output) pair.
+    True only if `out` is safe to use in place of `inp`. Shared by the local
+    engine's apply() below and cloud_client.grammar_apply() (same leash
+    applied to a remote model's output -- see grammar_engine.py's module
+    docstring for why the guards exist)."""
+    if not out:
+        return False
+    return (_digits_ok(inp, out) and _retention_ok(inp, out)
+            and _length_ok(inp, out) and _second_person_ok(inp, out)
+            and _question_ok(inp, out) and _no_invented_second_person(inp, out))
+
+
 def apply(text):
     """Clean `text` through the engine; on any failure or guard rejection
     return it unchanged. Blocking (seconds on CPU) -- call from the
@@ -255,10 +284,6 @@ def apply(text):
     # unprompted; keep only the answer.
     out = re.sub(r"^<think>.*?</think>\s*", "", out, flags=re.DOTALL).strip()
 
-    if not out:
-        return text
-    if not (_digits_ok(text, out) and _retention_ok(text, out)
-             and _length_ok(text, out) and _second_person_ok(text, out)
-             and _question_ok(text, out) and _no_invented_second_person(text, out)):
+    if not validate(text, out):
         return text
     return out

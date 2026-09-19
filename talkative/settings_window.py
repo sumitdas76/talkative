@@ -327,6 +327,101 @@ class _SettingsWindow:
                 command=self._theme_changed,
             ).pack(anchor="w", pady=2)
 
+        proc_box = ttk.LabelFrame(f, text="Processing", padding=10)
+        proc_box.pack(fill="x", pady=(10, 0))
+        self.var_processing = tk.StringVar(value=config.PROCESSING_MODE)
+        ttk.Radiobutton(
+            proc_box, text="Cloud — nothing to download, processed on a "
+                    "remote server instead of this device.",
+            variable=self.var_processing, value="cloud",
+            command=self._processing_changed,
+        ).pack(anchor="w", pady=2)
+        ttk.Radiobutton(
+            proc_box, text="Local — fully offline, nothing leaves this device.",
+            variable=self.var_processing, value="local",
+            command=self._processing_changed,
+        ).pack(anchor="w", pady=2)
+
+        self.var_grammar_local = tk.BooleanVar(value=(config.GRAMMAR_SOURCE == "local"))
+        self.grammar_local_check = ttk.Checkbutton(
+            proc_box, text="With Cloud: clean up grammar on this device instead "
+                    "of the server (needs the local grammar model below).",
+            variable=self.var_grammar_local,
+        )
+        self.grammar_local_check.pack(anchor="w", pady=(6, 2))
+
+        self._local_op = None    # None | "downloading"
+        self._local_error = []   # messages appended by the worker, shown by the poll
+        local_row = ttk.Frame(proc_box)
+        local_row.pack(fill="x", pady=(8, 0))
+        self.local_status = ttk.Label(local_row, text="")
+        self.local_status.pack(anchor="w")
+        self.local_bar = ttk.Progressbar(local_row, mode="indeterminate", length=240)
+        self.local_download_btn = ttk.Button(
+            local_row, command=self._download_local_models
+        )
+        self.local_download_btn.pack(anchor="w", pady=(4, 0))
+
+        url_row = ttk.Frame(proc_box)
+        url_row.pack(fill="x", pady=(10, 0))
+        ttk.Label(url_row, text="Cloud endpoint:").pack(side="left")
+        self.cloud_url_entry = ttk.Entry(url_row, width=44)
+        self.cloud_url_entry.insert(0, config.CLOUD_ENDPOINT_URL)
+        self.cloud_url_entry.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        self._processing_changed()
+        self._render_local_download()
+
+    def _processing_changed(self):
+        state = "normal" if self.var_processing.get() == "cloud" else "disabled"
+        self.cloud_url_entry.configure(state=state)
+        self.grammar_local_check.configure(state=state)
+
+    def _download_local_models(self):
+        self._local_op = "downloading"
+
+        def work():
+            try:
+                if not model_manager.is_downloaded(config.MODEL_SIZE):
+                    model_manager.download(config.MODEL_SIZE)
+                if not grammar_engine.is_installed():
+                    grammar_engine.download()
+            except Exception as exc:
+                self._local_error.append(f"Could not download local models:\n{exc}")
+            finally:
+                self._local_op = None
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _render_local_download(self):
+        installed = (
+            model_manager.is_downloaded(config.MODEL_SIZE)
+            and grammar_engine.is_installed()
+        )
+        if self._local_op == "downloading":
+            self.local_status.config(text="Downloading… this can take a few minutes.")
+            self.local_bar.pack(anchor="w", pady=(0, 4), before=self.local_download_btn)
+            self.local_bar.start(12)
+            self.local_download_btn.config(state="disabled", text="Downloading…")
+        else:
+            self.local_bar.stop()
+            self.local_bar.pack_forget()
+            if installed:
+                self.local_status.config(
+                    text="Downloaded — select Local above, or check the local "
+                         "grammar box above, to use them."
+                )
+                self.local_download_btn.config(state="disabled", text="Downloaded")
+            else:
+                self.local_status.config(
+                    text="Local mode needs the voice and grammar models "
+                         "downloaded first (about 2 GB total)."
+                )
+                self.local_download_btn.config(
+                    state="normal", text="Download local models (~2 GB)"
+                )
+        while self._local_error:
+            messagebox.showerror(APP_NAME, self._local_error.pop(0), parent=self.root)
+
     def _theme_changed(self):
         config.THEME = self.var_theme.get()
         self._apply_theme()
@@ -660,9 +755,13 @@ class _SettingsWindow:
         bar = ttk.Progressbar(box, mode="indeterminate", length=240)
         btn_row = ttk.Frame(box)
         btn_row.pack(anchor="w", pady=(6, 0))
+        download = ttk.Button(
+            btn_row, text="Download", command=self._grammar_download
+        )
         delete = ttk.Button(btn_row, text="Delete", command=self._grammar_delete)
         self._grammar_tile = {
-            "box": box, "status": status, "bar": bar, "delete": delete, "state": None,
+            "box": box, "status": status, "bar": bar,
+            "download": download, "delete": delete, "state": None,
         }
         self._grammar_op = None
 
@@ -747,10 +846,12 @@ class _SettingsWindow:
             return
         tile["state"] = state
 
-        bar, status, delete = tile["bar"], tile["status"], tile["delete"]
+        bar, status = tile["bar"], tile["status"]
+        download, delete = tile["download"], tile["delete"]
+        download.pack_forget()
         delete.pack_forget()
-        if state == "delete":
-            status.config(text="Deleting…")
+        if state in ("download", "delete"):
+            status.config(text="Downloading…" if state == "download" else "Deleting…")
             bar.pack(anchor="w", pady=(4, 0))
             bar.start(12)
             return
@@ -759,20 +860,35 @@ class _SettingsWindow:
 
         if state == "none":
             status.config(
-                text="Not installed. Cleaned-up dictations use basic rules "
-                     "only. Reinstalling Talkative restores this."
+                text="Not installed. Cleaned-up dictations use basic rules only."
             )
+            download.pack(side="left")
         else:  # installed
             status.config(text="Installed.")
             delete.pack(side="left")
+
+    def _grammar_download(self):
+        self._grammar_op = "download"
+
+        def work():
+            try:
+                grammar_engine.download()
+            except Exception as exc:
+                self._model_errors.append(
+                    f"Could not download the grammar engine:\n{exc}"
+                )
+            finally:
+                self._grammar_op = None
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _grammar_delete(self):
         if not messagebox.askyesno(
             APP_NAME,
             "Remove the Optimize Narration files?\n\n"
             "This frees about 1.5 GB. “Cleaned up” dictations will keep "
-            "working with basic rules only. There is no in-app way to "
-            "bring this back — you would need to reinstall Talkative.",
+            "working with basic rules only. You can download it again "
+            "any time from this tab.",
             icon="warning", parent=self.root,
         ):
             return
@@ -790,6 +906,7 @@ class _SettingsWindow:
         for tier in self._tiles:
             self._render_model_tile(tier)
         self._render_grammar_tile()
+        self._render_local_download()
         while self._model_errors:
             messagebox.showerror(APP_NAME, self._model_errors.pop(0), parent=self.root)
         self.storage_label.config(
@@ -938,12 +1055,15 @@ class _SettingsWindow:
         box.pack(fill="x")
         ttk.Label(
             box, wraplength=500,
-            text="Dictation is fully offline — your voice never leaves "
-                 "this PC. Audio is transcribed locally and never saved. "
-                 "Dictation history, if you turn it on in the Dictation "
-                 "tab, is also stored only on this device. The one "
-                 "exception is the Feedback box below: nothing is sent "
-                 "unless you type a message and click Send.",
+            text="By default, Talkative processes your dictation via Cloud: "
+                 "your audio is sent to a remote server for transcription "
+                 "and cleanup, then discarded — not stored. Switch to "
+                 "Local in the General tab and it runs fully offline "
+                 "instead, with nothing ever leaving this PC. Dictation "
+                 "history, if you turn it on in the Dictation tab, is "
+                 "always stored only on this device, regardless of mode. "
+                 "The one other exception is the Feedback box below: "
+                 "nothing is sent unless you type a message and click Send.",
         ).pack(anchor="w")
 
         self._build_feedback_section(f)
@@ -1014,6 +1134,9 @@ class _SettingsWindow:
             "start_with_windows": self.var_autostart.get(),
             "play_sounds": self.var_sounds.get(),
             "theme": self.var_theme.get(),
+            "processing_mode": self.var_processing.get(),
+            "cloud_endpoint_url": self.cloud_url_entry.get().strip(),
+            "grammar_source": "local" if self.var_grammar_local.get() else "auto",
             "cleanup_mode": self.var_cleanup.get(),
             "enable_history": self.var_history.get(),
             "insert_mode": self.var_insert.get(),

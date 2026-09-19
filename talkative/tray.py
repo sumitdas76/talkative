@@ -74,6 +74,7 @@ def _make_icon_image(color):
 class TrayApp:
     def __init__(self, on_quit, on_settings=None, hotkey_label="Right Ctrl"):
         self._hotkey_label = hotkey_label
+        self._mode_label = ""
         self._idle_image = _make_icon_image((70, 130, 180, 255))  # steel blue
         self._recording_image = _make_icon_image((200, 40, 40, 255))  # red
         self._loading_image = _make_icon_image((150, 150, 150, 255))  # grey
@@ -87,7 +88,7 @@ class TrayApp:
             )
         menu_items.append(pystray.MenuItem("Quit", self._quit))
         self.icon = pystray.Icon(
-            "sumit_speak",
+            "talkative",
             self._loading_image,
             "Talkative (loading model...)",
             menu=pystray.Menu(*menu_items),
@@ -104,13 +105,22 @@ class TrayApp:
     def set_hotkey_label(self, label):
         self._hotkey_label = label
 
+    def set_mode_label(self, label):
+        """label: "Cloud", "Local", or "" to omit it from the tooltip."""
+        self._mode_label = label
+
+    def _mode_prefix(self):
+        return f"{self._mode_label} — " if self._mode_label else ""
+
     def set_idle(self):
         self.icon.icon = self._idle_image
-        self.icon.title = f"Talkative (hold {self._hotkey_label} to dictate)"
+        self.icon.title = (
+            f"Talkative ({self._mode_prefix()}hold {self._hotkey_label} to dictate)"
+        )
 
     def set_loading(self, note="loading model..."):
         self.icon.icon = self._loading_image
-        self.icon.title = f"Talkative ({note})"
+        self.icon.title = f"Talkative ({self._mode_prefix()}{note})"
 
     def set_recording(self):
         self.icon.icon = self._recording_image

@@ -6,13 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Talkative (formerly Sumit Speak, formerly Wispr Lite -- renamed again
 2026-08-23; the Python package, internal class names, and the GitHub repos
-still say "sumit_speak"/"sumit-speak", not renamed in this pass): a Windows
-tray app for hold-to-talk local dictation. Hold **Right Ctrl**, speak,
-release — audio is transcribed offline via faster-whisper, cleaned up
-(fillers, spoken corrections, near-repeats, personal dictionary), and
-pasted (clipboard + simulated Ctrl+V) into whatever control currently has
-focus. No network calls except the one-time model download from Hugging
-Face on first run.
+were brought in line with that rename on 2026-09-13, see CHANGELOG.md):
+a Windows tray app for hold-to-talk dictation. Hold **Right Ctrl**, speak,
+release — audio is transcribed, cleaned up (fillers, spoken corrections,
+near-repeats, personal dictionary), and pasted (clipboard + simulated
+Ctrl+V) into whatever control currently has focus. As of 2026-09-13,
+**Cloud processing is the shipped default** (see "Cloud-by-default" below
+and `cloud/`): transcription and grammar cleanup run on a Cloudflare
+Worker unless the user switches to Local in Settings, in which case it's
+the original fully-offline faster-whisper + local grammar engine pipeline
+with no network calls beyond the one-time model download.
 
 The full product direction (settings UI, model manager, update system,
 grammar engine) is specced in the "Sumit Speak — Product Specification"
@@ -39,20 +42,17 @@ python -m venv .venv
 .\scripts\rebuild.ps1
 ```
 
-If you need the raw PyInstaller command directly (e.g. debugging the
-build itself, not doing a normal rebuild):
-
-```powershell
-.\.venv\Scripts\python -m PyInstaller --noconfirm --onefile --windowed --name Talkative --icon assets\icon.ico --collect-all ctranslate2 --collect-all faster_whisper --collect-all av --collect-all tokenizers --collect-all uiautomation --hidden-import win32timezone main.py
-```
+(The raw PyInstaller command, with all `--collect-all` flags, is in
+`scripts/rebuild.ps1` if you need it directly for debugging the build
+itself.)
 
 `--icon assets\icon.ico` sets the EXE's own icon resource (Explorer, taskbar
 pin, Alt-Tab when no window is open). It does NOT change the icon Tk windows
 show while open -- Tk defaults to its own "feather" icon regardless of the
 EXE resource. That's handled separately in code via
-`sumit_speak/app_icon.py`'s `set_window_icon()`, called by each window that
+`talkative/app_icon.py`'s `set_window_icon()`, called by each window that
 creates its own `tk.Tk()` root (settings, try-it-now, the updater dialog).
-Regenerate both `assets/icon.ico` and `sumit_speak/app_icon.py` together by
+Regenerate both `assets/icon.ico` and `talkative/app_icon.py` together by
 re-running `assets/generate_icon.py` -- never hand-edit either output.
 
 Use `python -m PyInstaller`, NOT the `.\.venv\Scripts\pyinstaller` exe shim:
@@ -104,7 +104,7 @@ caught real packaging issues before (missing DLLs, bad hidden imports).
 
 ## Architecture
 
-Everything lives in `sumit_speak/`, wired together by `SumitSpeakApp` in
+Everything lives in `talkative/`, wired together by `TalkativeApp` in
 `app.py`, which owns the hotkey listener, the recorder, the transcriber, and
 the tray icon, and drives one linear pipeline per dictation:
 
@@ -139,7 +139,11 @@ Each stage is a separate module with no cross-dependencies beyond `config.py`
   deliberate design change away from an allow-list that silently failed in
   apps like WhatsApp for Windows (React Native) that don't expose standard
   accessibility patterns. Don't reintroduce an allow-list without a strong
-  reason.
+  reason. Also rejects a bare `ControlTypeName == "WindowControl"` result:
+  with nothing actually focused (desktop showing, everything minimized),
+  UIA doesn't report "no control" — it falls back to reporting the last
+  active window's own top-level frame as focused, which would otherwise
+  silently pass the block-list as editable.
 - **`self_correction.py`** — pure, local, rule-based (no LLM, no network —
   keep it that way). Detects spoken retraction phrases (compound only —
   bare "sorry" is deliberately not a trigger because it appears in real
@@ -155,7 +159,7 @@ Each stage is a separate module with no cross-dependencies beyond `config.py`
   span or only its last comma clause; ties delete the smaller. This exists
   because Whisper glues separate spoken sentences with commas. Retraction
   never reaches more than one sentence back. Debug per-stage output via
-  config.DEBUG_LOG -> %LOCALAPPDATA%\SumitSpeak\debug.log.
+  config.DEBUG_LOG -> %LOCALAPPDATA%\Talkative\debug.log.
 - **`cleanup.py`** — rule-based filler removal and conservative near-repeat
   sentence collapsing (word-level similarity + shared opening word; keep the
   last version). Governing principle: wrongly deleting intended words is the
@@ -180,25 +184,101 @@ Each stage is a separate module with no cross-dependencies beyond `config.py`
   loading / blue idle / red recording), not loaded from image assets — keep
   it that way so PyInstaller packaging doesn't need extra `--add-data`.
 
+## Cloud-by-default processing (added 2026-09-13)
+
+`config.PROCESSING_MODE` defaults to `"cloud"` (was `"local"` when this
+was a testers-only prototype). In Cloud mode the app never loads
+faster-whisper or the local grammar engine at all -- `app.py`'s
+`_cloud_active()`/`_sync_processing_mode()`/`run()` gate all local model
+loading behind the mode, and the two model-backed pipeline stages
+(`transcriber.Transcriber.transcribe()`, `grammar_engine.apply()`) are
+swapped for `cloud_client.transcribe()`/`cloud_client.grammar_apply()`
+instead. Local remains fully supported and downloadable any time from
+Settings → General → Processing (a combined "Download local models"
+button there calls `model_manager.download()` + the new
+`grammar_engine.download()`).
+
+**Backend**: `cloud/worker.js` (Cloudflare Worker, account
+`sumitdas76@gmail.com` / account id `5c8fd5ee36a5fb2a729762b18950f5fb`),
+deployed at `https://talkative-cloud.sumitdas76.workers.dev`. Two routes,
+`/transcribe` and `/grammar` (`@cf/meta/llama-3.2-3b-instruct`, same system
+prompt/few-shot shots as `grammar_engine.py`'s `_SYSTEM`/`_SHOTS` for
+parity). Both routes require `X-Shared-Secret` (a soft deterrent only --
+it's a literal constant in `config.py`, extractable/visible in the public
+repo, not real auth) and `X-Install-Id` (the app's existing anonymous
+per-install id from `feedback.install_id()`), enforced against a
+per-install daily quota (300 combined requests/day, `cloud/wrangler.toml`'s
+`QUOTA` KV namespace) that returns HTTP 429 on overrun -- `cloud_client.py`
+turns that into a friendly "Cloud is busy right now" message rather than a
+raw error.
+
+**`/transcribe` moved off Workers AI to Groq (2026-09-19)**: originally
+ran `@cf/openai/whisper` (Cloudflare's smaller base model --
+`whisper-large-v3-turbo` was tried first and rejected every audio input
+shape tested against its schema). Live testing showed the accuracy wasn't
+good enough (missed tag-question punctuation, homophone slips), so
+`handleTranscribe` in `worker.js` now calls Groq's hosted
+`whisper-large-v3-turbo` (the real large-v3-turbo weights) via
+`https://api.groq.com/openai/v1/audio/transcriptions`, using a
+`GROQ_API_KEY` secret (`wrangler secret put GROQ_API_KEY`, a free-tier key
+from console.groq.com, no card required). `/grammar` is unchanged, still
+on Workers AI's llama-3.2-3b-instruct. Verified live: punctuation
+(question marks, ellipses) noticeably improved; occasional near-homophone
+misses (e.g. "collars" heard as "colors") remain -- normal Whisper-family
+ASR noise, not a regression from this change, and not fixable via
+`dictionary.py` without breaking legitimate uses of the substituted word.
+
+**The real cost ceiling is not the shared secret or the quota** -- it's
+each upstream provider's own free-tier cap hard-erroring rather than
+billing, as long as neither account has billing enabled: Workers AI's
+account-wide 10,000 neurons/day (still backs `/grammar`), and Groq's
+no-card free tier (~2,000 requests/day, ~8 hours of audio/day as of
+2026-09) backing `/transcribe`. Do not add a payment method to either
+account without re-deriving what that changes for worst-case cost
+exposure.
+
+**Hybrid grammar source (added 2026-09-19)**: `config.GRAMMAR_SOURCE`
+("auto" default, or "local") decouples the grammar cleanup stage from
+`PROCESSING_MODE` -- lets Cloud transcription pair with the local
+`grammar_engine` instead of Cloud's own grammar model, for users who want
+Cloud's STT but a locally-run grammar pass. `app.py`'s
+`_grammar_uses_local()` is the single source of truth for which path runs
+on a given dictation (falls back to Cloud grammar automatically if the
+local model isn't installed); `_sync_grammar_source()` keeps the local
+engine loaded/unloaded to match, independent of whether `PROCESSING_MODE`
+itself just changed. Exposed in Settings → General → Processing as a
+checkbox under the two radio buttons, only enabled while Cloud is
+selected. `debug.log`'s per-dictation `[cloud]`/`[grammar]` tag now
+reflects the actual grammar path used, not just `PROCESSING_MODE`.
+
+**Known trap hit during setup**: `wrangler deploy` silently succeeds
+uploading code but fails to make the Worker reachable until a workers.dev
+subdomain route is explicitly enabled -- not exposed as a wrangler CLI
+flag in a non-interactive shell; done once via the dashboard (Worker →
+Domains → the "Worker URL" toggle, not the "Custom Domains and Routes"
+section above it, which is a different, unrelated control). Also:
+Cloudflare's edge bot-protection 403s Python's stock `urllib` User-Agent
+before requests ever reach the Worker -- `cloud_client.py`'s `_headers()`
+sends a browser-like User-Agent for exactly this reason, the same fix
+already used in `feedback.py` for FormSubmit.
+
+**Grammar engine on-demand download**: previously installer-bundled-or-
+nothing (see the Deferred/known-issues section below, now superseded).
+`config.GRAMMAR_HF_REPO` (`sumitdas76/talkative-grammar`) is a public
+Hugging Face repo holding the same CTranslate2 int8 conversion;
+`grammar_engine.download()` uses `huggingface_hub.snapshot_download()`
+into `engine_dir()`. The Models tab's grammar tile now has a real Download
+button (previously Delete-only).
+
+**One-time notice**: `cloud_notice.py` (mirrors `try_it_now.py`'s exact
+plumbing -- see that module's docstring) explains Cloud mode and points at
+the Local download, shown once via `config.CLOUD_NOTICE_DONE`.
+
 ## Current status / resume point (saved July 19, 2026, Phase 3 session)
 
-Phases 1–3 (engine, settings window, model manager) are implemented, built,
-and deployed to both EXE copies. Phase 3 wiring done this session:
-
-- `app.py` runs `migrate_from_hf_cache()` at load, points the Transcriber
-  at the app-owned model folder, and gained `reload_model(size, on_done)`
-  (background swap, revert on failure, persists model_size on success) and
-  `unload_model()`; a SimpleNamespace controller (reload/unload/has_model)
-  is passed into `open_settings`.
-- `settings_window.py` Models tab: two tiles with states
-  none/download/load/delete/in_use/not_in_use, ~300ms poll loop (workers
-  write `_model_ops`/`_model_errors`; only the Tk thread touches widgets),
-  indeterminate progressbar during download (no cancel in v1), the three
-  delete confirmation flows, storage-used line.
-- Verified: migration copied small.en into
-  `%LOCALAPPDATA%\SumitSpeak\models` (464 MB — HF layout duplicates blobs
-  into snapshots on Windows, so ~2× model size on disk), model loads from
-  the app folder, window builds/polls cleanly, EXE launch smoke test OK.
+Phases 1–3 (engine, settings window, model manager) were implemented in
+this era of the project (models live in an app-owned folder, migrated
+from the Hugging Face cache on first launch of the new code).
 
 Later that session: soft volume-controlled tones (config.SOUND_VOLUME),
 punctuation initial_prompt + cleanup.finish_sentence, latency notes on the
@@ -237,11 +317,13 @@ and publishing the grammar ct2 conversion to HF so its entry becomes
 updatable.**
 
 **Installer (spec §8) built and test-installed** (July 19):
-`installer\SumitSpeak.iss`; compile from the project root with
-`& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer\SumitSpeak.iss`
+`installer\SumitSpeak.iss` (renamed `installer\Talkative.iss` in the
+2026-08-23 app rename — use the current filename, not this one);
+compile from the project root with
+`& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer\Talkative.iss`
 (per-user winget install — NOT under Program Files) after a fresh
 PyInstaller build. Output:
-installer\Output\SumitSpeakSetup.exe (~1.6 GB — bundles the grammar
+installer\Output\TalkativeSetup.exe (~1.6 GB — bundles the grammar
 engine from this machine's %LOCALAPPDATA%\SumitSpeak\models\grammar,
 plus vc_redist downloaded to installer\redist\, both gitignored).
 Per-user, no UAC; uninstall's remove-data prompt defaults to KEEP under
@@ -262,108 +344,29 @@ SumitSpeakSetup.exe (1.57 GB) on the v1.0.1 release. Includes Phase 4's
 listening pill (pill.py — no-activate floating level indicator) and
 first-run try-it-now box (try_it_now.py, first_run_done settings key).
 
-**Change-request queue items 1-8 implemented July 20, 2026** (source-level;
-NOT yet built into the EXE or manually smoke-tested — see "Next session"
-below). Built in dependency order (each item's UI additions finished
-before the theme audit that has to cover them):
+**Change-request queue items 1-8 implemented July 20, 2026** (shipped in
+later releases; source notes below are kept only where they explain a
+convention or a one-way decision, not as a build-status log):
 
-- **Models tab redesign (was #1):** Fast/Accurate tiles now side by side
-  (`ttk.Frame` with two equal-weight grid columns) with an "Optimize
-  Narration" section below for the grammar engine (benefit-framed
-  label, no "AI"/"LLM"/"grammar model"/"engine" wording, per the
-  spec's benefit-framing rule; renamed from "Writing cleanup" on
-  2026-07-20 at the user's request — "Grammar Engine" was considered
-  and rejected for breaking that same rule) with a Delete button.
-  `grammar_engine.delete()` added: unload() + gc.collect() before
-  rmtree (Windows file-lock timing). Deleting is still a one-way door
-  in-app (no HF repo published yet) — went with the "strong warning"
-  option from the two agreed on July 19: the confirm dialog says
-  reinstalling Sumit Speak is the only way back.
-- **In-use tile visual state (was #2):** accent-bordered `ttk.LabelFrame`
-  style (`InUse.TLabelframe` / `.Label`) plus a filled "✓ In use" badge
-  (a plain `tk.Label`, not ttk) replaces the old "In use ✓" text.
-- **New app icon (was #3):** `assets/generate_icon.py` draws a mic glyph
-  on a steel-blue squircle (reuses the existing `#4682b4` brand blue, no
-  new palette) and emits `assets/icon.ico` (multi-res, for
-  `--icon`/`SetupIconFile`) plus `sumit_speak/app_icon.py` (a base64 PNG
-  + `set_window_icon()`, since Tk windows show their own default
-  "feather" icon regardless of the EXE's resource icon — wired into
-  settings/try-it-now/updater-dialog). Tray circles restyled from plain
-  ellipses to squircles to match. Re-run the generator script (never
-  hand-edit its two outputs) if the design changes.
-- **Feedback channel (was #4):** `feedback.py` — sends via FormSubmit.co
-  (`https://formsubmit.co/ajax/sumitdas76@gmail.com`, chosen over
-  Web3Forms/Formspree because it needs no signup), tagged with a random
-  persisted `install_id` (settings key, added by this session's testing
-  — already in the real settings.json). Replies are polled once a day
-  from `FEEDBACK_REPLIES_URL` (a `replies.json` file in the
-  sumit-speak-updates repo, same pattern as the update manifest) and
-  shown both as a tray toast and persistently in the About tab. **Two
-  loose ends:** (a) `replies.json` doesn't exist in the repo yet —
-  polling silently finds nothing until Sumit creates it (e.g.
+- **Benefit-framing rule for user-facing labels:** never use
+  "AI"/"LLM"/"grammar model"/"engine" wording in the UI — the grammar
+  engine is presented as "Optimize Narration". "Grammar Engine" was
+  considered and rejected for breaking this same rule.
+- **Deleting the grammar engine is a one-way door in-app** (no HF repo
+  published yet): the confirm dialog says reinstalling the app is the
+  only way to get it back.
+- **Feedback channel loose ends, still open:** `feedback.py` sends via
+  FormSubmit.co, tagged with a persisted `install_id` settings key.
+  (a) `replies.json` doesn't exist yet in the sumit-speak-updates repo —
+  reply-polling silently finds nothing until it's created (e.g.
   `{"replies": {"<install_id>": {"reply_id": "1", "text": "..."}}}`);
   (b) FormSubmit requires a one-time confirmation click in Gmail on the
-  very first real Send before it starts forwarding — hasn't happened
-  yet, no live Send has been fired.
-- **Spoken no-focus cue (was #5):** `speech.py` — SAPI renders into an
-  `SpMemoryStream` (16kHz/16-bit/mono) instead of playing directly, so
-  the PCM can go through sounddevice and honor `OUTPUT_DEVICE` like the
-  tones do; prefers the "Zira" voice (confirmed present on this
-  machine), falls back to the default. Replaces the old blocking
-  `show_error_popup`/`no_target_message` at both focus-check sites with
-  a toast + spoken cue (`app.py`'s `_no_target_cue`), volume scaled from
-  `SOUND_VOLUME`.
-- **Audio output-device dropdown (was #6):** new `OUTPUT_DEVICE` config
-  + `output_device` settings key, second combobox on the Audio tab
-  (mirrors the mic one, filtered on `max_output_channels`). Tones moved
-  from `winsound` to `sounddevice.play(..., device=OUTPUT_DEVICE,
-  blocking=True)` (`_tone_samples` replaces the old WAV-bytes
-  `_tone_wav`).
-- **Hotkey chords (was #7):** `config.HOTKEY` is now always a tuple (1
-  or 2 pynput Key/KeyCode objects), even for a single key.
-  `settings._parse_hotkey` accepts both the old plain-string format and
-  a new list-of-1-2 format. `app.py`'s listener tracks a
-  `_hotkey_pressed` set restricted to keys that are part of the
-  configured chord; the full set down starts recording, any one release
-  stops it. `keynames.friendly` now also accepts a tuple/list and joins
-  with " + ". Settings' hotkey capture UI holds-and-releases up to two
-  keys (capped, extra keys ignored) instead of firing on the first
-  keypress.
-- **Theme hover-highlight audit (was #8):** the reported bug (clam's
-  unmapped "active" state painting checkbutton/radiobutton rows white)
-  is fixed with `style.map(... background=[("active", bg)])`. Also
-  audited and fixed: button disabled state, Treeview selected-row
-  colors, the Combobox popdown listbox (a raw Tk Listbox — needs
-  `option_add("*TCombobox*Listbox...")`, not `style.configure`),
-  progressbar colors, entry focus border, and the raw feedback `tk.Text`
-  box's colors (including on a live theme switch, which ttk widgets get
-  for free but raw Tk widgets don't).
-- **Cloud speech-to-text (was #9): rejected, not deferred.** Asked
-  directly (provider choice + who pays for the API key), the answer was
-  to skip the concept entirely — Sumit Speak stays local-models-only.
-  Don't re-propose this in a future session without the user raising it
-  first.
-
-**Next session — start here:**
-1. Rebuild the EXE (`--icon assets\icon.ico` is now part of the
-   PyInstaller command — see Commands above) and copy to both EXE
-   locations, per the usual gotchas in this file. Two `SumitSpeak.exe`
-   instances were already running when this session's work was done, so
-   none of it has been through a real build or manual smoke test yet —
-   re-confirm kill-rebuild-relaunch approval before stopping them.
-2. Manually exercise: the redesigned Models tab (including deleting/
-   restoring the grammar engine's Delete button warning), the hotkey
-   chord capture UI end-to-end with a real 2-key combo, the output
-   device dropdown actually routing tones to a non-default device, the
-   spoken cue by dictating with nothing focused, and both themes for
-   leftover hover/contrast issues this session's audit might have
-   missed.
-3. When ready, click Send once in the About tab's Feedback box for
-   real, then check sumitdas76@gmail.com for FormSubmit's one-time
-   confirmation link.
-4. Create `replies.json` in the sumit-speak-updates repo (empty
-   `{"replies": {}}` is enough to start) so the reply-polling path has
-   something to find.
+  very first real Send before it starts forwarding — unclear whether
+  that's happened yet.
+- **Cloud speech-to-text: rejected, not deferred.** Asked directly
+  (provider choice + who pays for the API key), the answer was to skip
+  the concept entirely — the app stays local-models-only. Don't
+  re-propose this without the user raising it first.
 
 Remaining Phase 4 after the queue: explanatory failure toasts with
 distinct sounds (nothing heard / too short / no editable field),
@@ -383,7 +386,7 @@ cycles; re-confirm in a new session before stopping a running instance.
   The user has decided not to iterate further with rules -- the grammar
   engine (spec Phase 3) is the real fix. The debug.log corpus of real
   transcripts is the audition data for it.
-- **DEBUG_LOG privacy:** `%LOCALAPPDATA%\SumitSpeak\debug.log` stores
+- **DEBUG_LOG privacy:** `%LOCALAPPDATA%\Talkative\debug.log` stores
   transcript text on disk, which contradicts the spec's "nothing is saved"
   privacy statement. Fine during development; must default off (or be
   disclosed) before any distribution.
@@ -418,7 +421,7 @@ cycles; re-confirm in a new session before stopping a running instance.
   Settings opens, and repeated update-dialog opens, all cycling at once
   from separate threads -- with no crash. As before, an intermittent
   crash can't be proven fixed by a short test; there is no other `tk.Tk()`
-  call left in `sumit_speak/` (`overlay_thread.py` is the only one) so
+  call left in `talkative/` (`overlay_thread.py` is the only one) so
   the *known* instances of this bug class are gone, but watch for
   recurrence.
 
@@ -606,111 +609,78 @@ crashes). Committed as its own commit (`sumit_speak/app.py`,
 the previously-unpushed 2026-07-21 resume-point commit. `CHANGELOG.md`
 got an `[Unreleased]` section for this fix, also committed and pushed.
 
-**Left alone, still pending in the working tree (not this session's
-work, not committed):** a staged rename of `Wispr Lite - User
-Guide.docx` -> `docs\` and `diagnose_focus.py` -> `scripts\` (repo
-reorg, already `git add`ed from before this session), and an unstaged
-edit to `installer\SumitSpeak.iss` removing the "launch after install"
-optional checkbox task. Neither was touched or investigated this
-session -- review before committing.
+## Resume point (end of session, 2026-09-13)
 
-**v1.1.3 published later the same day (2026-07-22 session #3):** after
-reinstalling v1.1.2, the user noticed the About tab still read "Version
-1.1.0." Root cause: `sumit_speak/__init__.py`'s `__version__` constant
-(read by `settings_window.py`'s About tab, `f"Version {__version__}"`)
-is completely separate from `installer\SumitSpeak.iss`'s
-`MyAppVersion` -- it had been bumped for neither the 1.1.1 nor the
-1.1.2 release, so the in-app version display silently lagged two
-releases behind reality despite the installer itself being correctly
-versioned. Fixed by bumping `__init__.py` to `"1.1.3"` (caught and
-corrected a repeat of the exact same mistake mid-fix: bumped it to
-"1.1.2" first out of habit before catching that the release itself was
-going out as 1.1.3, per the numbering discipline established this
-session of never reusing a version number once its build differs from
-what was actually shipped).
-**Any future release must bump both places, not just the installer:**
-`installer\SumitSpeak.iss`'s `MyAppVersion` AND
-`sumit_speak/__init__.py`'s `__version__`. Consider this a standing
-release-checklist item, not a one-off fix.
-Rebuilt EXE, copied to both the portable (project root) and the
-already-installed (`%LOCALAPPDATA%\Programs\Sumit Speak\`) copies on
-this machine, smoke-tested, rebuilt the installer, committed (3 files:
-`CHANGELOG.md`, `installer\SumitSpeak.iss`, `sumit_speak\__init__.py`),
-pushed (no classifier block this time -- auto mode was off), and
-published via `gh release create` **from PowerShell** (per the
-MinTTY lesson from the v1.1.2 session) -- one retry needed after a
-PowerShell-native-argument quoting error with an embedded `"Version
-1.1.0"` in the release notes text; removing the embedded quotes from
-the notes string fixed it. Confirmed live and marked "Latest":
-https://github.com/sumitdas76/sumit-speak/releases/tag/v1.1.3
+**Context:** this was the session that finished the sumit_speak→talkative
+rename and built Cloud-by-default processing (see that section above) --
+both already staged/implemented when this particular resume began. This
+part of the session focused on a live accuracy bug the user hit testing
+Cloud mode.
 
-**v1.1.2 published later the same day (2026-07-22 session #2):** the
-user reported that dictating with no window actually focused (desktop
-showing, everything minimized) went nowhere with no error shown at
-all -- a different, deeper bug than the crash fixed above. Root-caused
-by directly probing `auto.GetFocusedControl()` with all windows
-minimized (via a windowless `pythonw.exe` probe script, run right
-after `Shell.Application.MinimizeAll()`, so the probe itself didn't
-steal focus): UIA doesn't report "no control" when nothing is truly
-focused -- it falls back to reporting the last active window's own
-top-level frame (`ControlTypeName: WindowControl`) as focused. The
-block-list logic in `focus_check.is_focus_editable()` never checked
-control *type*, only `IsEnabled`/read-only signals, so that bare frame
-silently passed as editable. Fixed with an explicit `ControlTypeName ==
-"WindowControl"` rejection, added right after the existing
-None/`Exists` check. Re-verified both directions after the fix: no
-window focused -> `False` (blocked), Notepad's real edit control
-focused -> `True` (unchanged, no WhatsApp-style regression).
+**Bug found (via debug.log, not guesswork):** Cloud-mode dictations were
+coming back with the *grammar* stage paraphrasing perfectly clear,
+already-grammatical sentences instead of leaving them alone -- e.g. raw
+transcript "I don't know what's happening man, but I think everything is
+going to the dogs." came back from the grammar pass as "I don't know
+what's happening, but everything seems to be falling apart." The `raw`
+transcript was accurate both times; this is not an STT/accuracy problem,
+it's the grammar-cleanup LLM over-applying the "reword garbled/unclear
+sentences" instruction added 2026-07-20 to sentences that were never
+garbled, just idiomatic. It passed the word-retention guards fine (~57%
+kept, well above the 0.4 floor) since those guards check *how much*
+survives, not *whether rewording was warranted*. Cloud's weaker model
+(`@cf/meta/llama-3.2-3b-instruct` vs. local's evaluated Qwen2.5-1.5B)
+triggers this more often, but the same prompt wording is shared by both
+engines, so local mode is presumably exposed to a lesser degree too --
+worth re-checking against debug.log if it turns up there.
 
-While testing that fix live, the user asked for `error_toast.py` to be
-redesigned: solid red / black text / no border (was dark maroon/white),
-dismissible by clicking the box, clicking anywhere else on screen, or
-Escape -- the click/Escape handling is implemented as global `pynput`
-hooks (mouse.Listener / keyboard.Listener), the same mechanism as the
-hotkey listener itself, specifically because the toast window is
-`WS_EX_NOACTIVATE` and never receives real focus-routed input for
-anything off the box. After trying it live, the user asked to simplify
-further: removed the spoken SAPI voice cue entirely (`speech.speak` call
-deleted from `app._no_target_cue`) -- and since nothing else in the
-codebase used `speech.py`, deleted that now-dead module outright --
-removed the on-screen "OK" label (the whole box stays clickable to
-dismiss without it), and shortened auto-dismiss from 3.5s to 1.5s.
+**Two fixes made and verified compiling, not yet re-tested live end to
+end:**
 
-Shipped as **v1.1.2** the same session: `installer\SumitSpeak.iss`
-bumped to `1.1.2`, `CHANGELOG.md` got a new entry, installer rebuilt
-from the already-tested `dist\SumitSpeak.exe` (no PyInstaller rebuild
-needed, no source changes since that build). Both commits pushed.
-**Note for next session: `git push` and `gh release create` were both
-blocked by this session's auto-mode permission classifier** even after
-explicit user go-ahead -- the user ran both manually via `! <command>`
-from their own prompt instead. `gh release create` additionally failed
-once from Git Bash/MinTTY (`Incorrect function` -- a known `gh`
-progress-bar-under-MinTTY issue uploading a 1.6 GB asset); retrying the
-identical command from **PowerShell** instead of Bash succeeded
-immediately. If a future release publish fails the same way, don't
-retry in Bash -- switch to PowerShell first.
-https://github.com/sumitdas76/sumit-speak/releases/tag/v1.1.2 confirmed
-live and marked "Latest" via `gh release list`.
+1. `talkative/grammar_engine.py`'s `_SYSTEM` and `cloud/worker.js`'s
+   `SYSTEM` (kept in sync per existing convention) were both reworded to
+   state plainly that most sentences are already clear and should only
+   get grammar/punctuation fixes -- rewording is only for genuinely
+   garbled/hard-to-follow sentences, and idioms/word choices should be
+   left alone even if a plainer version occurs to the model. **worker.js
+   has been deployed** (`wrangler deploy`, Version ID
+   `0c348824-5022-4941-a754-feccc64aa1a8`) -- this half is live. The
+   `grammar_engine.py` half only takes effect on the next run-from-source
+   or rebuild (see below -- not done yet).
+2. A second, smaller confusion the user hit while debugging the above:
+   `debug.log`'s per-dictation timing line always appended
+   `[{config.GRAMMAR_MODEL_DIR}]` (a static `"grammar"` string) whenever
+   any grammar pass ran, local *or* cloud -- so cloud-mode log lines
+   looked like evidence the local engine had run, when `app.py`'s
+   `_cloud_active()` branch (line ~391) was actually correctly calling
+   `cloud_client.grammar_apply()` the whole time. Fixed at `app.py`'s
+   `_debug_log` call site to print `[cloud]` when `_cloud_active()`, the
+   existing `[grammar]` tag otherwise.
 
-**Published as v1.1.1, same session:** the user pointed out that the
-source-level fix alone wouldn't reach anyone downloading the installer
-from GitHub Releases (still v1.1.0 at that point) -- correct catch, so
-the release was actually cut. `installer\SumitSpeak.iss` bumped to
-`MyAppVersion "1.1.1"`; also picked up the installer's already-pending
-uncommitted edit (removed the `launchafter` Task, so "Launch Sumit
-Speak now" is now the standard Inno finish-page checkbox instead of a
-gated optional task) since the user chose to bundle it in rather than
-set it aside. `CHANGELOG.md`'s `[Unreleased]` section became `[1.1.1] -
-2026-07-22`. Installer rebuilt via `ISCC.exe` from the already-built
-`dist\SumitSpeak.exe` (no PyInstaller rebuild needed -- no source
-changes since the 07:17 build). Both files committed and pushed, then
-`gh release create v1.1.1 installer\Output\SumitSpeakSetup.exe --repo
-sumitdas76/sumit-speak ...` published it as the new "Latest" release
-(verified via `gh release list`) -- confirmed
-https://github.com/sumitdas76/sumit-speak/releases/tag/v1.1.1 is live
-with the 1.6 GB installer attached. Nothing left pending from this fix;
-the docs/scripts reorg (staged, uncommitted) remains the only loose end
-in the working tree, untouched throughout.
+**Blocked, needs the user:** rebuilding to pick up fix #2 (and the local
+half of fix #1) requires stopping the currently-running `Talkative.exe`
+(PID 2964 at last check, launched 22:39:38 from the pre-fix build) --
+`scripts\rebuild.ps1` refuses to run over a live process by design.
+Killing it via `Stop-Process` was denied by the Claude Code auto-mode
+permission classifier ("Interfere With Workloads") even after the user
+had already authorized stopping it earlier in the session -- it needs
+either the user closing the app themselves (tray icon -> Exit, or Task
+Manager) or a fresh explicit confirmation next session.
+
+**Next steps on resume, in order:**
+1. Stop the running `Talkative.exe`.
+2. `.\scripts\rebuild.ps1`, then the usual launch smoke test (stays alive
+   a few seconds, no crash).
+3. Re-test the exact repro phrase ("everything is going to the dogs") in
+   both Cloud and Local mode, confirm the grammar pass now leaves the
+   idiom alone and that `debug.log` shows `[cloud]` for the cloud-mode
+   run.
+4. `CHANGELOG.md`'s `[Unreleased]` entry does not yet mention either fix
+   from this part of the session -- add a line once the retest confirms
+   they actually work, don't just narrate the intent.
+5. Nothing from this session has been committed yet (still the same
+   large staged rename + unstaged cloud-feature diff from before this
+   part of the session began) -- commit is still the user's call.
 
 ## Packaging notes
 
