@@ -2,6 +2,20 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [1.3.1] - 2026-09-19
+
+### Fixed
+
+- Choosing Local on the first-run onboarding screen would crash the
+  download with "'NoneType' object has no attribute 'write'" -- a
+  PyInstaller windowed-build quirk (no console, so `sys.stdout`/`stderr`
+  are `None`) that the download progress library wrote to unconditionally.
+  Downloading local models from Settings had the same underlying issue.
+- The onboarding screen's Continue button could be pushed off-screen
+  (window sized too small for its content) with no visible error.
+- The onboarding download now shows a real percentage/MB progress bar
+  instead of a generic animated one.
+
 ## [1.3.0] - 2026-09-19
 
 ### Added
