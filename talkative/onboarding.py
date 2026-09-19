@@ -64,7 +64,8 @@ def _build(overlay, on_choice):
         root = tk.Toplevel(overlay.root)
         root.title("Talkative")
         app_icon.set_window_icon(root)
-        root.geometry("520x430")
+        root.configure(bg=overlay_thread.bg_color())
+        root.geometry("540x520")
         root.resizable(False, False)
         root.attributes("-topmost", True)
 
@@ -73,33 +74,42 @@ def _build(overlay, on_choice):
             text="Choose how Talkative processes your dictation",
         ).pack(anchor="w")
 
+        def bullets(parent, items):
+            for item in items:
+                row = ttk.Frame(parent)
+                row.pack(fill="x", anchor="w", pady=(4, 0))
+                ttk.Label(row, text="•", foreground="grey").pack(side="left", anchor="n")
+                ttk.Label(
+                    row, wraplength=440, foreground="grey", text=item,
+                ).pack(side="left", padx=(6, 0), anchor="w")
+
         mode = tk.StringVar(value=config.PROCESSING_MODE)
 
         cloud_box = ttk.LabelFrame(root, text="Cloud", padding=12)
         cloud_box.pack(fill="x", padx=18, pady=(6, 6))
         ttk.Radiobutton(
-            cloud_box, text="Recommended — nothing to download",
+            cloud_box, text="Online",
             variable=mode, value="cloud",
         ).pack(anchor="w")
-        ttk.Label(
-            cloud_box, wraplength=460, foreground="grey",
-            text="Uses no extra RAM or disk on this device for models. "
-                 "Your dictation audio and text are sent to a remote "
-                 "server to be processed, then discarded.",
-        ).pack(anchor="w", pady=(4, 0))
+        bullets(cloud_box, [
+            "Uses no extra RAM or disk.",
+            "Your dictation audio is sent to a remote server to be processed.",
+        ])
 
         local_box = ttk.LabelFrame(root, text="Local", padding=12)
         local_box.pack(fill="x", padx=18, pady=(6, 6))
         ttk.Radiobutton(
-            local_box, text="Fully offline — nothing leaves this device",
+            local_box, text="Fully offline",
             variable=mode, value="local",
         ).pack(anchor="w")
-        ttk.Label(
-            local_box, wraplength=460, foreground="grey",
-            text="Downloads about 2 GB once (voice model ~0.5 GB + grammar "
-                 "model ~1.5 GB), then keeps roughly that much in RAM while "
-                 "you're actively dictating. No internet needed afterward.",
-        ).pack(anchor="w", pady=(4, 0))
+        bullets(local_box, [
+            "Everything stays private. Your voice and text never leave "
+            "this device, and nothing is sent over the internet.",
+            "Downloads about 2 GB once (voice model ~0.5 GB + grammar "
+            "model ~1.5 GB).",
+            "That much RAM will be occupied while the software is "
+            "working. No internet is needed.",
+        ])
 
         status = ttk.Label(root, padding=(18, 4, 18, 0), foreground="grey", wraplength=480)
         status.pack(anchor="w")

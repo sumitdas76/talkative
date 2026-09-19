@@ -23,8 +23,81 @@ must never touch Tk objects from any other thread.
 import queue
 import threading
 
+from . import config
+
 _overlay = None
 _lock = threading.Lock()
+
+
+def _effective_theme():
+    if config.THEME in ("light", "dark"):
+        return config.THEME
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        ) as key:
+            light, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return "light" if light else "dark"
+    except Exception:
+        return "light"
+
+
+def bg_color():
+    """Current theme's background color, for a Toplevel's own .configure(bg=)
+    -- ttk styling covers its own widgets but not the raw Tk background
+    showing through gaps/padding on the window itself."""
+    return "#2b2b2b" if _effective_theme() == "dark" else "#f0f0f0"
+
+
+def _apply_base_theme(root):
+    """Modern clam-based styling for the shared root, applied once so any
+    window built off it -- even the very first one shown, before Settings
+    has ever been opened -- looks like the rest of the app instead of
+    Tk's plain default theme (reported as looking "very Windows XP").
+    settings_window.py's own _apply_theme() re-applies (and extends, for
+    its Notebook/Treeview/Combobox/checkbox-glyph needs) the same colors
+    every time Settings opens -- this is just the baseline every other
+    first-run window (onboarding, cloud_notice, try_it_now) also gets for
+    free by virtue of sharing this one root."""
+    try:
+        from tkinter import ttk
+
+        style = ttk.Style(root)
+        style.theme_use("clam")
+        if _effective_theme() == "dark":
+            bg, fg, field, raised = "#2b2b2b", "#e6e6e6", "#3c3c3c", "#454545"
+            border, hover = "#555555", "#5a5a5a"
+        else:
+            bg, fg, field, raised = "#f0f0f0", "#1a1a1a", "#ffffff", "#dcdcdc"
+            border, hover = "#b0b0b0", "#cccccc"
+        accent, accent_fg = "#4682b4", "#ffffff"  # steel blue, matches the tray icon
+
+        root.configure(bg=bg)
+        style.configure(".", background=bg, foreground=fg,
+                        fieldbackground=field, bordercolor=border,
+                        lightcolor=bg, darkcolor=bg, font=("Segoe UI", 9))
+        style.configure("TLabelframe", background=bg, bordercolor=border)
+        style.configure("TLabelframe.Label", background=bg, foreground=fg,
+                        font=("Segoe UI", 9, "bold"))
+        style.configure("TButton", background=raised, padding=(10, 5))
+        style.map(
+            "TButton",
+            background=[("disabled", raised), ("active", hover)],
+            foreground=[("disabled", border)],
+        )
+        style.configure("TCheckbutton", background=bg, foreground=fg)
+        style.configure("TRadiobutton", background=bg, foreground=fg)
+        style.map("TCheckbutton", background=[("active", bg)],
+                  foreground=[("disabled", border)])
+        style.map("TRadiobutton", background=[("active", bg)],
+                  foreground=[("disabled", border)])
+        style.configure("TProgressbar", background=accent, troughcolor=field,
+                        bordercolor=border, lightcolor=accent, darkcolor=accent)
+    except Exception:
+        pass
 
 
 class _OverlayThread:
@@ -41,6 +114,7 @@ class _OverlayThread:
 
             self.root = tk.Tk()
             self.root.withdraw()  # the shared root itself is never shown
+            _apply_base_theme(self.root)
             self._ready.set()
             self.root.after(20, self._poll_builds)
             self.root.mainloop()

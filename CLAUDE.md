@@ -311,11 +311,27 @@ already used in `feedback.py` for FormSubmit.
 
 **Grammar engine on-demand download**: previously installer-bundled-or-
 nothing (see the Deferred/known-issues section below, now superseded).
-`config.GRAMMAR_HF_REPO` (`sumitdas76/talkative-grammar`) is a public
-Hugging Face repo holding the same CTranslate2 int8 conversion;
+`config.GRAMMAR_HF_REPO` (`sumitdas76/talkative-grammar`) is meant to be a
+public Hugging Face repo holding the same CTranslate2 int8 conversion;
 `grammar_engine.download()` uses `huggingface_hub.snapshot_download()`
 into `engine_dir()`. The Models tab's grammar tile now has a real Download
 button (previously Delete-only).
+
+**That repo did not actually exist until 2026-09-19.** Despite this
+section claiming otherwise since it was written, `sumitdas76` had zero
+public HF models -- `grammar_engine.download()` (and the identical
+on-demand path onboarding.py's Local branch now also uses) 404'd for
+*anyone* attempting a genuinely fresh download, this dev machine's own
+already-cached copy (from the original July 2026 installer-bundled era)
+just meant nobody had hit it. Caught by the fresh-install onboarding test
+below, not by code review. Fixed by publishing this exact machine's
+already-working `<models>/grammar` files (the same Qwen2.5-1.5B int8
+conversion referenced throughout this doc) to that repo for real via
+`HfApi().create_repo()` + `upload_folder()`, verified afterward with a
+real `hf_hub_download()` call, not just `model_info()`. Pure data fix, no
+app code changed -- v1.3.0 (already released, shipped with this same bug)
+needed no new build or version bump, it just started working once the
+repo existed.
 
 **One-time notice**: `cloud_notice.py` (mirrors `try_it_now.py`'s exact
 plumbing -- see that module's docstring) explains Cloud mode and points at

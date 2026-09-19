@@ -56,6 +56,7 @@ def _build(overlay):
         root = tk.Toplevel(overlay.root)
         root.title("Talkative")
         app_icon.set_window_icon(root)
+        root.configure(bg=overlay_thread.bg_color())
         root.geometry("460x260")
         root.resizable(False, False)
         root.attributes("-topmost", True)
