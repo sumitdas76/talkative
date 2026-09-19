@@ -65,7 +65,6 @@ def _build(overlay, on_choice):
         root.title("Talkative")
         app_icon.set_window_icon(root)
         root.configure(bg=overlay_thread.bg_color())
-        root.geometry("540x520")
         root.resizable(False, False)
         root.attributes("-topmost", True)
 
@@ -147,15 +146,38 @@ def _build(overlay, on_choice):
                 finish("local")
                 return
 
+            # Approximate sizes (measured live, 2026-09-19) -- used only as
+            # a progress-bar denominator, not for exact accounting. Real
+            # per-file byte callbacks would need hooking huggingface_hub's
+            # internals; polling disk usage against a known rough total is
+            # far simpler and good enough for a progress indicator.
+            needed_mb = 0
+            if not model_manager.is_downloaded(config.MODEL_SIZE):
+                needed_mb += 464
+            if not grammar_engine.is_installed():
+                needed_mb += 1490
+            baseline_mb = model_manager.storage_used_mb()
+
             state["busy"] = True
             continue_btn.config(state="disabled", text="Downloading…")
-            status.config(
-                foreground="grey",
-                text="Downloading voice and grammar models (about "
-                     "2 GB)… this can take a few minutes.",
-            )
+            bar.config(mode="determinate", maximum=max(needed_mb, 1), value=0)
             bar.pack(fill="x", padx=18, pady=(0, 8), before=button_frame)
-            bar.start(12)
+
+            def poll_progress():
+                if not state["busy"]:
+                    return
+                done_mb = max(0.0, model_manager.storage_used_mb() - baseline_mb)
+                done_mb = min(done_mb, needed_mb)
+                bar.config(value=done_mb)
+                pct = int(done_mb / needed_mb * 100) if needed_mb else 100
+                status.config(
+                    foreground="grey",
+                    text=f"Downloading voice and grammar models... {pct}% "
+                         f"({int(done_mb)} MB of {needed_mb} MB).",
+                )
+                root.after(500, poll_progress)
+
+            poll_progress()
 
             def work():
                 error = None
@@ -168,10 +190,9 @@ def _build(overlay, on_choice):
                     error = exc
 
                 def done():
-                    bar.stop()
+                    state["busy"] = False
                     bar.pack_forget()
                     if error is not None:
-                        state["busy"] = False
                         continue_btn.config(state="normal", text="Continue")
                         status.config(
                             foreground="red",

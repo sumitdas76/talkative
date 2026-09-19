@@ -298,6 +298,41 @@ folder (models included) when the user opts in -- only its wording was
 tightened to say "voice and grammar models" explicitly, no new logic was
 needed there.
 
+**Genuine fresh-install test (2026-09-19) caught two more real bugs**,
+neither reachable by running from source, both shipped in v1.3.0 until
+fixed same-day. Method: backed up this dev machine's real
+`%LOCALAPPDATA%\Talkative`, ran the actual built `TalkativeSetup.exe`
+silently (`/VERYSILENT /SUPPRESSMSGBOXES`), and drove onboarding's Local
+path for real -- not a code-review guess, which had originally (wrongly)
+been judged sufficient confidence to skip this test.
+
+1. `sys.stdout`/`sys.stderr` are `None` in a PyInstaller `--windowed`
+   build (no console attached) -- `huggingface_hub`'s tqdm-based download
+   progress bars write to them unconditionally and crashed with
+   `'NoneType' object has no attribute 'write'` the instant a download
+   actually ran inside the frozen EXE. Every prior test of this code path
+   ran from source, where a real console exists, so this was invisible
+   until now. Fixed in `main.py`, first thing, before importing
+   `talkative.app`: redirect both to `open(os.devnull, "w")` when `None`.
+2. Onboarding's window used a hardcoded `.geometry("540x520")`. Once the
+   Local box grew to three bullet points the content exceeded that height
+   and, since the window was also `resizable(False, False)`, the Continue
+   button was silently pushed off-screen with no visible error -- looked
+   like a missing button, not a sizing bug. Fixed by removing the
+   `.geometry()` call entirely instead of guessing a bigger constant:
+   `_build()` now calls `root.update_idletasks(); root.geometry(...)`
+   nowhere at all, leaving Tk's own pack-based geometry propagation
+   active continuously, so it also correctly re-sizes later when the
+   download progress bar appears.
+
+Also replaced the indeterminate "bouncing" progress bar with a real
+determinate one during onboarding's download, at the user's request: no
+per-file byte callback is wired through `huggingface_hub` (more invasive
+than warranted), so it instead polls `model_manager.storage_used_mb()`
+against a hardcoded approximate total (464 MB voice + 1490 MB grammar,
+whichever are actually needed) every 500ms -- simple, good enough for a
+progress indicator, not exact accounting.
+
 **Known trap hit during setup**: `wrangler deploy` silently succeeds
 uploading code but fails to make the Worker reachable until a workers.dev
 subdomain route is explicitly enabled -- not exposed as a wrangler CLI
