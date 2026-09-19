@@ -251,6 +251,32 @@ checkbox under the two radio buttons, only enabled while Cloud is
 selected. `debug.log`'s per-dictation `[cloud]`/`[grammar]` tag now
 reflects the actual grammar path used, not just `PROCESSING_MODE`.
 
+**First-run onboarding screen (added 2026-09-19)**: `onboarding.py` (same
+`overlay_thread.py`/single-shared-Tk-root pattern as `try_it_now.py` and
+`cloud_notice.py`) shows a one-time Cloud-vs-Local choice screen with
+plain-language RAM/disk numbers for each, gated by a new
+`config.ONBOARDING_DONE` settings key. Because that key is absent from
+every `settings.json` written before this existed, it defaults `False`
+and the screen shows once to existing installs updating to this version
+too, not just fresh ones -- deliberate, at the user's request. Non-
+blocking by design: `app.py`'s `run()` starts dictation under whatever
+`PROCESSING_MODE` is already configured (Cloud, normally) while the
+screen is still open; its `on_choice` callback just calls
+`_sync_processing_mode()` again if the user's answer differs from that
+default, reusing the exact same sync path Settings already uses. Picking
+Local downloads both models right there (blocking only the onboarding
+window, with a progress bar) via the same `model_manager.download()` +
+`grammar_engine.download()` pair Settings' "Download local models" button
+calls, so onboarding hands off a fully working offline setup rather than
+leaving the grammar engine as a separate later step. Picking Cloud also
+pre-marks `CLOUD_NOTICE_DONE`, since the onboarding screen already covered
+that ground -- avoids showing `cloud_notice.py`'s notice right on top of
+it. The installer's uninstall data-removal prompt (see `installer/
+Talkative.iss`) already deletes the whole `%LOCALAPPDATA%\Talkative`
+folder (models included) when the user opts in -- only its wording was
+tightened to say "voice and grammar models" explicitly, no new logic was
+needed there.
+
 **Known trap hit during setup**: `wrangler deploy` silently succeeds
 uploading code but fails to make the Worker reachable until a workers.dev
 subdomain route is explicitly enabled -- not exposed as a wrangler CLI

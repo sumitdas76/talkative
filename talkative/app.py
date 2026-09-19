@@ -4,7 +4,7 @@ import time
 
 from pynput import keyboard
 
-from . import cloud_client, cloud_notice, config, error_toast, feedback, grammar_engine, history, model_manager, pill, settings, try_it_now, updater
+from . import cloud_client, cloud_notice, config, error_toast, feedback, grammar_engine, history, model_manager, onboarding, pill, settings, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -461,6 +461,11 @@ class TalkativeApp:
             # Separate thread: the grammar engine must never delay dictation
             # readiness; until (unless) it loads, cleaned_up mode is rules-only.
             threading.Thread(target=grammar_engine.load, daemon=True).start()
+        # Non-blocking: dictation is already usable under whatever mode is
+        # configured above while this is open. on_choice re-syncs
+        # everything (model loading, grammar source) if the user picks
+        # something different from that default.
+        onboarding.maybe_show(on_choice=lambda mode: self._sync_processing_mode())
         updater.start_background_check(self.updater_controller())
         feedback.start_background_check(
             on_reply=lambda text: self.tray.notify(

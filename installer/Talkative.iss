@@ -89,8 +89,9 @@ begin
   begin
     { SuppressibleMsgBox with IDNO default: a silent uninstall must never
       delete the user's models and settings. }
-    if SuppressibleMsgBox('Also remove the downloaded speech models and your '
-              + 'settings?' + #13#10 + 'This frees up to 4 GB of disk space.',
+    if SuppressibleMsgBox('Also remove the downloaded voice and grammar '
+              + 'models and your settings?' + #13#10
+              + 'This frees up to 4 GB of disk space.',
               mbConfirmation, MB_YESNO, IDNO) = IDYES then
       DelTree(ExpandConstant('{localappdata}\Talkative'), True, True, True);
   end;

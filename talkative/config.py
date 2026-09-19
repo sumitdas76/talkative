@@ -130,6 +130,13 @@ CLOUD_SHARED_SECRET = "zw5qf1UUIexr2i2NckpwGlsMOCE0SICICiL0dS6qy40"
 # One-time notice shown the first time Cloud mode actually activates,
 # explaining Local can be downloaded separately (see cloud_notice.py).
 CLOUD_NOTICE_DONE = False
+# One-time Cloud-vs-Local onboarding screen (see onboarding.py), shown
+# before cloud_notice.py's notice and try_it_now.py's tutorial. A brand
+# new key as of 2026-09-19 -- absent from every settings.json written
+# before this existed, so it defaults False and the screen is shown once
+# to existing installs too, not just fresh ones (deliberate; see
+# CLAUDE.md's onboarding note).
+ONBOARDING_DONE = False
 
 # ---------------------------------------------------------------------------
 # Dictation history: an opt-in, local-only log of the final text from each

@@ -42,6 +42,7 @@ _KEYS = {
     # here so load_into_config() picks it up.
     "cloud_shared_secret": "CLOUD_SHARED_SECRET",
     "cloud_notice_done": "CLOUD_NOTICE_DONE",
+    "onboarding_done": "ONBOARDING_DONE",
     "manifest_url": "MANIFEST_URL",
     "insert_mode": "INSERT_MODE",
     "append_space": "APPEND_SPACE",

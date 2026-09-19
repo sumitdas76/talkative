@@ -19,6 +19,12 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   pair with the local grammar engine instead of Cloud's own grammar model,
   for a Cloud-STT + local-grammar mix (needs the local grammar model
   downloaded; falls back to Cloud grammar automatically if it isn't).
+- A one-time onboarding screen on first launch -- shown to existing
+  installs updating to this version too, not just fresh ones -- lets you
+  choose Cloud or Local up front, with plain-language RAM/disk numbers for
+  each. Picking Local downloads both models right there, so you land in a
+  fully working offline setup instead of needing a second trip to
+  Settings for the grammar engine.
 
 ### Changed
 
