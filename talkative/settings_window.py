@@ -162,7 +162,16 @@ class _SettingsWindow:
         self.root = tk.Toplevel(self.overlay.root)
         self.root.title(f"{APP_NAME} — Settings")
         app_icon.set_window_icon(self.root)
-        self.root.geometry("600x480")
+        # No explicit .geometry() call -- same fix as onboarding.py's
+        # Continue-button clipping (2026-09-19): a hardcoded WxH doesn't
+        # account for actual content height, and content has grown since
+        # 600x480 was chosen (confirmed live 2026-09-20: the General tab's
+        # Processing box, added in 1.3.0, pushed the real required height
+        # to 531px, squeezing the Save/Close bar down to ~1px on every
+        # tab). Leaving geometry() uncalled keeps Tk's own pack-based
+        # propagation active, so the window sizes to its actual content
+        # and keeps re-sizing correctly as content changes later (e.g. the
+        # Models tab's download progress bar appearing).
         self.root.minsize(520, 420)
         self._apply_theme()
 

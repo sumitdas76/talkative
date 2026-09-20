@@ -2,6 +2,20 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [1.3.3] - 2026-09-20
+
+### Fixed
+
+- The Settings window's Save and Close buttons could shrink down to
+  basically nothing and disappear when switching to certain tabs — the
+  window was a fixed size that no longer had enough room once the Cloud
+  vs. Local option was added to the General tab in an earlier release.
+  The window now sizes itself to fit its actual content.
+- Uninstalling did not stop the app if it was still running, so it could
+  keep running in the background — and stay visible in Task Manager —
+  even after being uninstalled. The installer now closes the app before
+  installing or removing it.
+
 ## [1.3.2] - 2026-09-20
 
 This release doesn't add anything new — it's entirely about making

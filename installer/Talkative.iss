@@ -19,7 +19,7 @@
 ;   half-gigabyte left behind).
 
 #define MyAppName "Talkative"
-#define MyAppVersion "1.3.2"
+#define MyAppVersion "1.3.3"
 #define MyAppExeName "Talkative.exe"
 
 [Setup]
@@ -30,6 +30,20 @@ AppPublisher=Sumit Chatterjee
 DefaultDirName={userpf}\{#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
+; Detect and close any running Talkative.exe (via Windows Restart Manager,
+; which checks actual open file handles in {app} -- not just a process-name
+; match, so it catches both the onefile bootloader process AND its child
+; interpreter process, since --onefile always launches as a parent+child
+; pair at runtime) before install OR uninstall proceeds. Added 2026-09-20
+; after a user reported the app still running (and still visible in Task
+; Manager) after uninstalling -- CurUninstallStepChanged below only ran
+; AFTER files were already gone, so nothing had ever actually stopped the
+; process. Also fixes the long-standing manual "check for and kill a live
+; instance before rebuilding" step documented in the project's own
+; CLAUDE.md, though scripts\rebuild.ps1's own check is unaffected since it
+; runs before ISCC.exe, not through this installer.
+CloseApplications=yes
+RestartApplications=no
 OutputDir=Output
 OutputBaseFilename=TalkativeSetup
 Compression=lzma2
@@ -84,7 +98,22 @@ begin
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
 begin
+  if CurUninstallStep = usUninstall then
+  begin
+    { Belt-and-suspenders backstop on top of CloseApplications=yes above --
+      that relies on Restart Manager prompting interactively, which can't
+      happen on a silent/unattended uninstall. /T kills the whole process
+      tree (the onefile bootloader parent AND its child interpreter
+      process, not just whichever PID happens to match first), so this
+      doesn't depend on getting the parent/child relationship right by
+      hand. Exit code ignored -- "no matching process" is the common,
+      expected case, not a failure. }
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#MyAppExeName} /T',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
   if CurUninstallStep = usPostUninstall then
   begin
     { SuppressibleMsgBox with IDNO default: a silent uninstall must never
