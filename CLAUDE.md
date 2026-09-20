@@ -809,38 +809,43 @@ visual tooling exists in this environment) and process lifecycle
 does NOT reliably kill its child -- verified by deliberately killing a
 parent and watching the child survive as an orphan for minutes).
 
-**In progress, not yet finished:** a cinematic walkthrough video
-(install + full Settings tour) at `videos/talkative-walkthrough/`,
-built via a long-running forked agent (resume by messaging agent id/name
-`aa9fba3d1dbdeb3f8` in this project's session, or check `ListAgents` if
-that's gone stale). No desktop-control tooling exists in this
-environment, so the installer/onboarding/Settings scenes are faithful
-HTML recreations of the real UI (pulled from `settings_window.py`/
-`onboarding.py`'s actual copy and control layout, not screen capture);
-the GitHub release-page scenes are real captures via Chrome automation.
-Voiceover is local Kokoro TTS (`am_adam`); music is local MusicGen
-(called directly via a standalone Python script, since no hyperframes
-CLI command invokes it and no HeyGen credential exists for the catalog
-path) in a moody synthwave/retro-electronic style -- genre direction
-only, deliberately not reproducing any specific copyrighted melody.
+**Rough-cut stage, not yet final-quality rendered or published:** a
+cinematic walkthrough video (install + full Settings tour) at
+`videos/talkative-walkthrough/`, built via a long-running forked agent
+(resume by messaging agent id/name `aa9fba3d1dbdeb3f8` in this project's
+session if further changes are needed, or check `ListAgents` if that's
+gone stale). No desktop-control tooling exists in this environment, so
+the installer/onboarding/Settings scenes are faithful HTML recreations
+of the real UI (pulled from `settings_window.py`/`onboarding.py`'s
+actual copy and control layout, not screen capture); the GitHub
+release-page scenes are real captures via Chrome automation. Voiceover
+is local Kokoro TTS (`am_adam`); music is local MusicGen (called
+directly via a standalone Python script, since no hyperframes CLI
+command invokes it and no HeyGen credential exists for the catalog path)
+in a moody synthwave/retro-electronic style -- genre direction only,
+deliberately not reproducing any specific copyrighted melody.
 
-Last confirmed-good render (committed to git):
-`videos/talkative-walkthrough/renders/talkative-walkthrough_2026-09-20_20-15-39.mp4`
-(2:35). A further revision round was mid-flight when this session paused
--- the fork was fixing: dead-time gaps throughout the timeline, a
-scene-1 jitter bug (mic icon/"Free" text visibly shaking -- root cause
-traced to cross-worker capture divergence during parallel rendering; fix
-in progress was switching to a single-worker render), cursor precision
-on the SmartScreen mockup and the install-wizard "Next" buttons, a
-further-quickened install-wizard scene, a re-attempt at the synthwave
-music (first attempt was judged weak), and rebuilding the live-dictation
-scene's "listening" indicator to match the real pill (`pill.py`: a small
-rounded capsule, red dot + 12 bars behaving like a scrolling live
-audio-level meter, not a static pulse). The user said to stop iterating
-and just render with whatever's ready. **Not yet rendered/reported back
-at session pause -- check the agent's status first on resume, don't
-restart it from scratch.** No music bed, thumbnail, or final render
-should be treated as locked until that pending render is actually seen.
+Current render (committed to git):
+`videos/talkative-walkthrough/renders/talkative-walkthrough-v6.mp4`,
+2:06.7 (126.7s). This is the sixth revision round; each prior round's
+notes and fixes are in this session's conversation history if the exact
+history of what changed matters later. As of this render: dead-time gaps
+closed across every scene (audited from the real on-disk timeline, not
+assumed), the scene-1 jitter root-caused to parallel-render-worker
+capture divergence and fixed via single-worker rendering (no animation
+code changed), cursor targets on the SmartScreen mockup and install
+wizard re-measured against actual rendered button positions, the
+install wizard tightened to 7.3s (third round), and the listening-pill
+scene rebuilt to match `pill.py`'s real behavior (rolling 12-bar level
+meter, not a static pulse). **Known open item:** the music bed is
+last-round's synthwave attempt trimmed to fit, not a fresh generation --
+new MusicGen attempts at the current runtime hit the model's hard
+2048-token position limit and errored; a longer-form generation approach
+(chunking, or accepting a shorter loop with a crossfaded seam instead of
+the current hard-repeat loop) is still open if a better track is wanted.
+No thumbnail/YouTube-metadata pass has happened against this specific
+render yet (the existing `thumbnail.png` predates several revision
+rounds) -- reconfirm it still matches before publishing anywhere.
 
 Two things still open beyond the video: YouTube title/description were
 drafted in-conversation (not saved to a file); and the LinkedIn post
