@@ -374,15 +374,24 @@ class _SettingsWindow:
         url_row = ttk.Frame(proc_box)
         url_row.pack(fill="x", pady=(10, 0))
         ttk.Label(url_row, text="Cloud endpoint:").pack(side="left")
+        # Always readonly, regardless of Cloud/Local selection -- shown for
+        # transparency (where Cloud-mode data actually goes), not meant to
+        # be edited from here. It used to be a plain editable Entry; a
+        # mistyped value here broke every Cloud dictation with a raw,
+        # unhelpful urllib exception in a popup (confirmed 2026-09-20) and
+        # gave no hint the fix was to come back here. "readonly" (not
+        # "disabled") so the value can still be selected/copied. No save()
+        # round-trip needed any more -- there's no longer a way to change
+        # it through this control.
         self.cloud_url_entry = ttk.Entry(url_row, width=44)
         self.cloud_url_entry.insert(0, config.CLOUD_ENDPOINT_URL)
+        self.cloud_url_entry.configure(state="readonly")
         self.cloud_url_entry.pack(side="left", fill="x", expand=True, padx=(6, 0))
         self._processing_changed()
         self._render_local_download()
 
     def _processing_changed(self):
         state = "normal" if self.var_processing.get() == "cloud" else "disabled"
-        self.cloud_url_entry.configure(state=state)
         self.grammar_local_check.configure(state=state)
 
     def _download_local_models(self):
@@ -1144,7 +1153,6 @@ class _SettingsWindow:
             "play_sounds": self.var_sounds.get(),
             "theme": self.var_theme.get(),
             "processing_mode": self.var_processing.get(),
-            "cloud_endpoint_url": self.cloud_url_entry.get().strip(),
             "grammar_source": "local" if self.var_grammar_local.get() else "auto",
             "cleanup_mode": self.var_cleanup.get(),
             "enable_history": self.var_history.get(),

@@ -2,6 +2,16 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [1.3.4] - 2026-09-20
+
+### Changed
+
+- The Cloud endpoint field on the General tab is now shown for reference
+  only, not editable. It previously let anyone type in it, and a mistyped
+  value there silently broke Cloud dictation with a confusing technical
+  error on every attempt, with no hint of how to fix it. The value is
+  still visible; it just can't be changed from here anymore.
+
 ## [1.3.3] - 2026-09-20
 
 ### Fixed
