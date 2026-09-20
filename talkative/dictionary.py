@@ -16,6 +16,20 @@ import re
 
 from . import config
 
+# spoken_symbols.py fuses "underscore"/"hyphen"/"at sign"/slash words into
+# these characters with no surrounding space, producing filenames, paths,
+# identifiers, and email addresses ("settings_window.py", "c:\users\sumit",
+# "john.smith@company.com"). A dictionary term that happens to also be a
+# path/username component ("Sumit" -> "Sumit Chatterjee") must not expand
+# when it's actually sitting inside one of these fused tokens -- confirmed
+# live 2026-09-20: dictating a path containing the literal folder name
+# matching a dictionary entry silently corrupted the path into a folder
+# name that doesn't exist. "." is deliberately excluded from this set --
+# it's also the normal, unavoidable character directly touching the last
+# word of an ordinary sentence, so excluding on it would break the common
+# case instead of the rare one.
+_FUSION_CHARS = frozenset("\\/_-@")
+
 
 def _normalize(phrase):
     return re.sub(r"\s+", " ", phrase.strip().lower())
@@ -42,6 +56,11 @@ def apply_dictionary(text, entries=None):
 
     def _replace(match):
         matched = match.group(0)
+        start, end = match.start(), match.end()
+        before_char = text[start - 1] if start > 0 else ""
+        after_char = text[end] if end < len(text) else ""
+        if before_char in _FUSION_CHARS or after_char in _FUSION_CHARS:
+            return matched
         typed = lookup[_normalize(matched)]
         # Capitalize only at an actual sentence start -- "the matched text
         # is uppercase" is the wrong signal (acronyms like "AI" are always

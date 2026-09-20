@@ -2,6 +2,47 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [1.3.2] - 2026-09-20
+
+This release doesn't add anything new — it's entirely about making
+dictation more trustworthy. It came out of a deep stress-testing pass:
+made-up test recordings covering fast rambling speech, multiple
+back-to-back corrections, technical text like file paths and version
+numbers, and even different accents (Indian English and New York English),
+specifically hunting for cases where the app could quietly get something
+wrong. It found several, all now fixed.
+
+### Fixed
+
+- Removing filler words like "um" could accidentally delete the period at
+  the end of a sentence, running two separate sentences together into one
+  confusing block of text.
+- Filler-word removal could mangle a real word like "uh-huh" into broken
+  text ("-huh").
+- The "remove duplicate sentences" cleanup could delete an entire sentence
+  just because it was worded similarly to a nearby one, even when the two
+  sentences actually said different things (for example, one about a
+  number of people and another about a number of chairs).
+- Dictating a file path, version number, or web address could get
+  scrambled — and partly deleted — if a spoken correction ("scratch that,"
+  "no wait," and similar) showed up anywhere later in the same dictation.
+  The periods inside that kind of text were being mistaken for the ends of
+  sentences.
+- A personal dictionary word could wrongly expand itself in the middle of
+  a dictated file path or web address and break it — for example, a
+  folder named after you turning into your full name, which isn't a real
+  folder.
+- In rare cases where speech-to-text lost track of punctuation for a long
+  stretch (something the cloud engine occasionally does), a single spoken
+  correction could wipe out several unrelated sentences that had nothing
+  to do with the correction. This is now caught and left alone instead of
+  guessing wrong and deleting real content.
+- The cloud grammar cleanup had a known issue, from the previous release,
+  where it would sometimes reword already-clear sentences for no reason,
+  occasionally flattening a colorful turn of phrase into something
+  blander. The fix for this had been written but never actually went
+  live — it's deployed now.
+
 ## [1.3.1] - 2026-09-19
 
 ### Fixed

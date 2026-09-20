@@ -14,7 +14,13 @@ from difflib import SequenceMatcher
 from . import config
 
 _WHITESPACE_RUN = re.compile(r"[ \t]+")
-_FIRST_LETTER = re.compile(r"([.!?]\s*|^\s*)([a-z])")
+# A "." immediately followed by a word character (no space) is never a real
+# sentence end -- it's a fused identifier/URL/decimal ("settings_window.py",
+# "company.com", "2.3.1") that spoken_symbols.py or Whisper's own number
+# formatting produced. Only "!"/"?" always end a sentence; a bare "." needs
+# the (?!\w) guard so recapitalizing after one doesn't mangle the character
+# right after a fused period (e.g. ".py" -> ".Py").
+_FIRST_LETTER = re.compile(r"((?:\.(?!\w)|[!?])\s*|^\s*)([a-z])")
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _WORDS = re.compile(r"[a-z0-9']+")
 
@@ -30,8 +36,17 @@ def remove_fillers(text, fillers=None):
 
     alternatives = "|".join(re.escape(f) for f in sorted(fillers, key=len, reverse=True))
     # The filler plus whatever punctuation glues it into the sentence:
-    # "Send, um, the file" / "Um, send it" / "send it, uh, today".
-    pattern = re.compile(r"(?:,\s*)?\b(?:" + alternatives + r")\b[,.:;]?\s*", re.IGNORECASE)
+    # "Send, um, the file" / "Um, send it" / "send it, uh, today". Only
+    # ,/:/; are treated as glue to consume -- a trailing .!? is a sentence
+    # terminator, not glue, and must survive so downstream stages that split
+    # on it (self_correction.py, collapse_repeats() below) don't see two
+    # sentences silently fused into a run-on. (?!-) keeps a filler prefix
+    # that's actually part of a real hyphenated word ("uh-huh", "um-hmm")
+    # from being chopped down to "-huh"/"-hmm".
+    pattern = re.compile(
+        r"(?:,\s*)?\b(?:" + alternatives + r")\b(?!-)(?:[,:;]\s*|(?=[.!?])|\s+|$)",
+        re.IGNORECASE,
+    )
 
     cleaned = pattern.sub(" ", text)
     if cleaned == text:
@@ -57,7 +72,25 @@ def _is_restatement(prev, curr):
     a, b = _content_words(prev), _content_words(curr)
     if not a or not b or a[0] != b[0]:
         return False
-    return SequenceMatcher(None, a, b).ratio() >= config.REPEAT_SIMILARITY
+    if SequenceMatcher(None, a, b).ratio() < config.REPEAT_SIMILARITY:
+        return False
+    # A difference sandwiched between a shared prefix AND a shared suffix
+    # ("we need three PEOPLE for this" / "we need three CHAIRS for this")
+    # reads as two different intentional statements, not a restatement --
+    # a spoken restatement corrects the tail end of what was being said
+    # ("meet tomorrow" -> "meet Friday"), it doesn't swap out one word in
+    # the middle while repeating everything after it unchanged. Require the
+    # differing span to extend through the end of at least one sentence.
+    prefix = 0
+    while prefix < len(a) and prefix < len(b) and a[prefix] == b[prefix]:
+        prefix += 1
+    suffix = 0
+    while (suffix < len(a) - prefix and suffix < len(b) - prefix
+           and a[len(a) - 1 - suffix] == b[len(b) - 1 - suffix]):
+        suffix += 1
+    if suffix > 0 and prefix + suffix < min(len(a), len(b)):
+        return False
+    return True
 
 
 def collapse_repeats(text):

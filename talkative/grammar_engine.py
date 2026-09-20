@@ -64,6 +64,24 @@ _SHOTS = [
 _DIGIT_RUN = re.compile(r"\d+")
 _WORD = re.compile(r"[a-z0-9']+")
 
+# Function words excluded from the per-sentence retention check below --
+# without this, a dropped sentence can pass on pure coincidence (its only
+# "surviving" words are stopwords that also happen to appear elsewhere in
+# the output, e.g. "the" from a deleted sentence matching "the" in an
+# unrelated surviving one), even though zero of its actual content
+# survived.
+_STOPWORDS = frozenset({
+    "a", "an", "the", "and", "or", "but", "of", "to", "in", "on", "at",
+    "is", "are", "was", "were", "be", "been", "being", "this", "that",
+    "these", "those", "it", "its", "for", "with", "as", "by", "from",
+    "he", "she", "they", "we", "i", "you", "your", "my", "our", "their",
+    "his", "her", "them", "us", "me", "him", "so", "if", "then", "than",
+    "there", "here", "not", "no", "do", "does", "did", "will", "would",
+    "can", "could", "should", "shall", "may", "might", "must", "have",
+    "has", "had", "up", "out", "about", "into", "over", "after", "before",
+    "just", "also",
+})
+
 _lock = threading.Lock()
 _generator = None
 _tokenizer = None
@@ -173,7 +191,25 @@ def _retention_ok(inp, out):
     # rewrites and tighten back up if it misfires in practice.
     for sentence in re.split(r"(?<=[.!?])\s+", inp):
         words = _WORD.findall(sentence.lower())
-        if len(words) >= 2 and sum(1 for w in words if w in dst) / len(words) < 0.2:
+        if len(words) < 2:
+            continue
+        # Content words only for the ratio itself -- a stopword
+        # coincidentally surviving elsewhere in the output must not count
+        # as this sentence having survived. Falls back to all words for an
+        # all-stopword sentence (e.g. "So there it is.") so it isn't
+        # trivially exempted instead. The >=2 length gate above stays on
+        # the *raw* word count, not this filtered one: a short sentence
+        # like "Thank you." is 2 raw words but only 1 content word once
+        # "you" is filtered, and gating on the filtered count would drop
+        # it below the gate and exempt it from the check entirely -- the
+        # exact "whole sentence silently vanishes" failure this guard
+        # exists to catch (confirmed live 2026-09-20: a Cloud grammar pass
+        # dropped a trailing "Thank you." sentence outright and only
+        # happened to get caught by the unrelated second-person guard,
+        # since "you" is also a second-person pronoun -- not by this one,
+        # which is the actual guard meant to catch a dropped sentence).
+        content = [w for w in words if w not in _STOPWORDS] or words
+        if sum(1 for w in content if w in dst) / len(content) < 0.2:
             return False
     return True
 
