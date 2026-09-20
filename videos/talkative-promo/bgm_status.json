@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-08-23T17:15:44.284Z",
+  "enabled": true,
+  "provider": "musicgen",
+  "mode": "detached-seed-trim",
+  "path": "assets/bgm/track.wav",
+  "log": "C:\\Users\\sumit\\Projects\\Sumit Speak\\videos\\talkative-promo\\assets\\bgm\\bgm-1787505165300.log",
+  "pid": 21816,
+  "target_duration_s": 20.992,
+  "seed_duration_s": 28,
+  "loop_count": 1,
+  "timeout_ms": 120000,
+  "status": "ready",
+  "ready": true,
+  "waited_ms": 0,
+  "size_bytes": 1343532,
+  "message": "BGM ready at assets/bgm/track.wav."
+}

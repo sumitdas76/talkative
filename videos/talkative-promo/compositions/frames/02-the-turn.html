@@ -1,0 +1,236 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      container-type: size;
+    }
+
+    /* ---- full-bleed ground (own clip layer, never on #root) ---- */
+    .tt-bg {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(120% 120% at 50% 45%, #0A0E27 0%, #0A0E27 55%, #050714 100%);
+    }
+
+    /* ---- swirl field: the atmosphere layer, already alive at t=0 ---- */
+    .tt-swirl {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+    .tt-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(60px);
+      will-change: transform, opacity;
+    }
+    .tt-blob-a {
+      width: 46cqw;
+      height: 46cqw;
+      left: -10cqw;
+      top: -8cqh;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.22) 0%, rgba(59, 130, 246, 0) 70%);
+    }
+    .tt-blob-b {
+      width: 40cqw;
+      height: 40cqw;
+      right: -8cqw;
+      top: 6cqh;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, rgba(139, 92, 246, 0) 70%);
+    }
+    .tt-blob-c {
+      width: 34cqw;
+      height: 34cqw;
+      left: 32cqw;
+      bottom: -14cqh;
+      background: radial-gradient(circle, rgba(244, 114, 182, 0.16) 0%, rgba(244, 114, 182, 0) 70%);
+    }
+
+    /* ---- traveling light-bloom sweep, rides behind the lockup once ---- */
+    .tt-sweep-stage {
+      position: absolute;
+      top: 42cqh;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 52cqw;
+      height: 22cqh;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .tt-sweep-band {
+      position: absolute;
+      top: 0;
+      left: -60%;
+      width: 60%;
+      height: 100%;
+      background: linear-gradient(
+        100deg,
+        rgba(59, 130, 246, 0) 0%,
+        rgba(59, 130, 246, 0.4) 35%,
+        rgba(139, 92, 246, 0.4) 65%,
+        rgba(139, 92, 246, 0) 100%
+      );
+      filter: blur(26px);
+      will-change: transform, opacity;
+    }
+
+    /* ---- lockup: icon + wordline, centered, ~35% of frame width ---- */
+    .tt-lockup {
+      position: absolute;
+      top: 42cqh;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: center;
+      gap: 2.2cqw;
+    }
+    .tt-icon-stage {
+      position: relative;
+      width: 9.6cqw;
+      height: 9.6cqw;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+    .tt-icon-glow {
+      position: absolute;
+      inset: -11cqw;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.55) 0%, rgba(139, 92, 246, 0.28) 45%, rgba(139, 92, 246, 0) 72%);
+      z-index: 1;
+      opacity: 0;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+    .tt-icon {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      z-index: 2;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+    .tt-headline {
+      font-family: "Inter", sans-serif;
+      font-weight: 900;
+      font-size: 4.4cqw;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: #FFFFFF;
+      white-space: nowrap;
+      text-shadow:
+        0 0 22px rgba(59, 130, 246, 0.55),
+        0 0 42px rgba(139, 92, 246, 0.35);
+    }
+  </style>
+
+  <div id="root" data-composition-id="02-the-turn" data-start="0" data-duration="1.28" data-width="1920" data-height="1080">
+    <div id="tt-bg" class="tt-bg clip" data-start="0" data-duration="1.28" data-track-index="0"></div>
+
+    <div id="tt-swirl" class="tt-swirl clip" data-start="0" data-duration="1.28" data-track-index="1">
+      <div id="tt-blob-a" class="tt-blob tt-blob-a"></div>
+      <div id="tt-blob-b" class="tt-blob tt-blob-b"></div>
+      <div id="tt-blob-c" class="tt-blob tt-blob-c"></div>
+    </div>
+
+    <div id="tt-sweep-stage" class="tt-sweep-stage clip" data-start="0" data-duration="1.28" data-track-index="2">
+      <div id="tt-sweep-band" class="tt-sweep-band"></div>
+    </div>
+
+    <div class="tt-lockup">
+      <div id="tt-icon-stage" class="tt-icon-stage clip" data-start="0" data-duration="1.28" data-track-index="3">
+        <div id="tt-icon-glow" class="tt-icon-glow"></div>
+        <img id="tt-icon" class="tt-icon" src="assets/app-icon.png" alt="Talkative app icon">
+      </div>
+      <div id="tt-headline" class="tt-headline clip" data-start="0" data-duration="1.28" data-track-index="4">Talkative doesn't.</div>
+    </div>
+  </div>
+
+  <script>
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+
+    // ---- swirl field: continuous drift + gentle pulse, alive from t=0 ----
+    // (hard cut from Frame 1's swirling canvas -- the atmosphere never stops)
+    const blobA = document.getElementById("tt-blob-a");
+    const blobB = document.getElementById("tt-blob-b");
+    const blobC = document.getElementById("tt-blob-c");
+    const swirlPhase = { p: 0 };
+    tl.to(
+      swirlPhase,
+      {
+        p: Math.PI * 2 * 0.8,
+        duration: 1.28,
+        ease: "none",
+        onUpdate: () => {
+          const p = swirlPhase.p;
+          const sA = Math.sin(p);
+          const sB = Math.sin(p + Math.PI / 2);
+          const sC = Math.sin(p + Math.PI);
+          blobA.style.transform = `translate(${sA * 14}px, ${sA * 10}px) scale(${1 + sA * 0.03})`;
+          blobB.style.transform = `translate(${sB * -12}px, ${sB * 12}px) scale(${1 + sB * 0.035})`;
+          blobC.style.transform = `translate(${sC * 10}px, ${sC * -10}px) scale(${1 + sC * 0.03})`;
+        },
+      },
+      0,
+    );
+
+    // ---- Scene 1 (0.0-0.20s): hard cut in. Icon spring-pops with real
+    // back.out overshoot inside its glow halo -- this frame's explicit
+    // exception to the smooth-settle default (frame.md: "spring-pop
+    // entrances with visible overshoot" is the video's first release of
+    // energy after Frame 1's tension). Glow blooms PAST peak then eases
+    // down -- the "brief bloom-flash on arrival" (ambient-glow-bloom,
+    // pulse-on-arrival variant), landing on the icon's settle as one beat.
+    tl.fromTo(
+      "#tt-icon",
+      { scale: 0, opacity: 0 },
+      { scale: 1, opacity: 1, duration: 0.24, ease: "back.out(1.6)" },
+      0,
+    );
+    tl.fromTo(
+      "#tt-icon-glow",
+      { opacity: 0, scale: 0.8 },
+      { opacity: 0.42, scale: 1.08, duration: 0.24, ease: "power2.out" },
+      0,
+    );
+    tl.to(
+      "#tt-icon-glow",
+      { opacity: 0.22, scale: 1, duration: 0.18, ease: "power2.out" },
+      0.24,
+    );
+
+    // ---- Scene 2 (0.20-1.02s): as the VO lands "Talkative doesn't," the
+    // wordline flash-swaps in on ONE hard cut beside the icon (discrete-
+    // text-sequence -- instant state swap, no fade/slide) while a blue to
+    // violet light-bloom sweep glides once behind the pair (ambient-glow-
+    // bloom, traveling-sweep form) -- icon + line resolve as one glowing
+    // lockup.
+    tl.set("#tt-headline", { opacity: 0 }, 0);
+    tl.set("#tt-headline", { opacity: 1 }, 0.2);
+
+    tl.fromTo(
+      "#tt-sweep-band",
+      { x: "0%", opacity: 0 },
+      { x: "220%", opacity: 0.9, duration: 0.42, ease: "none" },
+      0.2,
+    );
+    tl.to(
+      "#tt-sweep-band",
+      { opacity: 0, duration: 0.16, ease: "power1.in" },
+      0.62,
+    );
+
+    // ---- Scene 3 (1.02-1.28s): settle-and-hold -- the lockup sits
+    // centered while the swirl field (driven above, across the full
+    // duration) keeps drifting softly underneath until the cut into
+    // Frame 3.
+
+    window.__timelines["02-the-turn"] = tl;
+  </script>
+</template>

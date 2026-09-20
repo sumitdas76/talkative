@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" integrity="sha384-sG0Hv1tP1lZCk9KQmrIbY/XNwi+OY84GQqhMscbnsoBFqAz8KNCil1kvfL3Hbbk2" crossorigin="anonymous"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #FFFFFF;
+      }
+      .scene {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-rgsa" id="root" data-composition-id="main" data-start="0" data-duration="20.992" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-w8o0" id="el-01-cloud-hook" class="scene" data-composition-id="01-cloud-hook" data-composition-src="compositions/frames/01-cloud-hook.html" data-start="0" data-duration="3.999" data-track-index="0"></div>
+      <audio data-hf-id="hf-lqak" id="el-01-cloud-hook-voice" src="assets/voice/01.wav" data-start="0" data-duration="3.499" data-track-index="10" data-volume="1"></audio>
+
+      <div data-hf-id="hf-t8n2" id="el-02-the-turn" class="scene" data-composition-id="02-the-turn" data-composition-src="compositions/frames/02-the-turn.html" data-start="3.499" data-duration="1.78" data-track-index="1"></div>
+      <audio data-hf-id="hf-515b" id="el-02-the-turn-voice" src="assets/voice/02.wav" data-start="3.499" data-duration="1.28" data-track-index="10" data-volume="1"></audio>
+
+      <div data-hf-id="hf-d2lz" id="el-03-security-stack" class="scene" data-composition-id="03-security-stack" data-composition-src="compositions/frames/03-security-stack.html" data-start="4.779" data-duration="6.629" data-track-index="0"></div>
+      <audio data-hf-id="hf-kz37" id="el-03-security-stack-voice" src="assets/voice/03.wav" data-start="4.779" data-duration="6.229" data-track-index="10" data-volume="1"></audio>
+
+      <div data-hf-id="hf-twgr" id="el-04-feature-grid" class="scene" data-composition-id="04-feature-grid" data-composition-src="compositions/frames/04-feature-grid.html" data-start="11.008" data-duration="5.763" data-track-index="1"></div>
+      <audio data-hf-id="hf-74a6" id="el-04-feature-grid-voice" src="assets/voice/04.wav" data-start="11.008" data-duration="5.163" data-track-index="10" data-volume="1"></audio>
+
+      <div data-hf-id="hf-rsk2" id="el-05-same-app-new-name" class="scene" data-composition-id="05-same-app-new-name" data-composition-src="compositions/frames/05-same-app-new-name.html" data-start="16.171" data-duration="3.664" data-track-index="0"></div>
+      <audio data-hf-id="hf-76xy" id="el-05-same-app-new-name-voice" src="assets/voice/05.wav" data-start="16.171" data-duration="3.264" data-track-index="10" data-volume="1"></audio>
+
+      <div data-hf-id="hf-japj" id="el-06-close" class="scene" data-composition-id="06-close" data-composition-src="compositions/frames/06-close.html" data-start="19.435" data-duration="1.557" data-track-index="1"></div>
+      <audio data-hf-id="hf-gcka" id="el-06-close-voice" src="assets/voice/06.wav" data-start="19.435" data-duration="1.557" data-track-index="10" data-volume="1"></audio>
+
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = gsap.timeline({ paused: true });
+      // ── frame transitions (injected by transitions.mjs) ──
+      (function () { var tl = window.__timelines["main"];
+        tl.to("#el-01-cloud-hook", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 3.499);
+        tl.fromTo("#el-02-the-turn", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 3.499);
+        tl.to("#el-02-the-turn", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 4.779);
+        tl.fromTo("#el-03-security-stack", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 4.779);
+        tl.to("#el-03-security-stack", { scale: 2.5, opacity: 0, filter: "blur(8px)", duration: 0.4, ease: "power3.in" }, 11.008);
+        tl.fromTo("#el-04-feature-grid", { scale: 0.5, opacity: 0, filter: "blur(8px)" }, { scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power3.out" }, 11.008);
+        tl.to("#el-04-feature-grid", { filter: "blur(10px)", scale: 1.03, opacity: 0, duration: 0.6, ease: "power2.inOut" }, 16.171);
+        tl.fromTo("#el-05-same-app-new-name", { filter: "blur(10px)", scale: 0.97, opacity: 0 }, { filter: "blur(0px)", scale: 1, opacity: 1, duration: 0.6, ease: "power2.inOut" }, 16.171);
+        tl.to("#el-05-same-app-new-name", { scale: 2.5, opacity: 0, filter: "blur(8px)", duration: 0.4, ease: "power3.in" }, 19.435);
+        tl.fromTo("#el-06-close", { scale: 0.5, opacity: 0, filter: "blur(8px)" }, { scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power3.out" }, 19.435);
+        tl.to({}, { duration: 20.992 }, 0); // full-span anchor — main.duration() == composition total (Studio master duration)
+      })();
+    </script>
+  </body>
+</html>

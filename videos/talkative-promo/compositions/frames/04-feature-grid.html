@@ -1,0 +1,430 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      container-type: size;
+    }
+
+    /* ── Ground: deep navy, deeper vignette in the corners ── */
+    .fg-ground {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(120% 100% at 50% 42%, #0A0E27 0%, #0A0E27 55%, #050714 100%);
+    }
+
+    /* ── Swirl field: always-alive blurred color blobs, drifting/pulsing ── */
+    .fg-swirl {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+    .fg-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(70px);
+      will-change: transform, opacity;
+      transform-origin: 50% 50%;
+    }
+    .fg-blob-a {
+      width: 58cqw;
+      height: 58cqw;
+      left: -12cqw;
+      top: -14cqh;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.42) 0%, rgba(59, 130, 246, 0) 68%);
+      opacity: 0.5;
+    }
+    .fg-blob-b {
+      width: 50cqw;
+      height: 50cqw;
+      right: -10cqw;
+      top: 6cqh;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, rgba(139, 92, 246, 0) 68%);
+      opacity: 0.5;
+    }
+    .fg-blob-c {
+      width: 46cqw;
+      height: 46cqw;
+      left: 30cqw;
+      bottom: -20cqh;
+      background: radial-gradient(circle, rgba(244, 114, 182, 0.36) 0%, rgba(244, 114, 182, 0) 68%);
+      opacity: 0.42;
+    }
+
+    /* ── Camera: wraps ALL foreground content, scale+drift driven from JS ── */
+    .fg-camera {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+
+    .fg-row {
+      position: relative;
+      width: 82cqw;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      gap: 2.3cqw;
+    }
+
+    .fg-sweep {
+      position: absolute;
+      top: -4cqh;
+      left: -22%;
+      width: 22%;
+      height: 108%;
+      background: linear-gradient(
+        105deg,
+        rgba(59, 130, 246, 0) 0%,
+        rgba(59, 130, 246, 0.5) 22%,
+        rgba(139, 92, 246, 0.62) 50%,
+        rgba(244, 114, 182, 0.5) 78%,
+        rgba(244, 114, 182, 0) 100%
+      );
+      opacity: 0;
+      pointer-events: none;
+      z-index: 5;
+      mix-blend-mode: screen;
+    }
+
+    .fg-card {
+      position: relative;
+      z-index: 2;
+      width: 18.6cqw;
+      height: 23cqw;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1.5px solid rgba(255, 255, 255, 0.14);
+      backdrop-filter: blur(6px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5cqh;
+      padding: 1.6cqw;
+      text-align: center;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+
+    /* per-card ambient bloom, behind the glass panel */
+    .fg-card-glow {
+      position: absolute;
+      inset: -4cqw;
+      z-index: 1;
+      border-radius: 50%;
+      opacity: 0;
+      pointer-events: none;
+      will-change: transform, opacity;
+    }
+    .fg-card[data-accent="blue"] .fg-card-glow {
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.85) 0%, rgba(59, 130, 246, 0) 70%);
+    }
+    .fg-card[data-accent="violet"] .fg-card-glow {
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.85) 0%, rgba(139, 92, 246, 0) 70%);
+    }
+    .fg-card[data-accent="pink"] .fg-card-glow {
+      background: radial-gradient(circle, rgba(244, 114, 182, 0.85) 0%, rgba(244, 114, 182, 0) 70%);
+    }
+    .fg-card[data-accent="blend"] .fg-card-glow {
+      background: radial-gradient(
+        circle,
+        rgba(139, 92, 246, 0.9) 0%,
+        rgba(59, 130, 246, 0.5) 45%,
+        rgba(244, 114, 182, 0) 72%
+      );
+    }
+
+    .fg-badge {
+      position: relative;
+      z-index: 2;
+      width: 5.6cqw;
+      height: 5.6cqw;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+      opacity: 0;
+    }
+    .fg-badge-halo {
+      position: absolute;
+      inset: -55%;
+      border-radius: 50%;
+      z-index: -1;
+    }
+    .fg-card[data-accent="blue"] .fg-badge-halo {
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.5) 0%, rgba(59, 130, 246, 0) 72%);
+    }
+    .fg-card[data-accent="violet"] .fg-badge-halo {
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.5) 0%, rgba(139, 92, 246, 0) 72%);
+    }
+    .fg-card[data-accent="pink"] .fg-badge-halo {
+      background: radial-gradient(circle, rgba(244, 114, 182, 0.5) 0%, rgba(244, 114, 182, 0) 72%);
+    }
+    .fg-card[data-accent="blend"] .fg-badge-halo {
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.55) 0%, rgba(244, 114, 182, 0) 72%);
+    }
+    .fg-badge-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255, 255, 255, 0.28);
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .fg-badge svg {
+      position: relative;
+      width: 2.7cqw;
+      height: 2.7cqw;
+      color: #FFFFFF;
+    }
+
+    .fg-label {
+      font-family: "Inter", sans-serif;
+      font-weight: 700;
+      font-size: 1.32cqw;
+      line-height: 1.3;
+      letter-spacing: -0.005em;
+      color: #FFFFFF;
+      opacity: 0;
+      will-change: transform, opacity;
+    }
+  </style>
+
+  <div id="root" data-composition-id="04-feature-grid" data-start="0" data-duration="5.163" data-width="1920" data-height="1080">
+    <div class="clip fg-ground" id="fg-ground" data-start="0" data-duration="5.163" data-track-index="0"></div>
+
+    <div class="clip fg-swirl" id="fg-swirl" data-start="0" data-duration="5.163" data-track-index="1">
+      <div class="fg-blob fg-blob-a" id="fg-blob-a"></div>
+      <div class="fg-blob fg-blob-b" id="fg-blob-b"></div>
+      <div class="fg-blob fg-blob-c" id="fg-blob-c"></div>
+    </div>
+
+    <div class="clip fg-camera" id="fg-camera" data-start="0" data-duration="5.163" data-track-index="2">
+      <div class="fg-row" id="fg-row">
+
+        <div class="fg-card" id="fg-card-1" data-accent="blue">
+          <div class="fg-card-glow" id="fg-glow-1"></div>
+          <div class="fg-badge" id="fg-badge-1">
+            <div class="fg-badge-halo"></div>
+            <div class="fg-badge-ring"></div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="2" width="6" height="11" rx="3" />
+              <path d="M5 10v1a7 7 0 0 0 14 0v-1" />
+              <line x1="12" y1="18" x2="12" y2="22" />
+              <line x1="8" y1="22" x2="16" y2="22" />
+            </svg>
+          </div>
+          <div class="fg-label" id="fg-label-1">Voice to Text</div>
+        </div>
+
+        <div class="fg-card" id="fg-card-2" data-accent="violet">
+          <div class="fg-card-glow" id="fg-glow-2"></div>
+          <div class="fg-badge" id="fg-badge-2">
+            <div class="fg-badge-halo"></div>
+            <div class="fg-badge-ring"></div>
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2c.6 3.6 2.4 5.4 6 6-3.6.6-5.4 2.4-6 6-.6-3.6-2.4-5.4-6-6 3.6-.6 5.4-2.4 6-6z" />
+              <path d="M19 14c.3 1.4 1 2.1 2.4 2.4-1.4.3-2.1 1-2.4 2.4-.3-1.4-1-2.1-2.4-2.4 1.4-.3 2.1-1 2.4-2.4z" />
+            </svg>
+          </div>
+          <div class="fg-label" id="fg-label-2">Cleaned Up Mode</div>
+        </div>
+
+        <div class="fg-card" id="fg-card-3" data-accent="pink">
+          <div class="fg-card-glow" id="fg-glow-3"></div>
+          <div class="fg-badge" id="fg-badge-3">
+            <div class="fg-badge-halo"></div>
+            <div class="fg-badge-ring"></div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z" />
+              <path d="M20 5.5C20 4.7 19.3 4 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z" />
+              <line x1="12" y1="4" x2="12" y2="20" />
+            </svg>
+          </div>
+          <div class="fg-label" id="fg-label-3">Auto Text &amp; Dictionary</div>
+        </div>
+
+        <div class="fg-card" id="fg-card-4" data-accent="blend">
+          <div class="fg-card-glow" id="fg-glow-4"></div>
+          <div class="fg-badge" id="fg-badge-4">
+            <div class="fg-badge-halo"></div>
+            <div class="fg-badge-ring"></div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="13" r="8" />
+              <path d="M12 9v4l3 2" />
+              <path d="M9 2h6" />
+            </svg>
+          </div>
+          <div class="fg-label" id="fg-label-4">Dictation History</div>
+        </div>
+
+        <div class="fg-sweep" id="fg-sweep"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+    window.__timelines["04-feature-grid"] = tl;
+
+    const TOTAL_DURATION = 5.163;
+
+    // ── Swirl field: bounded drift + scale pulse, staggered periods so the
+    // three blobs never breathe in lockstep. Always alive per frame.md. ──
+    const blobs = [
+      { el: document.getElementById("fg-blob-a"), cyclePeriod: 6.4, xAmp: 22, yAmp: 12, sAmp: 0.05 },
+      { el: document.getElementById("fg-blob-b"), cyclePeriod: 7.6, xAmp: 18, yAmp: 16, sAmp: 0.045 },
+      { el: document.getElementById("fg-blob-c"), cyclePeriod: 8.8, xAmp: 16, yAmp: 10, sAmp: 0.04 },
+    ];
+    blobs.forEach((b, i) => {
+      const cycles = TOTAL_DURATION / b.cyclePeriod;
+      const phase = { p: 0 };
+      tl.to(
+        phase,
+        {
+          p: Math.PI * 2 * cycles,
+          duration: TOTAL_DURATION,
+          ease: "none",
+          onUpdate: () => {
+            const s = Math.sin(phase.p);
+            const c = Math.sin(phase.p * 1.3 + i);
+            b.el.style.transform = `translate(${(s * b.xAmp).toFixed(2)}px, ${(c * b.yAmp).toFixed(2)}px) scale(${(1 + s * b.sAmp).toFixed(4)})`;
+          },
+        },
+        0
+      );
+    });
+
+    // ── Cards: each spring-pops into its slot on its own VO cue, with a
+    // glow-flash landing as the SAME beat (ambient-glow-bloom, pulse-on-
+    // arrival form). Card containers themselves are visible from t=0 as
+    // the established empty-slot grid (hard cut from Frame 3); only the
+    // badge + label + glow arrive per cue. ──
+    const cards = [
+      { n: 1, at: 0.04, peak: 0.34, overshoot: 0.42, ov: 1.7 },
+      { n: 2, at: 1.147, peak: 0.34, overshoot: 0.42, ov: 1.7 },
+      { n: 3, at: 2.583, peak: 0.34, overshoot: 0.42, ov: 1.7 },
+      { n: 4, at: 4.018, peak: 0.44, overshoot: 0.45, ov: 2.1 }, // strongest glow-flash yet
+    ];
+
+    const BADGE_DUR = 0.44;
+    const LABEL_OFFSET = 0.14;
+    const LABEL_DUR = 0.34;
+    const GLOW_BLOOM_DUR = 0.4;
+    const GLOW_SETTLE_DUR = 0.32;
+    const idlePeriods = [2.1, 2.4, 2.7]; // cards 1-3 only; card 4 lands too close to the cut
+
+    cards.forEach((c) => {
+      const badgeSel = `#fg-badge-${c.n}`;
+      const labelSel = `#fg-label-${c.n}`;
+      const glowSel = `#fg-glow-${c.n}`;
+      const cardSel = `#fg-card-${c.n}`;
+
+      // Spring-pop entrance — real overshoot, this project's dramatic register.
+      tl.fromTo(
+        badgeSel,
+        { opacity: 0, scale: 0 },
+        { opacity: 1, scale: 1, duration: BADGE_DUR, ease: `back.out(${c.ov})` },
+        c.at
+      );
+      tl.fromTo(
+        labelSel,
+        { opacity: 0, y: 12 },
+        { opacity: 1, y: 0, duration: LABEL_DUR, ease: "power2.out" },
+        c.at + LABEL_OFFSET
+      );
+
+      // Glow-flash: blooms PAST peak landing with the badge's settle, then
+      // eases down to a steady low hold — one beat, "powering on".
+      tl.fromTo(
+        glowSel,
+        { opacity: 0, scale: 0.82 },
+        { opacity: c.overshoot, scale: 1.05, duration: GLOW_BLOOM_DUR, ease: "power2.out" },
+        c.at
+      );
+      tl.to(
+        glowSel,
+        { opacity: c.peak, scale: 1, duration: GLOW_SETTLE_DUR, ease: "power1.inOut" },
+        c.at + GLOW_BLOOM_DUR
+      );
+
+      const landedAt = c.at + LABEL_OFFSET + LABEL_DUR;
+      const idleStart = landedAt + 0.1;
+      const idleDur = TOTAL_DURATION - idleStart;
+
+      if (c.n <= 3 && idleDur > 0.3) {
+        // Gentle sine float on the settled card + a soft pulse on its glow edge.
+        const period = idlePeriods[c.n - 1];
+        const cycles = Math.max(1, idleDur / period);
+        const cardEl = document.querySelector(cardSel);
+        const glowEl = document.querySelector(glowSel);
+        const phase = { p: 0 };
+        const Y_AMP = 1.6;
+        const SCALE_AMP = 0.007;
+        const GLOW_AMP = 0.045;
+        tl.to(
+          phase,
+          {
+            p: Math.PI * 2 * cycles,
+            duration: idleDur,
+            ease: "none",
+            onUpdate: () => {
+              const s = Math.sin(phase.p);
+              cardEl.style.transform = `translateY(${(s * Y_AMP).toFixed(3)}px) scale(${(1 + s * SCALE_AMP).toFixed(4)})`;
+              glowEl.style.opacity = (c.peak + Math.sin(phase.p + Math.PI / 2) * GLOW_AMP).toFixed(3);
+            },
+          },
+          idleStart
+        );
+      }
+    });
+
+    // ── Full blue → violet → pink gradient sweep, once, across the
+    // completed tiles (ambient-glow-bloom, traveling sweep form). ──
+    const SWEEP_START = 3.15;
+    const SWEEP_DUR = 0.8;
+    const SWEEP_PEAK = 0.55;
+    // xPercent (relative to the sweep's own width) keeps the travel smooth
+    // under frame-by-frame seek capture; `left` snaps to device pixels.
+    tl.fromTo(
+      "#fg-sweep",
+      { xPercent: 0, opacity: 0 },
+      { xPercent: 560, opacity: SWEEP_PEAK, duration: SWEEP_DUR, ease: "none" },
+      SWEEP_START
+    );
+    tl.to("#fg-sweep", { opacity: 0, duration: 0.3, ease: "power1.in" }, SWEEP_START + SWEEP_DUR - 0.15);
+
+    // ── Camera: neutral through the assemble, then a pronounced,
+    // visible push-in once card 4 lands — holds to the cut into Frame 5.
+    // Continuous organic micro-drift runs underneath the whole shot. ──
+    const camera = document.getElementById("fg-camera");
+    const cam = { scale: 1 };
+    const PUSH_AT = 4.15;
+    tl.to(cam, { scale: 1.1, duration: TOTAL_DURATION - PUSH_AT, ease: "power2.out" }, PUSH_AT);
+
+    const drift = { p: 0 };
+    tl.to(
+      drift,
+      {
+        p: Math.PI * 2 * 1.3,
+        duration: TOTAL_DURATION,
+        ease: "none",
+        onUpdate: () => {
+          const dx = Math.sin(drift.p) * 5;
+          const dy = Math.sin(drift.p * 1.3) * 2.5;
+          camera.style.transform = `scale(${cam.scale.toFixed(4)}) translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px)`;
+        },
+      },
+      0
+    );
+  </script>
+</template>

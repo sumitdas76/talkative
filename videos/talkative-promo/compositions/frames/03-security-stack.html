@@ -1,0 +1,322 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      container-type: size;
+      overflow: hidden;
+    }
+
+    /* ── atmosphere: deep navy ground + live swirl field (always-alive per frame.md) ── */
+    .ss-bg {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(120% 90% at 50% -8%, #10163d 0%, #0A0E27 46%, #050714 100%);
+    }
+    .ss-swirl {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+    .ss-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(70px);
+      will-change: transform, opacity;
+    }
+    .ss-blob-a {
+      width: 34cqw;
+      height: 34cqw;
+      left: -8cqw;
+      top: -6cqh;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.30) 0%, rgba(59, 130, 246, 0) 70%);
+    }
+    .ss-blob-b {
+      width: 38cqw;
+      height: 38cqw;
+      right: -9cqw;
+      top: 9cqh;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.26) 0%, rgba(139, 92, 246, 0) 70%);
+    }
+    .ss-blob-c {
+      width: 30cqw;
+      height: 30cqw;
+      left: 36cqw;
+      bottom: -14cqh;
+      background: radial-gradient(circle, rgba(244, 114, 182, 0.22) 0%, rgba(244, 114, 182, 0) 70%);
+    }
+    .ss-vignette {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(78% 68% at 50% 38%, rgba(0, 0, 0, 0) 45%, rgba(2, 4, 16, 0.55) 100%);
+      pointer-events: none;
+    }
+
+    /* ── glowing shield badge (glow-badge component) ── */
+    .ss-badge-wrap {
+      position: absolute;
+      left: 50%;
+      top: 9.5cqh;
+      width: 15cqw;
+      height: 15cqw;
+      margin-left: -7.5cqw;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+    .ss-badge-halo {
+      position: absolute;
+      inset: -58%;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.38) 0%, rgba(59, 130, 246, 0.14) 42%, rgba(59, 130, 246, 0) 72%);
+      transform-origin: 50% 50%;
+      will-change: opacity;
+    }
+    .ss-badge-chip {
+      position: absolute;
+      inset: 12%;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1.5px solid rgba(96, 165, 250, 0.55);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 3.2cqw rgba(59, 130, 246, 0.28), inset 0 0 1.6cqw rgba(59, 130, 246, 0.10);
+    }
+    .ss-badge-chip svg {
+      width: 52%;
+      height: 52%;
+      display: block;
+    }
+
+    /* ── staccato phrase beats: glass-card pill on a shared center slot ── */
+    .ss-beat {
+      position: absolute;
+      left: 5cqw;
+      right: 5cqw;
+      top: 42cqh;
+      height: 36cqh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .ss-beat-inner {
+      position: relative;
+      display: inline-flex;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+    .ss-beat-glow {
+      position: absolute;
+      inset: -22% -10%;
+      border-radius: 100px;
+      filter: blur(28px);
+      opacity: 0;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+    .ss-pill {
+      position: relative;
+      padding: 2.1cqw 3.6cqw;
+      border-radius: 100px;
+      background: rgba(255, 255, 255, 0.055);
+      border: 1.5px solid rgba(255, 255, 255, 0.16);
+      backdrop-filter: blur(14px);
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+    .ss-pill-text {
+      font-family: "Inter", sans-serif;
+      font-weight: 900;
+      font-size: 4.2cqw;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: #FFFFFF;
+      white-space: nowrap;
+    }
+
+    .ss-c-blue .ss-beat-glow {
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.55) 0%, rgba(59, 130, 246, 0) 72%);
+    }
+    .ss-c-blue .ss-pill {
+      border-color: rgba(96, 165, 250, 0.55);
+      box-shadow: 0 0 30px rgba(59, 130, 246, 0.28), 0 0 60px rgba(59, 130, 246, 0.12);
+    }
+    .ss-c-violet .ss-beat-glow {
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.52) 0%, rgba(139, 92, 246, 0) 72%);
+    }
+    .ss-c-violet .ss-pill {
+      border-color: rgba(167, 139, 250, 0.55);
+      box-shadow: 0 0 30px rgba(139, 92, 246, 0.26), 0 0 60px rgba(139, 92, 246, 0.11);
+    }
+    .ss-c-pink .ss-beat-glow {
+      background: radial-gradient(circle, rgba(244, 114, 182, 0.5) 0%, rgba(244, 114, 182, 0) 72%);
+    }
+    .ss-c-pink .ss-pill {
+      border-color: rgba(249, 168, 212, 0.5);
+      box-shadow: 0 0 30px rgba(244, 114, 182, 0.24), 0 0 60px rgba(244, 114, 182, 0.10);
+    }
+  </style>
+
+  <div id="root" data-composition-id="03-security-stack" data-start="0" data-duration="6.229" data-width="1920" data-height="1080">
+
+    <div id="ss-bg" class="clip ss-bg" data-start="0" data-duration="6.229" data-track-index="0">
+      <div class="ss-swirl">
+        <div id="ss-blob-a" class="ss-blob ss-blob-a"></div>
+        <div id="ss-blob-b" class="ss-blob ss-blob-b"></div>
+        <div id="ss-blob-c" class="ss-blob ss-blob-c"></div>
+      </div>
+      <div class="ss-vignette"></div>
+    </div>
+
+    <div id="ss-badge-wrap" class="clip ss-badge-wrap" data-start="0" data-duration="6.229" data-track-index="1">
+      <div id="ss-badge-halo" class="ss-badge-halo"></div>
+      <div class="ss-badge-chip">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2.5 L5 5.3 V11 C5 16.2 8 20.3 12 21.5 C16 20.3 19 16.2 19 11 V5.3 L12 2.5 Z" fill="rgba(59, 130, 246, 0.14)" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M8.7 12 L11 14.3 L15.3 9.5" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+    </div>
+
+    <div id="ss-p1" class="clip ss-beat ss-c-blue" data-start="1.557" data-duration="1.557" data-track-index="2">
+      <div id="ss-p1-inner" class="ss-beat-inner">
+        <div id="ss-p1-glow" class="ss-beat-glow"></div>
+        <div id="ss-p1-pill" class="ss-pill"><span class="ss-pill-text">100% offline</span></div>
+      </div>
+    </div>
+
+    <div id="ss-p2" class="clip ss-beat ss-c-violet" data-start="3.114" data-duration="1.557" data-track-index="3">
+      <div id="ss-p2-inner" class="ss-beat-inner">
+        <div id="ss-p2-glow" class="ss-beat-glow"></div>
+        <div id="ss-p2-pill" class="ss-pill"><span class="ss-pill-text">No account</span></div>
+      </div>
+    </div>
+
+    <div id="ss-p3" class="clip ss-beat ss-c-pink" data-start="4.671" data-duration="0.779" data-track-index="4">
+      <div id="ss-p3-inner" class="ss-beat-inner">
+        <div id="ss-p3-glow" class="ss-beat-glow"></div>
+        <div id="ss-p3-pill" class="ss-pill"><span class="ss-pill-text">Nothing leaves your PC</span></div>
+      </div>
+    </div>
+
+    <div id="ss-p4" class="clip ss-beat ss-c-blue" data-start="5.450" data-duration="0.779" data-track-index="5">
+      <div id="ss-p4-inner" class="ss-beat-inner">
+        <div id="ss-p4-glow" class="ss-beat-glow"></div>
+        <div id="ss-p4-pill" class="ss-pill"><span class="ss-pill-text">Nothing ever collected</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+    const TOTAL = 6.229;
+
+    // ── Swirl field: 3 blurred color blobs drifting + pulsing for the whole
+    // shot, already moving at t=0 (frame.md: atmosphere is non-negotiable,
+    // never a static flat ground). Deterministic phase-driven sine drift,
+    // staggered periods/phases so the three never fall into lockstep.
+    const blobs = [
+      { id: "ss-blob-a", ax: 42, ay: 28, as: 0.07, period: 4.2, phase0: 0.0 },
+      { id: "ss-blob-b", ax: -50, ay: -24, as: 0.06, period: 5.1, phase0: 0.7 },
+      { id: "ss-blob-c", ax: 30, ay: -38, as: 0.08, period: 3.6, phase0: 1.4 },
+    ];
+    blobs.forEach((b) => {
+      const el = document.getElementById(b.id);
+      const phase = { p: b.phase0 };
+      const cycles = TOTAL / b.period;
+      tl.to(
+        phase,
+        {
+          p: b.phase0 + Math.PI * 2 * cycles,
+          duration: TOTAL,
+          ease: "none",
+          onUpdate: () => {
+            const s = Math.sin(phase.p);
+            const c = Math.cos(phase.p * 0.7);
+            el.style.transform = `translate(${s * b.ax}px, ${c * b.ay}px) scale(${1 + s * b.as})`;
+          },
+        },
+        0,
+      );
+    });
+
+    // ── Scene 1 (0.0-1.557s): glowing shield badge pops in dead-center-top
+    // via a real spring overshoot (frame.md's dramatic register — back.out,
+    // not the restrained default), landing before the hero-visibility
+    // deadline. Halo + chip + icon all live inside one wrap, so the glow
+    // visibly blooms together with the badge (spring-pop-entrance, bouncy
+    // variant; ambient-glow-bloom "lands as one beat" discipline).
+    tl.fromTo(
+      "#ss-badge-wrap",
+      { scale: 0, opacity: 0 },
+      { scale: 1, opacity: 1, duration: 0.46, ease: "back.out(1.5)" },
+      0,
+    );
+    // Gentle continuous pulse on the halo/chip for the rest of the shot —
+    // bounded finite yoyo breathes (sine-wave-loop), staggered start/period
+    // against each other so they don't beat in lockstep.
+    tl.to(
+      "#ss-badge-wrap",
+      { scale: 1.022, duration: 1.3, ease: "sine.inOut", yoyo: true, repeat: 3 },
+      0.55,
+    );
+    tl.to(
+      "#ss-badge-halo",
+      { opacity: 0.78, duration: 1.15, ease: "sine.inOut", yoyo: true, repeat: 3 },
+      0.85,
+    );
+
+    // ── Helper: one staccato beat — glass-card pill spring-pops into the
+    // shared center slot with a quick glow-flash behind it (ambient-glow-
+    // bloom, pulse-on-arrival variation), holds, then clears (unless final).
+    function beat(prefix, start, popDur, flashPeak, flashScale, clearDur, isFinal) {
+      const pill = "#" + prefix + "-pill";
+      const glow = "#" + prefix + "-glow";
+      tl.fromTo(
+        pill,
+        { scale: 0.42, opacity: 0 },
+        { scale: 1, opacity: 1, duration: popDur, ease: "back.out(1.6)" },
+        start,
+      );
+      tl.fromTo(
+        glow,
+        { opacity: 0, scale: 0.75 },
+        { opacity: flashPeak, scale: flashScale, duration: popDur * 0.38, ease: "power2.out" },
+        start,
+      );
+      tl.to(
+        glow,
+        { opacity: flashPeak * 0.6, scale: 1, duration: popDur * 0.7, ease: "power2.out" },
+        start + popDur * 0.38,
+      );
+      if (!isFinal) {
+        const end = start; // caller passes clear timing separately below
+      }
+    }
+
+    // Scene 2 (1.557-3.114s): "100% offline" — blue.
+    beat("ss-p1", 1.557, 0.42, 0.55, 1.18, 0.16, false);
+    tl.to(["#ss-p1-pill", "#ss-p1-glow"], { opacity: 0, scale: 0.92, duration: 0.16, ease: "power2.in" }, 3.114 - 0.16);
+    tl.set(["#ss-p1-pill", "#ss-p1-glow"], { opacity: 0 }, 3.114);
+
+    // Scene 3 (3.114-4.671s): "No account" — violet.
+    beat("ss-p2", 3.114, 0.42, 0.52, 1.18, 0.16, false);
+    tl.to(["#ss-p2-pill", "#ss-p2-glow"], { opacity: 0, scale: 0.92, duration: 0.16, ease: "power2.in" }, 4.671 - 0.16);
+    tl.set(["#ss-p2-pill", "#ss-p2-glow"], { opacity: 0 }, 4.671);
+
+    // Scene 4 (4.671-5.450s): "Nothing leaves your PC" — pink, faster cadence.
+    beat("ss-p3", 4.671, 0.30, 0.5, 1.16, 0.13, false);
+    tl.to(["#ss-p3-pill", "#ss-p3-glow"], { opacity: 0, scale: 0.92, duration: 0.13, ease: "power2.in" }, 5.45 - 0.13);
+    tl.set(["#ss-p3-pill", "#ss-p3-glow"], { opacity: 0 }, 5.45);
+
+    // Scene 5 (5.450-6.229s): "Nothing ever collected" — final beat, blue
+    // again (bookends the badge's blue halo), a stronger glow-flash (higher
+    // peak, bigger bloom) and SETTLES — no clear/exit, holds to the cut.
+    beat("ss-p4", 5.45, 0.34, 0.82, 1.28, 0, true);
+
+    window.__timelines["03-security-stack"] = tl;
+  </script>
+</template>

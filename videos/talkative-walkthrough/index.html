@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Talkative Walkthrough</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      :root {
+        --bg: #f0f0f0;
+        --fg: #1a1a1a;
+        --field: #ffffff;
+        --raised: #dcdcdc;
+        --border: #b0b0b0;
+        --accent: #4682b4;
+        --accent-fg: #ffffff;
+        --grey: #454545;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 100%; height: 100%; overflow: hidden;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: #10151c; }
+      .clip { position: absolute; inset: 0; }
+
+      /* ---- shared desktop backdrop ---- */
+      .desktop-bg {
+        position: absolute; inset: 0;
+        background:
+          radial-gradient(1200px 700px at 30% 20%, #1c2a3d 0%, #10151c 60%),
+          linear-gradient(160deg, #0d1219 0%, #141c27 100%);
+      }
+
+      /* ---- Tk window chrome ---- */
+      .tk-window {
+        position: absolute; left: 360px; top: 96px; width: 1200px; height: 870px;
+        background: var(--bg); border-radius: 10px; overflow: hidden;
+        box-shadow: 0 40px 90px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06);
+      }
+      .tk-titlebar {
+        height: 46px; background: #202020; display: flex; align-items: center;
+        padding: 0 14px; gap: 10px;
+      }
+      .tk-icon {
+        width: 24px; height: 24px; border-radius: 7px; background: var(--accent);
+        display: flex; align-items: center; justify-content: center; font-size: 14px;
+      }
+      .tk-titletext { color: #eaeaea; font-size: 15px; font-weight: 500; }
+      .tk-dots { margin-left: auto; display: flex; gap: 8px; }
+      .tk-dot { width: 12px; height: 12px; border-radius: 3px; background: #4a4a4a; }
+
+      .tk-tabs { display: flex; background: var(--bg); border-bottom: 1px solid var(--border); padding: 0 6px; }
+      .tk-tab {
+        padding: 13px 22px; font-size: 15px; color: var(--fg); background: var(--raised);
+        margin: 6px 3px 0 3px; border-radius: 5px 5px 0 0; font-weight: 400;
+      }
+      .tk-tab.active { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
+
+      .tk-content { padding: 30px 34px; color: var(--fg); font-size: 17px; }
+
+      .tk-checkbox-row { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
+      .tk-checkbox {
+        width: 20px; height: 20px; border-radius: 4px; border: 2px solid var(--border);
+        background: var(--field); flex-shrink: 0; position: relative;
+      }
+      .tk-checkbox.checked { background: var(--accent); border-color: var(--accent); }
+      .tk-checkbox.checked::after {
+        content: ""; position: absolute; left: 5px; top: 1px; width: 6px; height: 11px;
+        border: solid white; border-width: 0 3px 3px 0; transform: rotate(40deg);
+      }
+
+      .tk-radio-row { display: flex; align-items: flex-start; gap: 12px; margin: 12px 0; }
+      .tk-radio {
+        width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border);
+        background: var(--field); flex-shrink: 0; margin-top: 2px; position: relative;
+      }
+      .tk-radio.checked { border-color: var(--accent); }
+      .tk-radio.checked::after {
+        content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--accent);
+      }
+      .tk-row-text { font-size: 17px; line-height: 1.4; }
+      .tk-grey { color: var(--grey); font-size: 15px; }
+
+      .tk-labelframe {
+        border: 1px solid var(--border); border-radius: 6px; padding: 22px 20px 18px 20px;
+        margin-top: 22px; position: relative;
+      }
+      .tk-labelframe-title {
+        position: absolute; top: -12px; left: 16px; background: var(--bg);
+        padding: 0 8px; font-size: 15px; font-weight: 600; color: var(--fg);
+      }
+
+      .tk-button {
+        display: inline-block; background: var(--raised); border: 1px solid var(--border);
+        border-radius: 5px; padding: 9px 20px; font-size: 15px; color: var(--fg);
+      }
+      .tk-button.accent { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+      .tk-entry {
+        display: inline-block; background: var(--field); border: 1px solid var(--border);
+        border-radius: 4px; padding: 8px 12px; font-size: 15px; color: var(--fg);
+      }
+
+      .tk-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 16px; }
+      .tk-table th {
+        background: var(--raised); text-align: left; padding: 10px 14px; font-weight: 600;
+        border-bottom: 1px solid var(--border);
+      }
+      .tk-table td { padding: 9px 14px; border-bottom: 1px solid #e6e6e6; }
+
+      .tk-tile {
+        border: 1px solid var(--border); border-radius: 8px; padding: 22px; background: var(--bg);
+      }
+
+      /* ---- cursor ---- */
+      .cursor {
+        position: absolute; width: 30px; height: 30px; z-index: 50; pointer-events: none;
+        filter: drop-shadow(0 3px 5px rgba(0,0,0,0.5));
+      }
+      .cursor svg { width: 100%; height: 100%; }
+
+      /* ---- captions / lower thirds ---- */
+      .lower-third {
+        position: absolute; left: 80px; bottom: 70px; z-index: 40;
+        background: rgba(15, 20, 28, 0.82); border-left: 5px solid var(--accent);
+        padding: 16px 28px; border-radius: 4px;
+      }
+      .lower-third .tab-eyebrow { color: #8fb8d8; font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase; }
+      .lower-third .tab-name { color: #fff; font-size: 34px; font-weight: 700; margin-top: 2px; }
+
+      /* ---- scene 1: trailer cold open ---- */
+      .trailer-bg {
+        position: absolute; inset: 0; background: #050608;
+      }
+      .trailer-vignette {
+        position: absolute; inset: -10%;
+        background: radial-gradient(900px 900px at 50% 45%, rgba(70,130,180,0.16) 0%, rgba(5,6,8,0) 60%);
+      }
+      .flash-overlay { position: absolute; inset: 0; background: #ffffff; opacity: 0; z-index: 30; }
+      .bass-glow {
+        position: absolute; left: 50%; top: 44%; width: 700px; height: 700px;
+        transform: translate(-50%, -50%); border-radius: 50%;
+        background: radial-gradient(circle, rgba(70,130,180,0.85) 0%, rgba(70,130,180,0) 70%);
+        opacity: 0; z-index: 1;
+      }
+      .trailer-stage { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; z-index: 2; }
+      .trailer-logo {
+        width: 130px; height: 130px; border-radius: 36px; background: var(--accent);
+        display: flex; align-items: center; justify-content: center; font-size: 64px;
+        box-shadow: 0 0 80px rgba(70,130,180,0.7); margin-bottom: 30px; transform-origin: 50% 50%;
+      }
+      .trailer-title { color: #fff; font-size: 88px; font-weight: 800; letter-spacing: -0.02em; transform-origin: 50% 50%; }
+      .trailer-sub { color: #a9bdd1; font-size: 27px; margin-top: 20px; max-width: 1000px; }
+      .beat-stack { position: absolute; left: 0; right: 0; bottom: 190px; display: flex; gap: 34px; align-items: center; justify-content: center; z-index: 2; }
+      .beat-word {
+        font-size: 58px; font-weight: 800; color: #fff; letter-spacing: -0.01em;
+        padding: 10px 26px; border: 2px solid rgba(70,130,180,0.6); border-radius: 8px;
+        background: rgba(70,130,180,0.12);
+      }
+
+      /* ---- title cards ---- */
+      .title-card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+      .title-card .logo-mark {
+        width: 120px; height: 120px; border-radius: 34px; background: var(--accent);
+        display: flex; align-items: center; justify-content: center; font-size: 60px;
+        box-shadow: 0 20px 60px rgba(70,130,180,0.5); margin-bottom: 36px;
+      }
+      .title-card h1 { color: #fff; font-size: 78px; font-weight: 700; letter-spacing: -0.02em; }
+      .title-card p { color: #a9bdd1; font-size: 30px; margin-top: 18px; max-width: 1100px; }
+      .title-card .cta { color: var(--accent); font-size: 26px; margin-top: 46px; font-weight: 600; }
+
+      /* ---- browser chrome for scene 2 ---- */
+      .browser-window {
+        position: absolute; left: 240px; top: 90px; width: 1440px; height: 880px;
+        background: #1a1a1a; border-radius: 10px; overflow: hidden;
+        box-shadow: 0 40px 90px rgba(0,0,0,0.55);
+      }
+      .browser-bar { height: 52px; background: #2a2a2a; display: flex; align-items: center; padding: 0 18px; gap: 10px; }
+      .browser-dot { width: 13px; height: 13px; border-radius: 50%; }
+      .browser-url {
+        margin-left: 16px; background: #1e1e1e; color: #ccc; font-size: 14px; padding: 7px 16px;
+        border-radius: 6px; flex: 1;
+      }
+      .browser-viewport { position: relative; width: 100%; height: calc(100% - 52px); overflow: hidden; }
+      .browser-viewport img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+      .link-highlight {
+        position: absolute; border: 2px solid #4dd08a; border-radius: 6px;
+        background: rgba(77,208,138,0.12); box-shadow: 0 0 0 4px rgba(77,208,138,0.15);
+      }
+
+      /* ---- scene 2w: browser download-warning flyout ---- */
+      .browser-flyout {
+        position: absolute; right: 90px; top: 90px; width: 460px;
+        background: #fbfbfb; border-radius: 10px; box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+        padding: 20px 22px; border: 1px solid #e2e2e2;
+      }
+      .flyout-row { display: flex; gap: 14px; align-items: flex-start; }
+      .flyout-icon {
+        width: 30px; height: 30px; border-radius: 50%; background: #f2a33e; color: #fff;
+        font-weight: 800; font-size: 17px; display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+      }
+      .flyout-title { font-size: 17px; font-weight: 700; color: #1a1a1a; }
+      .flyout-sub { font-size: 14px; color: #5a5a5a; margin-top: 4px; line-height: 1.4; }
+      .flyout-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+      .flyout-btn {
+        padding: 8px 18px; border-radius: 6px; font-size: 14px; font-weight: 600;
+        background: #ececed; color: #333;
+      }
+      .flyout-btn.primary { background: #1a73e8; color: #fff; }
+
+      /* ---- scene 2w: Windows SmartScreen dialog ---- */
+      .smartscreen-dialog {
+        position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        width: 620px; background: #fff; border-radius: 8px; overflow: hidden;
+        box-shadow: 0 30px 80px rgba(0,0,0,0.55);
+      }
+      .ss-titlebar { background: #0067c0; padding: 22px 26px; display: flex; align-items: center; gap: 14px; }
+      .ss-shield { font-size: 30px; }
+      .ss-title { color: #fff; font-size: 22px; font-weight: 700; }
+      .ss-body { padding: 24px 26px; }
+      .ss-body p { color: #333; font-size: 16px; line-height: 1.55; }
+      .ss-link { color: #0067c0; font-size: 15px; font-weight: 600; margin-top: 14px; text-decoration: underline; }
+      .ss-details { margin-top: 14px; background: #f3f3f3; border-radius: 6px; padding: 14px 16px; }
+      .ss-detail-row { font-size: 14px; color: #333; margin: 3px 0; }
+      .ss-detail-row span { color: #777; margin-right: 6px; }
+      .ss-footer { padding: 16px 26px; border-top: 1px solid #eaeaea; display: flex; justify-content: flex-end; gap: 12px; }
+      .ss-btn { padding: 9px 22px; border-radius: 5px; font-size: 15px; font-weight: 600; background: #e9e9e9; color: #222; }
+      .ss-btn.accent-btn { background: #0067c0; color: #fff; }
+
+      /* ---- notepad mockup for scene 5 ---- */
+      .notepad-window {
+        position: absolute; left: 460px; top: 200px; width: 1000px; height: 500px;
+        background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+      }
+      .notepad-bar { height: 42px; background: #f3f3f3; border-bottom: 1px solid #ddd; display: flex; align-items: center; padding: 0 14px; font-size: 14px; color: #444; }
+      .notepad-body { padding: 30px; font-size: 24px; color: #222; line-height: 1.5; }
+      .caret { display: inline-block; width: 3px; height: 26px; background: #222; vertical-align: middle; margin-left: 2px; }
+
+      .listening-pill {
+        position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%);
+        width: 420px; height: 96px; background: #202020; border-radius: 48px;
+        display: flex; align-items: center; padding: 0 26px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+      }
+      .listening-dot { width: 26px; height: 26px; border-radius: 50%; background: #c82828; flex-shrink: 0; margin-right: 22px; }
+      .listening-bars { display: flex; align-items: center; gap: 8px; flex: 1; height: 100%; }
+      .listening-bar { flex: 1; height: 6px; border-radius: 3px; background: #5a8fd8; }
+
+      /* ---- installer wizard ---- */
+      .installer-window {
+        position: absolute; left: 610px; top: 190px; width: 700px; height: 500px;
+        background: #f5f5f5; border-radius: 8px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+      }
+      .installer-titlebar { height: 42px; background: #4682b4; display: flex; align-items: center; padding: 0 16px; color: #fff; font-size: 15px; font-weight: 600; }
+      .installer-body { padding: 34px; height: calc(100% - 42px - 64px); display: flex; flex-direction: column; justify-content: center; }
+      .installer-body h2 { font-size: 26px; color: #1a1a1a; margin-bottom: 16px; }
+      .installer-body p { font-size: 17px; color: #444; line-height: 1.6; }
+      .installer-footer { height: 64px; border-top: 1px solid #ddd; display: flex; align-items: center; justify-content: flex-end; padding: 0 24px; gap: 12px; }
+      .progress-track { width: 100%; height: 20px; background: #e0e0e0; border-radius: 10px; overflow: hidden; margin-top: 24px; }
+      .progress-fill { height: 100%; background: var(--accent); width: 0%; border-radius: 10px; }
+
+      /* ---- onboarding ---- */
+      .onboard-window {
+        position: absolute; left: 560px; top: 110px; width: 800px; height: 830px;
+        background: var(--bg); border-radius: 10px; overflow: hidden; box-shadow: 0 40px 90px rgba(0,0,0,0.55);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="126.7">
+
+      <!-- ============ SCENE 1: Cold open -- trailer redesign (0-10.5s) ============ -->
+      <section id="s1" class="clip" data-start="0" data-duration="10.5">
+        <div class="trailer-bg"></div>
+        <div class="trailer-vignette"></div>
+        <div id="s1-glow" class="bass-glow"></div>
+        <div class="trailer-stage">
+          <div id="s1-logo" class="trailer-logo">🎙️</div>
+          <h1 id="s1-title" class="trailer-title">Talkative</h1>
+          <p id="s1-sub" class="trailer-sub">Hold a key, speak, and your words get typed anywhere.</p>
+        </div>
+        <div class="beat-stack">
+          <div id="s1-beat1" class="beat-word">Free.</div>
+          <div id="s1-beat2" class="beat-word">No account.</div>
+          <div id="s1-beat3" class="beat-word">No subscription.</div>
+        </div>
+        <div id="s1-flash" class="flash-overlay"></div>
+      </section>
+
+      <!-- ============ SCENE 2: Download ============ -->
+      <section id="s2" class="clip" data-start="10.5" data-duration="8.9">
+        <div class="desktop-bg"></div>
+        <div id="s2-browser" class="browser-window">
+          <div class="browser-bar">
+            <div class="browser-dot" style="background:#ff5f56"></div>
+            <div class="browser-dot" style="background:#ffbd2e"></div>
+            <div class="browser-dot" style="background:#27c93f"></div>
+            <div class="browser-url">github.com/sumitdas76/talkative/releases</div>
+          </div>
+          <div class="browser-viewport">
+            <img id="s2-img1" src="assets/images/github-release.jpg" alt="Talkative GitHub release page" style="transform-origin: 13.7% 65.5%;" />
+            <img id="s2-img2" src="assets/images/github-release-assets.jpg" alt="Assets section with TalkativeSetup.exe" style="opacity:0;" />
+            <div id="s2-highlight" class="link-highlight" style="left:290px; top:672px; width:170px; height:34px; opacity:0;"></div>
+          </div>
+        </div>
+        <div id="s2-cursor" class="cursor" style="left:1600px; top:130px;">
+          <svg viewBox="0 0 24 24"><path d="M4 2 L4 20 L9 15 L12 22 L15 20 L12 13 L18 13 Z" fill="#fff" stroke="#000" stroke-width="1.2"/></svg>
+        </div>
+      </section>
+
+      <!-- ============ SCENE 2W: Browser + SmartScreen warnings (recreated mockup, not capture) ============ -->
+      <section id="s2w" class="clip" data-start="19.4" data-duration="16.5">
+        <div class="desktop-bg"></div>
+
+        <!-- Beat A: browser download-warning flyout -->
+        <div id="s2w-flyout" class="browser-flyout">
+          <div class="flyout-row">
+            <div class="flyout-icon">!</div>
+            <div class="flyout-text">
+              <div class="flyout-title">TalkativeSetup.exe</div>
+              <div class="flyout-sub">This type of file isn't commonly downloaded and could be unsafe.</div>
+            </div>
+          </div>
+          <div class="flyout-actions">
+            <div id="s2w-discard" class="flyout-btn">Discard</div>
+            <div id="s2w-keep" class="flyout-btn primary">Keep</div>
+          </div>
+        </div>
+        <div id="s2w-cursor1" class="cursor" style="left:1560px; top:120px;">
+          <svg viewBox="0 0 24 24"><path d="M4 2 L4 20 L9 15 L12 22 L15 20 L12 13 L18 13 Z" fill="#fff" stroke="#000" stroke-width="1.2"/></svg>
+        </div>
+
+        <!-- Beat B: Windows SmartScreen dialog -->
+        <div id="s2w-smartscreen" class="smartscreen-dialog" style="opacity:0;">
+          <div class="ss-titlebar">
+            <div class="ss-shield">🛡️</div>
+            <div class="ss-title">Windows protected your PC</div>
+          </div>
+          <div class="ss-body">
+            <p>Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</p>
+            <div id="s2w-moreinfo" class="ss-link">More info</div>
+            <div id="s2w-details" class="ss-details" style="opacity:0;">
+              <div class="ss-detail-row"><span>App:</span> TalkativeSetup.exe</div>
+              <div class="ss-detail-row"><span>Publisher:</span> Unknown publisher</div>
+            </div>
+          </div>
+          <div class="ss-footer">
+            <div class="ss-btn">Don't run</div>
+            <div id="s2w-runanyway" class="ss-btn accent-btn" style="opacity:0;">Run anyway</div>
+          </div>
+        </div>
+        <div id="s2w-cursor2" class="cursor" style="left:960px; top:400px; opacity:0;">
+          <svg viewBox="0 0 24 24"><path d="M4 2 L4 20 L9 15 L12 22 L15 20 L12 13 L18 13 Z" fill="#fff" stroke="#000" stroke-width="1.2"/></svg>
+        </div>
+
+        <div class="lower-third"><div class="tab-eyebrow">Heads up</div><div class="tab-name">Unsigned app warnings</div></div>
+      </section>
+
+      <!-- ============ SCENE 3: Install wizard ============ -->
+      <section id="s3" class="clip" data-start="35.9" data-duration="7.3">
+        <div class="desktop-bg"></div>
+        <div id="s3-window" class="installer-window">
+          <div class="installer-titlebar">Talkative Setup</div>
+          <div id="s3-step-welcome" class="installer-body">
+            <h2>Welcome to the Talkative Setup Wizard</h2>
+            <p>This will install Talkative 1.3.2 on your computer. No administrator rights needed — it installs just for you.</p>
+          </div>
+          <div id="s3-step-location" class="installer-body" style="opacity:0; position:absolute; inset:0 0 64px 0; padding-top:42px;">
+            <h2>Select Destination Location</h2>
+            <p>Setup will install Talkative into:<br/><span class="tk-entry" style="margin-top:10px; display:inline-block;">%LOCALAPPDATA%\Programs\Talkative</span></p>
+          </div>
+          <div id="s3-step-ready" class="installer-body" style="opacity:0; position:absolute; inset:0 0 64px 0; padding-top:42px;">
+            <h2>Ready to Install</h2>
+            <p>Setup is now ready to begin installing Talkative on your computer.</p>
+          </div>
+          <div id="s3-step-installing" class="installer-body" style="opacity:0; position:absolute; inset:0 0 64px 0; padding-top:42px;">
+            <h2>Installing</h2>
+            <p>Please wait while Setup installs Talkative on your computer.</p>
+            <div class="progress-track"><div id="s3-progress" class="progress-fill"></div></div>
+          </div>
+          <div id="s3-step-finish" class="installer-body" style="opacity:0; position:absolute; inset:0 0 64px 0; padding-top:42px;">
+            <h2>Completing Setup</h2>
+            <div class="tk-checkbox-row"><div class="tk-checkbox checked"></div><div class="tk-row-text">Launch Talkative</div></div>
+          </div>
+          <div class="installer-footer">
+            <div id="s3-btn-back" class="tk-button">Back</div>
+            <div id="s3-btn-next" class="tk-button accent">Next ></div>
+          </div>
+        </div>
+        <div id="s3-cursor" class="cursor" style="left:1246px; top:657px;">
+          <svg viewBox="0 0 24 24"><path d="M4 2 L4 20 L9 15 L12 22 L15 20 L12 13 L18 13 Z" fill="#fff" stroke="#000" stroke-width="1.2"/></svg>
+        </div>
+      </section>
+
+      <!-- ============ SCENE 4: Onboarding ============ -->
+      <section id="s4" class="clip" data-start="43.2" data-duration="9.4">
+        <div class="desktop-bg"></div>
+        <div class="onboard-window">
+          <div class="tk-titlebar"><div class="tk-icon">🎙️</div><div class="tk-titletext">Talkative</div><div class="tk-dots"><div class="tk-dot"></div><div class="tk-dot"></div><div class="tk-dot"></div></div></div>
+          <div class="tk-content" style="padding:26px 30px;">
+            <div style="font-size:22px; font-weight:700; margin-bottom:6px;">Choose how Talkative processes your dictation</div>
+            <div class="tk-labelframe" style="margin-top:24px;">
+              <div class="tk-labelframe-title">Cloud</div>
+              <div class="tk-radio-row"><div id="s4-radio-cloud" class="tk-radio checked"></div><div class="tk-row-text" style="font-weight:600;">Online</div></div>
+              <div class="tk-grey" style="margin:8px 0 0 32px;">• Uses no extra RAM or disk.</div>
+              <div class="tk-grey" style="margin:6px 0 0 32px;">• Your dictation audio is sent to a remote server to be processed.</div>
+            </div>
+            <div class="tk-labelframe">
+              <div class="tk-labelframe-title">Local</div>
+              <div class="tk-radio-row"><div id="s4-radio-local" class="tk-radio"></div><div class="tk-row-text" style="font-weight:600;">Fully offline</div></div>
+              <div class="tk-grey" style="margin:8px 0 0 32px;">• Everything stays private. Your voice and text never leave this device, and nothing is sent over the internet.</div>
+              <div class="tk-grey" style="margin:6px 0 0 32px;">• Downloads about 2 GB once (voice model ~0.5 GB + grammar model ~1.5 GB).</div>
+              <div class="tk-grey" style="margin:6px 0 0 32px;">• That much RAM will be occupied while the software is working. No internet is needed.</div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; margin-top:26px;">
+              <div class="tk-button accent" style="padding:11px 26px; font-size:17px;">Continue</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SCENE 5: Live dictation demo ============ -->
+      <section id="s5" class="clip" data-start="52.6" data-duration="5.3">
+        <div class="desktop-bg"></div>
+        <div class="notepad-window">
+          <div class="notepad-bar">Untitled - Notepad</div>
+          <div class="notepad-body"><span id="s5-text"></span><span class="caret" id="s5-caret"></span></div>
+        </div>
+        <div id="s5-pill" class="listening-pill" style="opacity:0;">
+          <div class="listening-dot" id="s5-dot"></div>
+          <div class="listening-bars" id="s5-bars">
+            <div class="listening-bar" id="s5-bar-0"></div><div class="listening-bar" id="s5-bar-1"></div>
+            <div class="listening-bar" id="s5-bar-2"></div><div class="listening-bar" id="s5-bar-3"></div>
+            <div class="listening-bar" id="s5-bar-4"></div><div class="listening-bar" id="s5-bar-5"></div>
+            <div class="listening-bar" id="s5-bar-6"></div><div class="listening-bar" id="s5-bar-7"></div>
+            <div class="listening-bar" id="s5-bar-8"></div><div class="listening-bar" id="s5-bar-9"></div>
+            <div class="listening-bar" id="s5-bar-10"></div><div class="listening-bar" id="s5-bar-11"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SETTINGS TAB SHELL TEMPLATE (scenes 6-13) ============ -->
+      <!-- Scene 6: General -->
+      <section id="s6" class="clip" data-start="57.9" data-duration="9.8">
+        <div class="desktop-bg"></div>
+        <div class="tk-window">
+          <div class="tk-titlebar"><div class="tk-icon">🎙️</div><div class="tk-titletext">Talkative — Settings</div><div class="tk-dots"><div class="tk-dot"></div><div class="tk-dot"></div><div class="tk-dot"></div></div></div>
+          <div class="tk-tabs">
+            <div class="tk-tab active">General</div><div class="tk-tab">Auto Text</div><div class="tk-tab">Dictation</div>
+            <div class="tk-tab">Hotkeys</div><div class="tk-tab">Audio</div><div class="tk-tab">Output</div>
+            <div class="tk-tab">Models</div><div class="tk-tab">About</div>
+          </div>
+          <div class="tk-content">
+            <div class="tk-checkbox-row"><div class="tk-checkbox checked"></div><div class="tk-row-text">Start "Talkative" when Windows starts</div></div>
+            <div class="tk-checkbox-row"><div class="tk-checkbox checked"></div><div class="tk-row-text">Play sounds when recording starts, stops, and when text is inserted</div></div>
+            <div class="tk-labelframe">
+              <div class="tk-labelframe-title">Appearance</div>
+              <div class="tk-radio-row"><div class="tk-radio checked"></div><div class="tk-row-text">Light</div></div>
+              <div class="tk-radio-row"><div class="tk-radio"></div><div class="tk-row-text">Dark</div></div>
+              <div class="tk-radio-row"><div class="tk-radio"></div><div class="tk-row-text">Follow Windows setting</div></div>
+            </div>
+            <div class="tk-labelframe">
+              <div class="tk-labelframe-title">Processing</div>
+              <div id="s6-radio-cloud" class="tk-radio-row"><div class="tk-radio checked"></div><div class="tk-row-text">Cloud — nothing to download, processed on a remote server instead of this device.</div></div>
+              <div id="s6-radio-local" class="tk-radio-row"><div class="tk-radio"></div><div class="tk-row-text">Local — fully offline, nothing leaves this device.</div></div>
+              <div style="margin-top:14px;"><span class="tk-grey">Cloud endpoint:</span> <span class="tk-entry">https://talkative-cloud.sumitdas76.workers.dev</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="lower-third"><div class="tab-eyebrow">Settings</div><div class="tab-name">General</div></div>
+        <div id="s6-cursor" class="cursor" style="left:800px; top:520px;"><svg viewBox="0 0 24 24"><path d="M4 2 L4 20 L9 15 L12 22 L15 20 L12 13 L18 13 Z" fill="#fff" stroke="#000" stroke-width="1.2"/></svg></div>
+      </section>
+
+      <!-- Scene 7: Auto Text -->
+      <section id="s7" class="clip" data-start="67.7" data-duration="7.4">
+        <div class="desktop-bg"></div>
+        <div class="tk-window">
+          <div class="tk-titlebar"><div class="tk-icon">🎙️</div><div class="tk-titletext">Talkative — Settings</div><div class="tk-dots"><div class="tk-dot"></div><div class="tk-dot"></div><div class="tk-dot"></div></div></div>
+          <div class="tk-tabs">
+            <div class="tk-tab">General</div><div class="tk-tab active">Auto Text</div><div class="tk-tab">Dictation</div>
+            <div class="tk-tab">Hotkeys</div><div class="tk-tab">Audio</div><div class="tk-tab">Output</div>
+            <div class="tk-tab">Models</div><div class="tk-tab">About</div>
+          </div>
+          <div class="tk-content">
+            <div class="tk-row-text">When you say the word on the left, "Talkative" types the text on the right.</div>
+            <table class="tk-table">
+              <tr><th>Spoken</th><th>Typed</th></tr>
+              <tr><td>asap</td><td>as soon as possible</td></tr>
+              <tr><td>AI</td><td>artificial intelligence</td></tr>
+              <tr><td>PPT</td><td>PowerPoint</td></tr>
+              <tr><td>Sumit</td><td>Sumit Chatterjee</td></tr>
+              <tr><td>Captivate</td><td>Adobe Captivate</td></tr>
+            </table>
+            <div style="display:flex; gap:10px; align-items:center; margin-top:22px;">
+              <span id="s7-entry-spoken" class="tk-entry" style="width:180px;">&nbsp;</span>
+              <span class="tk-grey">→</span>
+              <span id="s7-entry-typed" class="tk-entry" style="width:320px;">&nbsp;</span>
+              <div class="tk-button">Add</div>
+              <div class="tk-button">Remove selected</div>
+            </div>
+          </div>
+        </div>
+        <div class="lower-third"><div class="tab-eyebrow">Settings</div><div class="tab-name">Auto Text</div></div>
+      </section>
+
+      <!-- Scene 8: Dictation -->
+      <section id="s8" class="clip" data-start="75.1" data-duration="9.4">
+        <div class="desktop-bg"></div>
+        <div class="tk-window">
+          <div class="tk-titlebar"><div class="tk-icon">🎙️</div><div class="tk-titletext">Talkative — Settings</div><div class="tk-dots"><div class="tk-dot"></div><div class="tk-dot"></div><div class="tk-dot"></div></div></div>
+          <div class="tk-tabs">
+            <div class="tk-tab">General</div><div class="tk-tab">Auto Text</div><div class="tk-tab active">Dictation</div>
+            <div class="tk-tab">Hotkeys</div><div class="tk-tab">Audio</div><div class="tk-tab">Output</div>
+            <div class="tk-tab">Models</div><div class="tk-tab">About</div>
+          </div>
+          <div class="tk-content">
+            <div class="tk-labelframe" style="margin-top:0;">
+              <div class="tk-labelframe-title">Dictation style</div>
+              <div id="s8-radio-clean" class="tk-radio-row"><div class="tk-radio checked"></div><div class="tk-row-text">Cleaned up — slips and repetitions removed. Your meaning is never changed.</div></div>
+              <div id="s8-radio-asspoken" class="tk-radio-row"><div class="tk-radio"></div><div class="tk-row-text">As spoken — exactly what you said, word for word.</div></div>
+              <div class="tk-labelframe">
+                <div class="tk-labelframe-title">Example</div>
+                <div class="tk-grey">You said:</div>
+                <div class="tk-row-text" style="color:#777; margin-bottom:10px;">"So, um, send it, uh, tomorrow — no wait, send it Friday."</div>
+                <div class="tk-grey">Appears on screen:</div>
+                <div id="s8-example" class="tk-row-text">Send it Friday.</div>
+              </div>
+            </div>
+            <div class="tk-labelframe">
+              <div class="tk-labelframe-title">History</div>
+              <div class="tk-checkbox-row"><div class="tk-checkbox"></div><div class="tk-row-text">Keep a history of what I've dictated</div></div>
+              <div class="tk-grey" style="margin:2px 0 10px 32px;">Saved only on this device. Nothing is sent anywhere.</div>
+              <div class="tk-button">View history…</div>
+            </div>
+          </div>
+        </div>
+        <div class="lower-third"><div class="tab-eyebrow">Settings</div><div class="tab-name">Dictation</div></div>
+      </section>
+
+      <!-- Scene 9: Hotkeys -->
+      <section id="s9" class="clip" data-start="84.5" data-duration="6.6">
+        <div class="desktop-bg"></div>
+        <div class="tk-window">
+          <div class="tk-titlebar"><div class="tk-icon">🎙️</div><div class="tk-titletext">Talkative — Settings</div><div class="tk-dots"><div class="tk-dot"></div><div class="tk-dot"></div><div class="tk-dot"></div></div></div>
+          <div class="tk-tabs">
+            <div class="tk-tab">General</div><div class="tk-tab">Auto Text</div><div class="tk-tab">Dictation</div>
+            <div class="tk-tab active">Hotkeys</div><div class="tk-tab">Audio</div><div class="tk-tab">Output</div>
+            <div class="tk-tab">Models</div><div class="tk-tab">About</div>
+          </div>
+          <div class="tk-content">
+            <div class="tk-row-text" style="font-weight:600;">Dictation key(s) (hold to talk):</div>
+            <div style="display:flex; align-items:center; gap:16px; margin-top:16px;">
+              <div id="s9-hotkey-btn" class="tk-button">Right Ctrl</div>
+              <div class="tk-grey">Click, then hold the key (or two keys together) you want to use.</div>
+            </div>
+            <div class="tk-grey" style="margin-top:28px; max-width:900px;">Hold the key (or key combination) while speaking; release to insert the text.</div>
+          </div>
+        </div>
+        <div class="lower-third"><div class="tab-eyebrow">Settings</div><div class="tab-name">Hotkeys</div></div>
+      </section>
+
+      <!-- Scene 10: Audio -->
+      <section id="s10" class="clip" data-start="91.1" data-duration="4.2">
+        <div class="desktop-bg"></div>
+        <div class="tk-window">
+          <div class="tk-titlebar"><div class="tk-icon">🎙️</div><div class="tk-titletext">Talkative — Settings</div><div class="tk-dots"><div class="tk-dot"></div><div class="tk-dot"></div><div class="tk-dot"></div></div></div>
+          <div class="tk-tabs">
+            <div class="tk-tab">General</div><div class="tk-tab">Auto Text</div><div class="tk-tab">Dictation</div>
+            <div class="tk-tab">Hotkeys</div><div class="tk-tab active">Audio</div><div class="tk-tab">Output</div>
+            <div class="tk-tab">Models</div><div class="tk-tab">About</div>
+          </div>
+          <div class="tk-content">
+            <div class="tk-row-text" style="font-weight:600;">Microphone:</div>
+            <div class="tk-entry" style="width:520px; margin-top:8px; display:flex; justify-content:space-between;"><span>System default</span><span>▾</span></div>
+            <div class="tk-grey" style="margin-top:8px;">If dictation hears nothing, the wrong microphone is selected. Takes effect from the next dictation.</div>
+            <div class="tk-row-text" style="font-weight:600; margin-top:24px;">Output device:</div>
+            <div class="tk-entry" style="width:520px; margin-top:8px; display:flex; justify-content:space-between;"><span>System default</span><span>▾</span></div>
+            <div class="tk-grey" style="margin-top:8px;">Where dictation tones and spoken messages play — headphones, Bluetooth earphones, speakers.</div>
+          </div>
+        </div>
+        <div class="lower-third"><div class="tab-eyebrow">Settings</div><div class="tab-name">Audio</div></div>
+      </section>
+
+      <!-- Scene 11: Output -->
+      <section id="s11" class="clip" data-start="95.3" data-duration="7.8">
+        <div class="desktop-bg"></div>
+        <div class="tk-window">
+          <div class="tk-titlebar"><div class="tk-icon">🎙️</div><div class="tk-titletext">Talkative — Settings</div><div class="tk-dots"><div class="tk-dot"></div><div class="tk-dot"></div><div class="tk-dot"></div></div></div>
+          <div class="tk-tabs">
+            <div class="tk-tab">General</div><div class="tk-tab">Auto Text</div><div class="tk-tab">Dictation</div>
+            <div class="tk-tab">Hotkeys</div><div class="tk-tab">Audio</div><div class="tk-tab active">Output</div>
+            <div class="tk-tab">Models</div><div class="tk-tab">About</div>
+          </div>
+          <div class="tk-content">
+            <div class="tk-labelframe" style="margin-top:0;">
+              <div class="tk-labelframe-title">Destination</div>
+              <div class="tk-radio-row"><div class="tk-radio checked"></div><div class="tk-row-text">Type into the active application</div></div>
+              <div class="tk-radio-row"><div class="tk-radio"></div><div class="tk-row-text">Copy to clipboard only</div></div>
+            </div>
+            <div class="tk-labelframe">
+              <div class="tk-labelframe-title">After dictation</div>
+              <div class="tk-checkbox-row"><div class="tk-checkbox checked"></div><div class="tk-row-text">Add a space after the inserted text</div></div>
+              <div class="tk-checkbox-row"><div class="tk-checkbox"></div><div class="tk-row-text">Press Enter after inserting the text</div></div>
+            </div>
+            <div class="tk-grey" style="margin-top:20px;">Undo: press Ctrl+Z in the target application — each dictation is inserted as a single edit.</div>
+          </div>
+        </div>
+        <div class="lower-third"><div class="tab-eyebrow">Settings</div><div class="tab-name">Output</div></div>
+      </section>
+
+      <!-- Scene 12: Models -->
+      <section id="s12" class="clip" data-start="103.1" data-duration="9.1">
+        <div class="desktop-bg"></div>
+        <div class="tk-window">
+          <div class="tk-titlebar"><div class="tk-icon">🎙️</div><div class="tk-titletext">Talkative — Settings</div><div class="tk-dots"><div class="tk-dot"></div><div class="tk-dot"></div><div class="tk-dot"></div></div></div>
+          <div class="tk-tabs">
+            <div class="tk-tab">General</div><div class="tk-tab">Auto Text</div><div class="tk-tab">Dictation</div>
+            <div class="tk-tab">Hotkeys</div><div class="tk-tab">Audio</div><div class="tk-tab">Output</div>
+            <div class="tk-tab active">Models</div><div class="tk-tab">About</div>
+          </div>
+          <div class="tk-content">
+            <div id="s12-callout" style="background:#eaf2f8; border:1px solid var(--accent); border-radius:6px; padding:12px 16px; margin-bottom:18px; font-size:15px; color:#2c4a63;">
+              ↳ Only downloaded if you chose <strong>Local</strong> on the General tab — pick Cloud instead and none of this applies.
+            </div>
+            <div class="tk-tile">
+              <div style="font-weight:700; font-size:18px;">Fast — Instant response</div>
+              <div class="tk-grey" style="margin-top:8px;">Text appears about 2–3 seconds after you stop speaking. Longer sentences can take a bit more time.</div>
+              <div class="tk-grey" style="margin-top:8px;">Version 3</div>
+              <div style="color:#2e7d32; font-weight:600; margin-top:6px;">Downloaded</div>
+              <div style="margin-top:14px;"><div class="tk-button">Delete</div></div>
+            </div>
+            <div class="tk-tile" style="margin-top:18px;">
+              <div style="font-weight:700; font-size:18px;">Grammar engine</div>
+              <div class="tk-grey" style="margin-top:8px;">Optional local cleanup pass, runs on your own CPU.</div>
+              <div style="color:#2e7d32; font-weight:600; margin-top:6px;">Downloaded</div>
+              <div style="margin-top:14px;"><div class="tk-button">Delete</div></div>
+            </div>
+            <div class="tk-grey" style="margin-top:16px;">Storage used: 1.9 GB (Local mode only)</div>
+          </div>
+        </div>
+        <div class="lower-third"><div class="tab-eyebrow">Settings</div><div class="tab-name">Models — only if Local</div></div>
+      </section>
+
+      <!-- Scene 13: About -->
+      <section id="s13" class="clip" data-start="112.2" data-duration="7.5">
+        <div class="desktop-bg"></div>
+        <div class="tk-window">
+          <div class="tk-titlebar"><div class="tk-icon">🎙️</div><div class="tk-titletext">Talkative — Settings</div><div class="tk-dots"><div class="tk-dot"></div><div class="tk-dot"></div><div class="tk-dot"></div></div></div>
+          <div class="tk-tabs">
+            <div class="tk-tab">General</div><div class="tk-tab">Auto Text</div><div class="tk-tab">Dictation</div>
+            <div class="tk-tab">Hotkeys</div><div class="tk-tab">Audio</div><div class="tk-tab">Output</div>
+            <div class="tk-tab">Models</div><div class="tk-tab active">About</div>
+          </div>
+          <div class="tk-content">
+            <div style="font-weight:700; font-size:20px;">"Talkative"</div>
+            <div class="tk-grey" style="margin-bottom:14px;">Version 1.3.2</div>
+            <div class="tk-labelframe" style="margin-top:6px;">
+              <div class="tk-labelframe-title">Privacy</div>
+              <div class="tk-row-text" style="line-height:1.6;">By default, Talkative processes your dictation via Cloud: your audio is sent to a remote server for transcription and cleanup, then discarded — not stored. Switch to Local in the General tab and it runs fully offline instead, with nothing ever leaving this PC.</div>
+            </div>
+            <div class="tk-labelframe">
+              <div class="tk-labelframe-title">Feedback</div>
+              <div class="tk-grey">Send a message straight to Sumit. A reply, if there is one, will show up here.</div>
+              <div style="background:#fff; border:1px solid var(--border); border-radius:4px; height:64px; margin-top:10px;"></div>
+              <div style="margin-top:10px;"><div class="tk-button">Send</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="lower-third"><div class="tab-eyebrow">Settings</div><div class="tab-name">About</div></div>
+      </section>
+
+      <!-- ============ SCENE 14: Close / CTA ============ -->
+      <section id="s14" class="clip" data-start="119.7" data-duration="7">
+        <div class="desktop-bg"></div>
+        <div class="title-card">
+          <div id="s14-logo" class="logo-mark">🎙️</div>
+          <h1>Talkative</h1>
+          <p>Still free. Still yours.</p>
+          <div class="cta">github.com/sumitdas76/talkative</div>
+        </div>
+      </section>
+
+      <!-- ============ AUDIO ============ -->
+      <audio id="sfx-hit" src="assets/audio/sfx/impact-bass-1.mp3" data-start="0.35" data-duration="2.1" data-track-index="21" data-volume="0.9"></audio>
+      <audio id="vo1a" src="assets/audio/vo01a.wav" data-start="0.4" data-duration="1.2" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo1b" src="assets/audio/vo01b.wav" data-start="2.0" data-duration="2.9" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo1c" src="assets/audio/vo01c.wav" data-start="5.3" data-duration="0.6" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo1d" src="assets/audio/vo01d.wav" data-start="6.6" data-duration="0.9" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo1e" src="assets/audio/vo01e.wav" data-start="7.9" data-duration="1.1" data-track-index="20" data-volume="1"></audio>
+      <audio id="sfx-t2" src="assets/audio/sfx/whoosh-short.mp3" data-start="10.15" data-duration="0.57" data-track-index="21" data-volume="0.6"></audio>
+      <audio id="vo2" src="assets/audio/vo02.wav" data-start="10.8" data-duration="7.2" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo2w" src="assets/audio/vo02w.wav" data-start="19.8" data-duration="14.8" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo3" src="assets/audio/vo03.wav" data-start="36.9" data-duration="5.4" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo4" src="assets/audio/vo04.wav" data-start="44.2" data-duration="7.0" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo5" src="assets/audio/vo05.wav" data-start="53.6" data-duration="2.2" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo6" src="assets/audio/vo06.wav" data-start="58.9" data-duration="7.4" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo7" src="assets/audio/vo07.wav" data-start="68.7" data-duration="5.0" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo8" src="assets/audio/vo08.wav" data-start="76.1" data-duration="6.0" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo9" src="assets/audio/vo09.wav" data-start="85.5" data-duration="2.5" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo10" src="assets/audio/vo10.wav" data-start="92.1" data-duration="1.8" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo11" src="assets/audio/vo11.wav" data-start="96.3" data-duration="5.4" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo12" src="assets/audio/vo12.wav" data-start="104.1" data-duration="6.7" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo13" src="assets/audio/vo13.wav" data-start="113.2" data-duration="5.1" data-track-index="20" data-volume="1"></audio>
+      <audio id="vo14" src="assets/audio/vo14.wav" data-start="120.7" data-duration="2.2" data-track-index="20" data-volume="1"></audio>
+      <audio id="sfx-t6" src="assets/audio/sfx/whoosh-short.mp3" data-start="57.55" data-duration="0.57" data-track-index="21" data-volume="0.6"></audio>
+      <audio id="music-bed" src="assets/audio/music-bed.wav" data-start="0" data-duration="126.7" data-track-index="22" data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":0.15},{"t":10.0,"v":0.15},{"t":10.5,"v":0.05},{"t":119.2,"v":0.05},{"t":119.7,"v":0.15}]}]}'></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+
+      // ---- helper: fade a scene's inner content in/out (never tween .clip itself) ----
+      function fadeIn(sel, at, dur) { tl.fromTo(sel, { opacity: 0 }, { opacity: 1, duration: dur || 0.5, ease: "power2.out" }, at); }
+
+      // Scene 1 — trailer cold open. Tension build -> flash-cut punch-in -> explainer -> 3-beat kinetic slam.
+      // Pre-hit tension: glow creeps in.
+      tl.fromTo("#s1-glow", { opacity: 0, scale: 0.7 }, { opacity: 0.35, scale: 0.85, duration: 0.35, ease: "sine.in" }, 0);
+
+      // THE HIT at 0.35s: flash + bloom + logo/title slam (power4.out, no bouncy overshoot per hyperframes-animation guidance).
+      const HIT = 0.35;
+      tl.to("#s1-flash", { opacity: 0.85, duration: 0.06, ease: "power1.in" }, HIT);
+      tl.to("#s1-flash", { opacity: 0, duration: 0.3, ease: "power2.out" }, HIT + 0.06);
+      tl.to("#s1-glow", { opacity: 0.6, scale: 1.05, duration: 0.3, ease: "power2.out" }, HIT);
+      tl.fromTo("#s1-logo", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: "power4.out" }, HIT);
+      tl.fromTo("#s1-title", { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: "power4.out" }, HIT);
+
+      // Explainer line, slides up under the VO.
+      tl.fromTo("#s1-sub", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 2.0);
+
+      // Kinetic-beat-slam: three phrases, one tempo grid, DISTINCT entrance per phrase.
+      const PULSE1 = 1.3;
+      const BEATS1 = [5.3, 5.3 + PULSE1, 5.3 + PULSE1 * 2];
+      tl.fromTo("#s1-beat1", { scale: 1.6, filter: "blur(14px)", opacity: 0 }, { scale: 1, filter: "blur(0px)", opacity: 1, duration: 0.45, ease: "power4.out" }, BEATS1[0]);
+      tl.fromTo("#s1-beat2", { x: -280, opacity: 0 }, { x: 0, opacity: 1, duration: 0.4, ease: "expo.out" }, BEATS1[1]);
+      tl.fromTo("#s1-beat3", { y: 70, rotation: 5, opacity: 0 }, { y: 0, rotation: 0, opacity: 1, duration: 0.5, ease: "circ.out" }, BEATS1[2]);
+
+      // ---- Transition A: s1 -> s2 @10.5 (zoom-through, High energy opener) ----
+      tl.to(".trailer-stage, .beat-stack", { filter: "blur(10px)", scale: 1.06, opacity: 0, duration: 0.35, ease: "power3.in" }, 10.15);
+      tl.set(".trailer-stage, .beat-stack", { opacity: 0 }, 10.5);
+      tl.fromTo("#s2-browser", { scale: 0.85, opacity: 0, filter: "blur(10px)" }, { scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.35, ease: "power3.out" }, 10.5);
+
+      // Scene 2 (start 10.5, dur 8.9) — real captures, TWO beats per revision #6:
+      // (a) release page top-of-page hold, (b) crossfade to the populated Assets
+      // list + point at the download link. (The prior spinner push-in beat read
+      // as a frozen/broken screenshot, not a convincing loading state -- cut.)
+      tl.to("#s2-img1", { opacity: 0, duration: 0.6, ease: "power2.inOut" }, 13.0);
+      tl.fromTo("#s2-img2", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.inOut" }, 13.0);
+      // Cursor delta verified by rendering and pixel-measuring the actual
+      // highlight box position (it's nested inside .browser-window/.browser-viewport,
+      // not positioned directly on the canvas -- x:-994,y:701 from base 1600,130
+      // lands at (606,831), matching the real highlight centroid (~614,830).
+      tl.to("#s2-cursor", { x: -994, y: 701, duration: 1.5, ease: "power2.inOut" }, 13.6);
+      tl.to("#s2-cursor", { scale: 0.85, duration: 0.14, yoyo: true, repeat: 1 }, 15.1);
+      tl.to("#s2-highlight", { opacity: 1, duration: 0.3, ease: "power2.out" }, 15.1);
+
+      // ---- Transition B2: s2 -> s2w @19.4 (directional blur / whip-pan feel) ----
+      tl.to("#s2-browser", { filter: "blur(12px)", skewX: -8, x: -150, opacity: 0, duration: 0.35, ease: "power3.in" }, 19.05);
+      tl.set("#s2-browser", { opacity: 0 }, 19.4);
+      tl.fromTo("#s2w-flyout", { filter: "blur(12px)", skewX: 8, x: 150, opacity: 0 }, { filter: "blur(0px)", skewX: 0, x: 0, opacity: 1, duration: 0.35, ease: "power3.out" }, 19.4);
+
+      // Scene 2w (start 19.4, dur 16.5) — recreated mockup: browser flyout "Keep", then SmartScreen "More info" -> "Run anyway"
+      // Cursor deltas re-measured against the real rendered dialog (revision #6):
+      // "More info" link center ~(707,537), "Run anyway" button center ~(1182,689)
+      // on the 1920x1080 canvas, base cursor position (960,400) -- prior deltas
+      // landed short/above both targets.
+      tl.to("#s2w-cursor1", { x: 190, y: 75, duration: 1.3, ease: "power2.inOut" }, 23.9);
+      tl.to("#s2w-cursor1", { scale: 0.85, duration: 0.14, yoyo: true, repeat: 1 }, 25.2);
+      tl.to("#s2w-keep", { scale: 0.92, duration: 0.1, yoyo: true, repeat: 1 }, 25.2);
+      tl.to("#s2w-flyout, #s2w-cursor1", { opacity: 0, scale: 0.95, duration: 0.4, ease: "power2.in" }, 25.7);
+      tl.set("#s2w-flyout, #s2w-cursor1", { opacity: 0 }, 26.1);
+      tl.fromTo("#s2w-smartscreen", { opacity: 0, scale: 0.92, filter: "blur(6px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.4, ease: "power2.out" }, 26.1);
+      tl.to("#s2w-cursor2", { opacity: 1, duration: 0.3 }, 26.5);
+      tl.to("#s2w-cursor2", { x: -258, y: 135, duration: 1.6, ease: "power2.inOut" }, 26.8);
+      tl.to("#s2w-cursor2", { scale: 0.85, duration: 0.14, yoyo: true, repeat: 1 }, 28.4);
+      tl.to("#s2w-moreinfo", { opacity: 0.6, duration: 0.1, yoyo: true, repeat: 1 }, 28.4);
+      tl.to("#s2w-details", { opacity: 1, duration: 0.3 }, 28.6);
+      tl.to("#s2w-runanyway", { opacity: 1, duration: 0.3 }, 28.6);
+      tl.to("#s2w-cursor2", { x: 217, y: 287, duration: 1.3, ease: "power2.inOut" }, 30.4);
+      tl.to("#s2w-cursor2", { scale: 0.85, duration: 0.14, yoyo: true, repeat: 1 }, 31.7);
+      tl.to("#s2w-runanyway", { scale: 0.94, duration: 0.1, yoyo: true, repeat: 1 }, 31.7);
+
+      // ---- Transition (s2w -> s3) @35.9 (directional blur / whip-pan, matches the family used elsewhere) ----
+      tl.to("#s2w-smartscreen, #s2w-cursor2", { filter: "blur(12px)", skewX: -8, x: -150, opacity: 0, duration: 0.35, ease: "power3.in" }, 35.55);
+      tl.set("#s2w-smartscreen, #s2w-cursor2", { opacity: 0 }, 35.9);
+      tl.fromTo("#s3-window", { filter: "blur(12px)", skewX: 8, x: 150, opacity: 0 }, { filter: "blur(0px)", skewX: 0, x: 0, opacity: 1, duration: 0.35, ease: "power3.out" }, 35.9);
+
+      // Scene 3 (start 35.9, dur 7.3) — wizard steps, cut down further per revision #6.
+      // Cursor base position re-measured against the real "Next >" button box
+      // (1201,640)-(1285,677) -- previously sat at the button's left edge, not centered.
+      const wizardSteps = ["#s3-step-welcome", "#s3-step-location", "#s3-step-ready", "#s3-step-installing", "#s3-step-finish"];
+      const stepStarts = [36.2, 37.5, 38.8, 40.1, 41.6];
+      for (let i = 1; i < wizardSteps.length; i++) {
+        tl.to(wizardSteps[i - 1], { opacity: 0, duration: 0.2 }, stepStarts[i] - 0.2);
+        tl.to(wizardSteps[i], { opacity: 1, duration: 0.2 }, stepStarts[i]);
+      }
+      tl.to("#s3-progress", { width: "100%", duration: 0.6, ease: "power1.inOut" }, 40.1);
+      [37.3, 38.6, 39.9].forEach((t) => {
+        tl.to("#s3-cursor", { scale: 0.85, duration: 0.12, yoyo: true, repeat: 1 }, t);
+      });
+
+      // ---- Transition C: s3 -> s4 @43.2 (proper dissolve) ----
+      tl.to("#s3-window", { opacity: 0, duration: 0.5, ease: "sine.inOut" }, 42.7);
+      tl.set("#s3-window", { opacity: 0 }, 43.2);
+      tl.fromTo(".onboard-window", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "sine.inOut" }, 43.2);
+
+      // ---- Transition D: s4 -> s5 @52.6 (blur crossfade, calmer -- settling into the demo) ----
+      tl.to(".onboard-window", { filter: "blur(15px)", scale: 1.05, opacity: 0, duration: 0.4, ease: "power2.in" }, 52.2);
+      tl.set(".onboard-window", { opacity: 0 }, 52.6);
+      tl.fromTo(".notepad-window", { filter: "blur(15px)", scale: 0.95, opacity: 0 }, { filter: "blur(0px)", scale: 1, opacity: 1, duration: 0.4, ease: "power2.out" }, 52.6);
+
+      // Scene 5 (start 52.6, dur 5.3) — real pill.py behavior rebuilt per revision #6:
+      // a small capsule, no window chrome, a blinking red dot, and a genuinely
+      // rolling 12-bar level meter (oldest sample drops off the left as a new one
+      // enters the right) -- not a single static pulsing shape.
+      tl.to("#s5-pill", { opacity: 1, duration: 0.25 }, 52.9);
+      tl.to("#s5-dot", { backgroundColor: "#802020", duration: 0.25, repeat: 13, yoyo: true, ease: "none" }, 52.9);
+      const S5_LEVELS = [0.15, 0.35, 0.55, 0.75, 0.5, 0.3, 0.6, 0.85, 0.65, 0.4, 0.2, 0.45, 0.7, 0.9, 0.6, 0.35, 0.55, 0.8, 0.5, 0.25, 0.4, 0.65, 0.3, 0.5, 0.7, 0.4, 0.2, 0.55];
+      const S5_TICK_START = 53.05, S5_TICK_STEP = 0.11;
+      for (let i = 0; i < S5_LEVELS.length; i++) {
+        tl.call(() => {
+          const win = S5_LEVELS.slice(Math.max(0, i - 11), i + 1);
+          while (win.length < 12) win.unshift(0);
+          win.forEach((v, bi) => {
+            const bar = document.getElementById("s5-bar-" + bi);
+            if (bar) bar.style.height = (6 + v * 26) + "px";
+          });
+        }, [], S5_TICK_START + i * S5_TICK_STEP);
+      }
+      const s5phrase = "Remember to send the deck to the client before end of day.";
+      const s5words = s5phrase.split(" ");
+      const s5start = 54.9, s5dur = 0.9;
+      for (let i = 1; i <= s5words.length; i++) {
+        tl.call(() => {
+          document.getElementById("s5-text").textContent = s5words.slice(0, i).join(" ");
+        }, [], s5start + (i / s5words.length) * s5dur);
+      }
+      tl.to("#s5-pill", { opacity: 0, duration: 0.3 }, 56.2);
+
+      // ---- Transition E: s5 -> s6 @57.9 (topic change -- demo to Settings tour, zoom signal) ----
+      tl.to(".notepad-window, .listening-pill", { scale: 1.08, filter: "blur(8px)", opacity: 0, duration: 0.3, ease: "power3.in" }, 57.6);
+      tl.set(".notepad-window, .listening-pill", { opacity: 0 }, 57.9);
+      tl.fromTo("#s6 .tk-window", { scale: 0.9, filter: "blur(8px)", opacity: 0 }, { scale: 1, filter: "blur(0px)", opacity: 1, duration: 0.3, ease: "power3.out" }, 57.9);
+      fadeIn("#s6 .lower-third", 58.2, 0.3);
+
+      // ---- Transitions s6->s7 through s12->s13: proper dissolves per revision #3 ----
+      // (previously only a fade-IN on the incoming tab, no matching exit on the
+      // outgoing one -- that reads as a hard cut with a fade slapped on, not a real
+      // crossfade. Now both sides animate at the same boundary time, concurrently.
+      // Kept CALM/plain (opacity only, no blur/skew) per the earlier "dial back"
+      // call for 7 back-to-back Settings-tab cuts -- dissolve, not trailer energy.)
+      const settingsTabs = [6, 7, 8, 9, 10, 11, 12, 13];
+      for (let idx = 1; idx < settingsTabs.length; idx++) {
+        const prevN = settingsTabs[idx - 1], curN = settingsTabs[idx];
+        const boundary = parseFloat(document.getElementById("s" + curN).dataset.start);
+        tl.to("#s" + prevN + " .tk-window", { opacity: 0, duration: 0.35, ease: "sine.inOut" }, boundary - 0.35);
+        tl.set("#s" + prevN + " .tk-window", { opacity: 0 }, boundary);
+        tl.fromTo("#s" + curN + " .tk-window", { opacity: 0 }, { opacity: 1, duration: 0.35, ease: "sine.inOut" }, boundary);
+        tl.to("#s" + prevN + " .lower-third", { opacity: 0, duration: 0.3 }, boundary - 0.3);
+        tl.set("#s" + prevN + " .lower-third", { opacity: 0 }, boundary);
+        fadeIn("#s" + curN + " .lower-third", boundary + 0.2, 0.3);
+      }
+      // Scene 6 cursor ticks on Processing radios
+      tl.to("#s6-cursor", { x: -395, y: -180, duration: 0.7, ease: "power2.inOut" }, 59.4);
+      tl.to("#s6-cursor", { scale: 0.85, duration: 0.1, yoyo: true, repeat: 1 }, 60.1);
+      tl.to("#s6-cursor", { x: -395, y: 40, duration: 0.7, ease: "power2.inOut" }, 61.9);
+      tl.to("#s6-cursor", { scale: 0.85, duration: 0.1, yoyo: true, repeat: 1 }, 62.6);
+      fadeIn("#s12-callout", 103.7, 0.35);
+
+      // Scene 8 example toggles between Cleaned up / As spoken
+      tl.to("#s8-radio-clean .tk-radio", { backgroundColor: "transparent" }, 79.6);
+      tl.call(() => {
+        document.getElementById("s8-radio-clean").querySelector(".tk-radio").classList.remove("checked");
+        document.getElementById("s8-radio-asspoken").querySelector(".tk-radio").classList.add("checked");
+        document.getElementById("s8-example").textContent = "So, um, send it, uh, tomorrow — no wait, send it Friday.";
+      }, [], 80.1);
+      tl.call(() => {
+        document.getElementById("s8-radio-asspoken").querySelector(".tk-radio").classList.remove("checked");
+        document.getElementById("s8-radio-clean").querySelector(".tk-radio").classList.add("checked");
+        document.getElementById("s8-example").textContent = "Send it Friday.";
+      }, [], 83.1);
+
+      // Scene 9 hotkey capture blink
+      tl.to("#s9-hotkey-btn", { backgroundColor: "#4682b4", color: "#ffffff", duration: 0.2 }, 86.5);
+      tl.call(() => { document.getElementById("s9-hotkey-btn").textContent = "Hold 1 or 2 keys…"; }, [], 86.5);
+      tl.call(() => { document.getElementById("s9-hotkey-btn").textContent = "Right Ctrl"; }, [], 89.5);
+      tl.to("#s9-hotkey-btn", { backgroundColor: "#dcdcdc", color: "#1a1a1a", duration: 0.2 }, 89.5);
+
+      // ---- Transition F: s13 -> s14 @119.7 (wind-down, gentle blur crossfade, no SFX) ----
+      tl.to("#s13 .tk-window", { filter: "blur(14px)", opacity: 0, duration: 0.5, ease: "sine.inOut" }, 119.2);
+      tl.set("#s13 .tk-window", { opacity: 0 }, 119.7);
+
+      // Scene 14 (start 119.7, dur 7)
+      tl.fromTo("#s14-logo", { opacity: 0, scale: 0.8, filter: "blur(6px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.5, ease: "power3.out" }, 119.9);
+      tl.fromTo("#s14 h1, #s14 p, #s14 .cta", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.4, stagger: 0.12 }, 120.3);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,200 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      container-type: size;
+    }
+
+    /* ── Ground: deep navy canvas, deeper vignette in the corners ── */
+    .san-bg {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 130% 90% at 50% 38%, #131a3f 0%, #0A0E27 48%, #050714 100%);
+    }
+
+    /* ── Swirl field: soft blurred color blobs, always alive, low amplitude this frame ── */
+    .san-swirl {
+      position: absolute;
+      inset: 0;
+    }
+    .san-blob {
+      position: absolute;
+      border-radius: 50%;
+      will-change: transform;
+      transform-origin: 50% 50%;
+    }
+    .san-blob-blue {
+      top: -12cqh;
+      left: -10cqw;
+      width: 50cqw;
+      height: 50cqw;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.9) 0%, rgba(59, 130, 246, 0) 70%);
+      filter: blur(75px);
+      opacity: 0.17;
+    }
+    .san-blob-violet {
+      top: 48cqh;
+      left: 58cqw;
+      width: 44cqw;
+      height: 44cqw;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.9) 0%, rgba(139, 92, 246, 0) 70%);
+      filter: blur(85px);
+      opacity: 0.15;
+    }
+    .san-blob-pink {
+      top: 2cqh;
+      left: 68cqw;
+      width: 34cqw;
+      height: 34cqw;
+      background: radial-gradient(circle, rgba(244, 114, 182, 0.9) 0%, rgba(244, 114, 182, 0) 70%);
+      filter: blur(70px);
+      opacity: 0.12;
+    }
+
+    /* ── Text stage: centered high, both lines share the same slot ── */
+    .san-line {
+      position: absolute;
+      left: 8cqw;
+      right: 8cqw;
+      top: 8cqh;
+      bottom: 20cqh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      z-index: 2;
+    }
+    .san-line1-text {
+      font-family: "Inter", sans-serif;
+      font-weight: 600;
+      font-size: 2.5cqw;
+      line-height: 1.4;
+      letter-spacing: -0.005em;
+      color: #A5B4CB;
+      transform-origin: 50% 50%;
+    }
+    .san-line2-text {
+      font-family: "Inter", sans-serif;
+      font-weight: 900;
+      font-size: 4.0cqw;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      color: #FFFFFF;
+      transform-origin: 50% 50%;
+    }
+    .san-hero-wrap {
+      position: relative;
+      display: inline-block;
+    }
+    .san-hero {
+      position: relative;
+      z-index: 2;
+      color: #FFFFFF;
+    }
+    .san-hero-glow {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      color: #3B82F6;
+      filter: blur(16px);
+      opacity: 0;
+      pointer-events: none;
+      transform-origin: 50% 50%;
+    }
+  </style>
+
+  <div id="root" data-composition-id="05-same-app-new-name" data-start="0" data-duration="3.264" data-width="1920" data-height="1080">
+    <div class="clip san-bg" id="san-bg" data-start="0" data-duration="3.264" data-track-index="0"></div>
+
+    <div class="clip san-swirl" id="san-swirl" data-start="0" data-duration="3.264" data-track-index="1">
+      <div class="san-blob san-blob-blue" id="san-blob-blue"></div>
+      <div class="san-blob san-blob-violet" id="san-blob-violet"></div>
+      <div class="san-blob san-blob-pink" id="san-blob-pink"></div>
+    </div>
+
+    <div class="clip san-line" id="san-line1" data-start="0.326" data-duration="1.756" data-track-index="2" data-layout-allow-overlap>
+      <div class="san-line1-text">Same app. Same developer.</div>
+    </div>
+
+    <div class="clip san-line" id="san-line2" data-start="1.632" data-duration="1.632" data-track-index="3" data-layout-allow-overlap>
+      <div class="san-line2-text">Now called <span class="san-hero-wrap"><span class="san-hero">Talkative</span><span class="san-hero-glow" aria-hidden="true">Talkative</span></span>.</div>
+    </div>
+  </div>
+
+  <script>
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+    window.__timelines["05-same-app-new-name"] = tl;
+
+    const TOTAL_DURATION = 3.264;
+
+    // ── Swirl field: soft continuous drift + gentle scale pulse, alive for the
+    // whole frame at deliberately low amplitude (this is the video's breather —
+    // per frame.md the swirl field must never go fully static, but the packet
+    // calls for lower amplitude here than the other, more dramatic frames). One
+    // phase driver, three blobs read from it at offset phases/frequencies so the
+    // drift doesn't look synchronized (sine-wave-loop: onUpdate form).
+    const blobBlue = document.getElementById("san-blob-blue");
+    const blobViolet = document.getElementById("san-blob-violet");
+    const blobPink = document.getElementById("san-blob-pink");
+    const swirlPhase = { p: 0 };
+    const SWIRL_CYCLES = 0.7; // slow, partial drift across this short frame — soft, not showy
+    tl.to(
+      swirlPhase,
+      {
+        p: Math.PI * 2 * SWIRL_CYCLES,
+        duration: TOTAL_DURATION,
+        ease: "none",
+        onUpdate: () => {
+          const p = swirlPhase.p;
+          const sBlue = Math.sin(p);
+          const sViolet = Math.sin(p * 1.3 + Math.PI / 2);
+          const sPink = Math.sin(p * 0.85 + Math.PI);
+          blobBlue.style.transform = `translate(${(sBlue * 14).toFixed(2)}px, ${(Math.cos(p) * 10).toFixed(2)}px) scale(${(1 + sBlue * 0.02).toFixed(4)})`;
+          blobViolet.style.transform = `translate(${(sViolet * -12).toFixed(2)}px, ${(Math.cos(p * 1.3) * 9).toFixed(2)}px) scale(${(1 + sViolet * 0.018).toFixed(4)})`;
+          blobPink.style.transform = `translate(${(sPink * 10).toFixed(2)}px, ${(Math.cos(p * 0.85) * -8).toFixed(2)}px) scale(${(1 + sPink * 0.015).toFixed(4)})`;
+        },
+      },
+      0,
+    );
+
+    // Scene 2 (0.326-1.632s): as the VO says "Same app. Same developer.," the
+    // line gently fades in centered with a smooth 95% -> 100% scale settle —
+    // the ONE restrained move for the first half of this stillness beat.
+    tl.fromTo(
+      "#san-line1 .san-line1-text",
+      { opacity: 0, scale: 0.95 },
+      { opacity: 1, scale: 1, duration: 0.5, ease: "power2.out" },
+      0.326,
+    );
+
+    // Scene 3 (1.632-3.264s): single slide-up crossfade — line 1 lifts and
+    // fades out as line 2 rises from below-center and fades in to take its
+    // place, then holds to the harness cut into Frame 6.
+    tl.to(
+      "#san-line1 .san-line1-text",
+      { y: -28, opacity: 0, duration: 0.45, ease: "power2.in" },
+      1.632,
+    );
+    tl.fromTo(
+      "#san-line2 .san-line2-text",
+      { y: 32, opacity: 0 },
+      { y: 0, opacity: 1, duration: 0.6, ease: "power3.out" },
+      1.752,
+    );
+
+    // "Talkative" carries a soft blue glow, landing as one beat with the line's
+    // own settle (ambient-glow-bloom, bloom-and-hold variant — the hold here is
+    // short, so no breathe cycle is needed). Kept gentle per the packet: a low
+    // peak opacity, not the hard dual-color pop reserved for the closing frame.
+    tl.fromTo(
+      "#san-line2 .san-hero-glow",
+      { opacity: 0, scale: 0.92 },
+      { opacity: 0.5, scale: 1.04, duration: 0.7, ease: "power2.out" },
+      1.752,
+    );
+  </script>
+</template>

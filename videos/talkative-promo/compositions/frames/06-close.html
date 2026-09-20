@@ -1,0 +1,310 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      container-type: size;
+      overflow: hidden;
+    }
+
+    /* ---- Full-bleed ground (never on #root — see hyperframes-core rule) ---- */
+    .cx-ground {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 90% 70% at 50% 42%, #0A0E27 0%, #050714 100%);
+    }
+
+    /* ---- Swirl field — always-alive atmosphere, flared brighter for the climax ---- */
+    .cx-swirl {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+    .cx-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(70px);
+      mix-blend-mode: screen;
+      will-change: transform, opacity;
+    }
+    .cx-blob--a {
+      width: 46cqw;
+      height: 46cqw;
+      left: 4cqw;
+      top: -10cqh;
+      background: radial-gradient(circle, #3B82F6 0%, rgba(59, 130, 246, 0) 70%);
+    }
+    .cx-blob--b {
+      width: 52cqw;
+      height: 52cqw;
+      right: -8cqw;
+      bottom: -18cqh;
+      background: radial-gradient(circle, #8B5CF6 0%, rgba(139, 92, 246, 0) 70%);
+    }
+    .cx-blob--c {
+      width: 38cqw;
+      height: 38cqw;
+      right: 12cqw;
+      top: 8cqh;
+      background: radial-gradient(circle, #F472B6 0%, rgba(244, 114, 182, 0) 70%);
+    }
+
+    /* ---- Structural wrapper — never GSAP-transformed except the terminal micro scale ---- */
+    .cx-lockup-wrapper {
+      position: absolute;
+      inset: 0;
+      transform-origin: 50% 40cqh;
+    }
+
+    /* ---- Gradient-stroked concentric rings ---- */
+    .cx-rings {
+      position: absolute;
+      left: 50%;
+      top: 40cqh;
+      width: 44cqw;
+      height: 44cqw;
+      margin-left: -22cqw;
+      margin-top: -22cqw;
+      transform-origin: 50% 50%;
+      opacity: 0;
+      will-change: transform, opacity;
+    }
+    .cx-rings svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    .cx-ring-circle {
+      fill: none;
+      stroke: url(#cx-ring-grad);
+      stroke-width: 1.6;
+      stroke-linecap: round;
+    }
+
+    /* ---- Icon glow-flash (behind the mark) ---- */
+    .cx-flash {
+      position: absolute;
+      left: 50%;
+      top: 40cqh;
+      width: 26cqw;
+      height: 26cqw;
+      margin-left: -13cqw;
+      margin-top: -13cqw;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(96, 165, 250, 0.9) 0%, rgba(139, 92, 246, 0.35) 45%, rgba(139, 92, 246, 0) 72%);
+      opacity: 0;
+      will-change: transform, opacity;
+    }
+
+    .cx-icon {
+      position: absolute;
+      left: 50%;
+      top: 40cqh;
+      width: 9.5cqw;
+      height: 9.5cqw;
+      margin-left: -4.75cqw;
+      margin-top: -4.75cqw;
+      object-fit: contain;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .cx-wordmark {
+      position: absolute;
+      left: calc(50% - 3cqw);
+      top: 40cqh;
+      transform: translateY(-50%);
+      font-family: "Inter", sans-serif;
+      font-weight: 900;
+      font-size: 4.6cqw;
+      letter-spacing: -0.02em;
+      color: #FFFFFF;
+      white-space: nowrap;
+      text-shadow:
+        0 0 26px rgba(59, 130, 246, 0.6),
+        0 0 42px rgba(139, 92, 246, 0.5);
+      clip-path: inset(0 100% 0 0);
+      opacity: 0;
+      will-change: clip-path, opacity;
+    }
+
+    .cx-tagline {
+      position: absolute;
+      left: 50%;
+      top: 50.5cqh;
+      transform: translateX(-50%);
+      font-family: "Inter", sans-serif;
+      font-weight: 700;
+      font-size: 1.9cqw;
+      letter-spacing: -0.005em;
+      color: #FFFFFF;
+      white-space: nowrap;
+      text-shadow: 0 0 18px rgba(59, 130, 246, 0.55);
+      clip-path: inset(0 100% 0 0);
+      opacity: 0;
+      will-change: clip-path, opacity;
+    }
+  </style>
+
+  <div data-hf-id="hf-cx01" id="root" data-composition-id="06-close" data-start="0" data-duration="1.557" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-cx02" class="clip cx-ground" data-start="0" data-duration="1.557" data-track-index="0"></div>
+
+    <div data-hf-id="hf-cx03" class="clip cx-swirl" data-start="0" data-duration="1.557" data-track-index="1">
+      <div class="cx-blob cx-blob--a"></div>
+      <div class="cx-blob cx-blob--b"></div>
+      <div class="cx-blob cx-blob--c"></div>
+    </div>
+
+    <div data-hf-id="hf-cx04" class="cx-lockup-wrapper">
+      <div data-hf-id="hf-cx05" id="cx-rings" class="clip cx-rings" data-start="0" data-duration="1.557" data-track-index="2" data-layout-allow-overflow>
+        <svg viewBox="0 0 200 200">
+          <defs>
+            <linearGradient id="cx-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#3B82F6"></stop>
+              <stop offset="50%" stop-color="#8B5CF6"></stop>
+              <stop offset="100%" stop-color="#F472B6"></stop>
+            </linearGradient>
+          </defs>
+          <circle class="cx-ring-circle" id="cx-ring-sm" cx="100" cy="100" r="53" style="transform-origin: 100px 100px; transform: rotate(-90deg)"></circle>
+          <circle class="cx-ring-circle" id="cx-ring-md" cx="100" cy="100" r="75" style="transform-origin: 100px 100px; transform: rotate(-90deg)"></circle>
+          <circle class="cx-ring-circle" id="cx-ring-lg" cx="100" cy="100" r="97" style="transform-origin: 100px 100px; transform: rotate(-90deg)"></circle>
+        </svg>
+      </div>
+
+      <div data-hf-id="hf-cx06" id="cx-flash" class="clip cx-flash" data-start="0" data-duration="1.557" data-track-index="3"></div>
+      <img data-hf-id="hf-cx07" id="cx-icon" class="clip cx-icon" data-start="0" data-duration="1.557" data-track-index="4" src="assets/app-icon.png" alt="Talkative">
+      <div data-hf-id="hf-cx08" id="cx-wordmark" class="clip cx-wordmark" data-start="0" data-duration="1.557" data-track-index="5">Talkative</div>
+      <div data-hf-id="hf-cx09" id="cx-tagline" class="clip cx-tagline" data-start="0" data-duration="1.557" data-track-index="6">Just talk.</div>
+    </div>
+  </div>
+
+  <script>
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+    window.__timelines["06-close"] = tl;
+
+    const root = document.querySelector('[data-composition-id="06-close"]');
+    const icon = root.querySelector("#cx-icon");
+    const flash = root.querySelector("#cx-flash");
+    const wordmark = root.querySelector("#cx-wordmark");
+    const tagline = root.querySelector("#cx-tagline");
+    const wrapper = root.querySelector(".cx-lockup-wrapper");
+    const ringsGroup = root.querySelector("#cx-rings");
+    const blobs = root.querySelectorAll(".cx-blob");
+    const ringSm = root.querySelector("#cx-ring-sm");
+    const ringMd = root.querySelector("#cx-ring-md");
+    const ringLg = root.querySelector("#cx-ring-lg");
+
+    // Setup: measure each ring's real circumference (svg-path-draw) and start fully undrawn.
+    [ringSm, ringMd, ringLg].forEach((c) => {
+      const len = c.getTotalLength();
+      c.style.strokeDasharray = String(len);
+      c.style.strokeDashoffset = String(len);
+    });
+
+    const DURATION = 1.557;
+
+    // ---- Swirl field: always-alive drift + gentle scale pulse, flaring brighter for the
+    // climax over the first ~0.35s (ambient-glow-bloom register, driven by one shared phase). ----
+    const BLOB_CFG = [
+      { dx: 26, dy: -14, freq: 1.0, phase: 0.0, baseStart: 0.5, basePeak: 0.82, scaleAmp: 0.05 },
+      { dx: -22, dy: 20, freq: 0.8, phase: 1.7, baseStart: 0.46, basePeak: 0.78, scaleAmp: 0.04 },
+      { dx: 18, dy: 18, freq: 1.2, phase: 3.1, baseStart: 0.4, basePeak: 0.7, scaleAmp: 0.06 },
+    ];
+    const swirlDriver = { p: 0 };
+    tl.to(
+      swirlDriver,
+      {
+        p: 1,
+        duration: DURATION,
+        ease: "none",
+        onUpdate: () => {
+          const t = swirlDriver.p * DURATION;
+          const flareEnv = Math.min(t / 0.35, 1); // 0->1 over the flare-in window, then holds bright
+          blobs.forEach((el, i) => {
+            const cfg = BLOB_CFG[i];
+            const s = Math.sin(t * cfg.freq + cfg.phase);
+            const base = cfg.baseStart + (cfg.basePeak - cfg.baseStart) * flareEnv;
+            const opacity = Math.min(base + s * 0.08 * flareEnv, 0.95);
+            const scale = 1 + s * cfg.scaleAmp;
+            const x = s * cfg.dx;
+            const y = Math.cos(t * cfg.freq * 0.7 + cfg.phase) * cfg.dy;
+            el.style.opacity = String(opacity);
+            el.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+          });
+        },
+      },
+      0,
+    );
+
+    // ---- Scene 1 (0.0-0.374s): hard cut in, climax flare. The mark spring-BLOOMS from zero
+    // dead center with real overshoot + slight rotation-in, landing with a bright glow-flash
+    // behind it (whole-mark spring BLOOM: spring-pop-entrance, deliberate playful back.out). ----
+    tl.fromTo(
+      flash,
+      { opacity: 0, scale: 0.5 },
+      { opacity: 0.65, scale: 1.25, duration: 0.28, ease: "power2.out" },
+      0.02,
+    );
+    tl.to(
+      flash,
+      { opacity: 0.22, scale: 1.05, duration: 0.35, ease: "power2.out" },
+      0.3,
+    );
+    tl.fromTo(
+      icon,
+      { scale: 0, opacity: 0, rotation: -9 },
+      { scale: 1, opacity: 1, rotation: 0, duration: 0.32, ease: "back.out(1.7)" },
+      0.02,
+    );
+
+    // ---- Scene 2 (0.374-0.778s): icon slides up-and-left into its lockup slot while the
+    // dual-glow "Talkative" wordmark wipes in beside it (no letter-stagger — window too tight);
+    // gradient-stroked rings sweep in behind the pair as it centers. ----
+    tl.to(
+      icon,
+      { x: -176, y: -12, duration: 0.34, ease: "power3.out" },
+      0.374,
+    );
+    tl.fromTo(
+      wordmark,
+      { clipPath: "inset(0 100% 0 0)", opacity: 0 },
+      { clipPath: "inset(0 0% 0 0)", opacity: 1, duration: 0.32, ease: "power2.out" },
+      0.4,
+    );
+
+    tl.fromTo(
+      ringsGroup,
+      { opacity: 0, scale: 0.88 },
+      { opacity: 1, scale: 1, duration: 0.2, ease: "power1.out" },
+      0.374,
+    );
+    // Staggered per-ring draw (svg-path-draw): each starts at ~75% of the previous segment's
+    // duration, before it finishes. The largest ring is deliberately left mid-draw past the
+    // frame's own duration so it is still visibly sweeping on the very last held frame.
+    tl.to(ringSm, { strokeDashoffset: 0, duration: 0.5, ease: "power2.out" }, 0.42);
+    tl.to(ringMd, { strokeDashoffset: 0, duration: 0.55, ease: "power2.out" }, 0.795);
+    tl.to(ringLg, { strokeDashoffset: 0, duration: 0.55, ease: "power2.out" }, 1.15);
+    // Gentle continuous sweep/rotation on the whole ring group, running to the very end.
+    tl.to(
+      ringsGroup,
+      { rotation: 14, duration: DURATION - 0.374, ease: "none" },
+      0.374,
+    );
+
+    // ---- Scene 3 (0.778-1.557s): as the VO lands "Just talk.", the glowing tagline wipes in
+    // left->right beneath the lockup and settles. The completed lockup holds to the very last
+    // frame, carried by an almost-imperceptible continuous scale-up — never freezing flat. ----
+    tl.fromTo(
+      tagline,
+      { clipPath: "inset(0 100% 0 0)", opacity: 0 },
+      { clipPath: "inset(0 0% 0 0)", opacity: 1, duration: 0.42, ease: "power2.out" },
+      0.8,
+    );
+    tl.to(
+      wrapper,
+      { scale: 1.006, duration: DURATION - 1.22, ease: "none" },
+      1.22,
+    );
+  </script>
+</template>
