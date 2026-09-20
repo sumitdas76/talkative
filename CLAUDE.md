@@ -780,6 +780,74 @@ Manager) or a fresh explicit confirmation next session.
    large staged rename + unstaged cloud-feature diff from before this
    part of the session began) -- commit is still the user's call.
 
+## Resume point (end of session, 2026-09-20)
+
+**Shipped this session:** a deep stress-testing pass (six rounds of
+synthesized-audio QA covering fast/rambling speech, chained corrections,
+technical text, and accents -- Indian English, New York English) found
+and fixed several real dictation-pipeline bugs across `cleanup.py`,
+`self_correction.py`, `grammar_engine.py`, `dictionary.py` (filler/period
+corruption, `collapse_repeats` over-deletion, a stopword-bypass in the
+grammar retention guard, self-correction's whole-span retraction having
+no size cap -- twice tightened after live testing found it too
+permissive -- and a dictionary-expansion-inside-fused-paths bug), plus
+redeployed `cloud/worker.js` (the idiom-preservation fix from an earlier
+session had been committed but never actually pushed live). Released as
+**v1.3.2**. Two more real bugs surfaced by the user actually using the
+installed app -- a Settings-window layout bug (hardcoded `600x480`
+geometry no longer fit the content, squeezing the Save/Close bar to
+~1px on every tab) and the app not stopping on uninstall (installer had
+zero process-termination logic) -- released as **v1.3.3**. A follow-up
+UX fix (Cloud endpoint field made read-only, since a mistyped value
+there silently broke Cloud dictation with a confusing raw error) shipped
+as **v1.3.4**, currently the live "Latest" release.
+
+**New standing QA scope** (saved to memory, carries into future
+sessions): UI/window layout (scripted `winfo_reqheight()` checks, no
+visual tooling exists in this environment) and process lifecycle
+(confirmed live: force-killing the onefile bootloader's parent process
+does NOT reliably kill its child -- verified by deliberately killing a
+parent and watching the child survive as an orphan for minutes).
+
+**In progress, not yet finished:** a cinematic walkthrough video
+(install + full Settings tour) at `videos/talkative-walkthrough/`,
+built via a long-running forked agent (resume by messaging agent id/name
+`aa9fba3d1dbdeb3f8` in this project's session, or check `ListAgents` if
+that's gone stale). No desktop-control tooling exists in this
+environment, so the installer/onboarding/Settings scenes are faithful
+HTML recreations of the real UI (pulled from `settings_window.py`/
+`onboarding.py`'s actual copy and control layout, not screen capture);
+the GitHub release-page scenes are real captures via Chrome automation.
+Voiceover is local Kokoro TTS (`am_adam`); music is local MusicGen
+(called directly via a standalone Python script, since no hyperframes
+CLI command invokes it and no HeyGen credential exists for the catalog
+path) in a moody synthwave/retro-electronic style -- genre direction
+only, deliberately not reproducing any specific copyrighted melody.
+
+Last confirmed-good render (committed to git):
+`videos/talkative-walkthrough/renders/talkative-walkthrough_2026-09-20_20-15-39.mp4`
+(2:35). A further revision round was mid-flight when this session paused
+-- the fork was fixing: dead-time gaps throughout the timeline, a
+scene-1 jitter bug (mic icon/"Free" text visibly shaking -- root cause
+traced to cross-worker capture divergence during parallel rendering; fix
+in progress was switching to a single-worker render), cursor precision
+on the SmartScreen mockup and the install-wizard "Next" buttons, a
+further-quickened install-wizard scene, a re-attempt at the synthwave
+music (first attempt was judged weak), and rebuilding the live-dictation
+scene's "listening" indicator to match the real pill (`pill.py`: a small
+rounded capsule, red dot + 12 bars behaving like a scrolling live
+audio-level meter, not a static pulse). The user said to stop iterating
+and just render with whatever's ready. **Not yet rendered/reported back
+at session pause -- check the agent's status first on resume, don't
+restart it from scratch.** No music bed, thumbnail, or final render
+should be treated as locked until that pending render is actually seen.
+
+Two things still open beyond the video: YouTube title/description were
+drafted in-conversation (not saved to a file); and the LinkedIn post
+draft from earlier in the session was never actually posted by the
+user, last known state was a revision incorporating their voice/tone
+feedback.
+
 ## Packaging notes
 
 `--collect-all` flags in the pyinstaller command are load-bearing:
