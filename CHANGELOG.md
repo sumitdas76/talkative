@@ -2,7 +2,7 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
-## [Unreleased]
+## [1.3.5] - 2026-09-25
 
 ### Added
 
