@@ -17,7 +17,7 @@ from tkinter import messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, config, feedback, grammar_engine, history, model_manager, overlay_thread, settings, updater
+from . import __version__, app_icon, config, dev_mode, feedback, grammar_engine, history, model_manager, overlay_thread, settings, updater
 from .keynames import friendly as _friendly_key_name
 
 APP_NAME = "Talkative"
@@ -156,6 +156,7 @@ class _SettingsWindow:
         self.model_controller = model_controller
         self.overlay = overlay
         self.pending_hotkey = None
+        self.pending_dev_hotkey = None
         self._capturing = False
 
     def build(self):
@@ -588,15 +589,53 @@ class _SettingsWindow:
                   foreground="grey").pack(side="left")
         ttk.Label(
             f, wraplength=520, foreground="grey",
-            text="\nHold the key (or key combination) while speaking; "
+            text="Hold the key (or key combination) while speaking; "
                  "release to insert the text.",
         ).pack(anchor="w")
 
-    def _capture_hotkey(self):
+        ttk.Label(f, text="\nDeveloper key(s) — for SQL, terminal commands "
+                          "and code:").pack(anchor="w")
+        dev_row = ttk.Frame(f)
+        dev_row.pack(anchor="w", pady=6)
+        self.dev_hotkey_btn = ttk.Button(
+            dev_row,
+            text=_hotkey_display(config.DEV_HOTKEY) if config.DEV_HOTKEY else "Off",
+            command=lambda: self._capture_hotkey("dev"),
+        )
+        self.dev_hotkey_btn.pack(side="left")
+        ttk.Button(dev_row, text="Turn off",
+                   command=self._dev_hotkey_off).pack(side="left", padx=(6, 0))
+        ttk.Button(dev_row, text="How to say code…",
+                   command=self._show_dev_help).pack(side="left", padx=(6, 0))
+        ttk.Label(
+            f, wraplength=520, foreground="grey",
+            text="Dictate with this key to get text that runs: “select star "
+                 "from users where id equals five” types SELECT * FROM users "
+                 "WHERE id = 5. It can include your dictation key — hold that, "
+                 "then add the extra key.",
+        ).pack(anchor="w")
+
+    def _dev_hotkey_off(self):
+        self.pending_dev_hotkey = []
+        self.dev_hotkey_btn.config(text="Off")
+
+    def _show_dev_help(self):
+        win = tk.Toplevel(self.root)
+        win.title("How to say code")
+        app_icon.set_window_icon(win)
+        win.transient(self.root)
+        win.resizable(False, False)
+        ttk.Label(win, text=dev_mode.HELP_TEXT, justify="left",
+                  font=("Consolas", 9), padding=14).pack(anchor="w")
+        ttk.Button(win, text="Close", command=win.destroy).pack(
+            anchor="e", padx=14, pady=(0, 12))
+
+    def _capture_hotkey(self, which="normal"):
         if self._capturing:
             return
         self._capturing = True
-        self.hotkey_btn.config(text="Hold 1 or 2 keys…")
+        btn = self.dev_hotkey_btn if which == "dev" else self.hotkey_btn
+        btn.config(text="Hold 1 or 2 keys…")
 
         pressed = []   # currently-held key names during this capture, max 2
         chosen = []    # the largest simultaneous combination seen so far
@@ -604,7 +643,7 @@ class _SettingsWindow:
         def refresh():
             shown = " + ".join(_friendly_key_name(n) for n in pressed)
             text = shown if shown else "Hold 1 or 2 keys…"
-            self.root.after(0, lambda: self.hotkey_btn.config(text=text))
+            self.root.after(0, lambda: btn.config(text=text))
 
         def on_press(key):
             name = getattr(key, "name", None) or getattr(key, "char", None)
@@ -621,7 +660,10 @@ class _SettingsWindow:
                 pressed.remove(name)
             if pressed or not chosen:
                 return
-            self.pending_hotkey = list(chosen)
+            if which == "dev":
+                self.pending_dev_hotkey = list(chosen)
+            else:
+                self.pending_hotkey = list(chosen)
             self._capturing = False
             return False  # stop this capture listener
 
@@ -1163,6 +1205,8 @@ class _SettingsWindow:
         }
         if self.pending_hotkey:
             values["hotkey"] = self.pending_hotkey
+        if self.pending_dev_hotkey is not None:
+            values["dev_hotkey"] = self.pending_dev_hotkey
         try:
             values["input_device"] = self._audio_values[self.audio_combo.current()]
         except Exception:

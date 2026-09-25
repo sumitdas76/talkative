@@ -41,6 +41,16 @@ ENABLE_SELF_CORRECTION = True
 # choice.
 ENABLE_SPOKEN_SYMBOLS = True
 
+# Second hotkey for "developer English": a dictation made with it goes
+# through dev_mode.py (SQL, terminal commands and code come out as runnable
+# text) instead of the normal cleanup. A separate key rather than a mode
+# switch, so the choice is made per dictation and never left on by
+# accident -- its rules ("star" -> *, no sentence period) are wrong for
+# ordinary writing. May contain HOTKEY (the default does): holding the
+# normal key and then adding the extra one upgrades that recording to
+# developer English. Empty tuple = off.
+DEV_HOTKEY = (keyboard.Key.ctrl_r, keyboard.Key.shift_r)
+
 # SELF_CORRECTION_TRIGGERS: phrases that signal the speaker is retracting what
 # they just said and the following words should replace it (e.g. "Send it
 # tomorrow, no wait, send it Friday." -> "Send it Friday."). Kept deliberately

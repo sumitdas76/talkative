@@ -163,7 +163,23 @@ async function handleTranscribe(request, env, timing) {
   form.append("file", new Blob([bytes], { type: "audio/wav" }), "audio.wav");
   form.append("model", "whisper-large-v3-turbo");
   form.append("language", "en"); // matches the local model's small.en (English-only)
-  form.append("response_format", "json");
+  // verbose_json for per-segment no_speech_prob / avg_logprob, so segments
+  // that are really silence can be dropped (see below).
+  form.append("response_format", "verbose_json");
+  // Optional bias prompt from the client (sentence style + personal
+  // dictionary vocabulary, or developer mode's literal-symbol style),
+  // base64 UTF-8 in X-Prompt-B64. Clients before 2026-09-25 never sent
+  // one; a malformed value is ignored rather than failing the dictation.
+  const promptB64 = request.headers.get("X-Prompt-B64");
+  if (promptB64) {
+    try {
+      const raw = Uint8Array.from(atob(promptB64), (c) => c.charCodeAt(0));
+      const prompt = new TextDecoder().decode(raw).slice(0, 800);
+      if (prompt.trim()) form.append("prompt", prompt);
+    } catch (e) {
+      // ignore
+    }
+  }
 
   const t0 = Date.now();
   const groqResp = await fetch(
@@ -185,8 +201,29 @@ async function handleTranscribe(request, env, timing) {
   }
   const result = await groqResp.json();
   timing.upstream_ms = Date.now() - t0;
-  return { text: result.text || "" };
+  // Whisper invents text for audio with no speech in it ("Thank you.",
+  // and with a prompt, prompt-flavored text like "dot com" or "So, I'll
+  // show you how to do it."). faster-whisper -- what Local mode uses --
+  // drops such segments with exactly this rule by default
+  // (no_speech_threshold 0.6 + log_prob_threshold -1.0); do the same here.
+  // Per-segment numbers go back in timing so the thresholds stay
+  // measurable from the client.
+  const segments = Array.isArray(result.segments) ? result.segments : null;
+  if (!segments) {
+    return { text: result.text || "" };
+  }
+  const kept = [];
+  timing.segments = segments.map((s) => {
+    const silent = s.no_speech_prob > NO_SPEECH_PROB && s.avg_logprob < MIN_AVG_LOGPROB;
+    if (!silent) kept.push(s.text || "");
+    return [round2(s.no_speech_prob), round2(s.avg_logprob), silent ? 0 : 1];
+  });
+  return { text: kept.join("").trim() };
 }
+
+const NO_SPEECH_PROB = 0.6;
+const MIN_AVG_LOGPROB = -1.0;
+const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 
 async function handleGrammar(request, env, timing) {
   const { text } = await request.json();

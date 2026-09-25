@@ -4,7 +4,7 @@ import time
 
 from pynput import keyboard
 
-from . import cloud_client, cloud_notice, config, error_toast, feedback, grammar_engine, history, model_manager, onboarding, pill, settings, try_it_now, updater
+from . import cloud_client, cloud_notice, config, dev_mode, error_toast, feedback, grammar_engine, history, model_manager, onboarding, pill, settings, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -73,8 +73,9 @@ class TalkativeApp:
         self._tones = {}  # (freq, seconds) -> generated sample array, cached
         self._jobs = 0  # dictations currently in the pipeline (updater idle check)
         self._swapping = False  # model swap in progress (update install/undo)
-        self._hotkey_pressed = set()  # currently-held keys that are part of config.HOTKEY
+        self._hotkey_pressed = set()  # currently-held keys that are part of HOTKEY or DEV_HOTKEY
         self._chord_active = False  # chord already handled for this press-hold, ignore OS key-repeat
+        self._dev_dictation = False  # current recording is developer English (DEV_HOTKEY)
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
             hotkey_label=friendly_key(config.HOTKEY),
@@ -98,7 +99,7 @@ class TalkativeApp:
         self.recorder.device = config.INPUT_DEVICE
         self._hotkey_pressed.clear()
         self._chord_active = False
-        self.tray.set_hotkey_label(friendly_key(config.HOTKEY))
+        self.tray.set_hotkey_label(friendly_key(config.HOTKEY), friendly_key(config.DEV_HOTKEY) if config.DEV_HOTKEY else "")
         self._sync_processing_mode()
         if self.transcriber is not None and not self._recording:
             self.tray.set_idle()  # refresh the tooltip with the new hotkey
@@ -254,7 +255,7 @@ class TalkativeApp:
         self.transcriber = None
         self._no_model = True
         gc.collect()
-        self.tray.set_loading("no model — open Settings, then Models")
+        self.tray.set_loading("no model â€” open Settings, then Models")
 
     def updater_controller(self):
         """The narrow surface updater.py drives a model swap through.
@@ -297,10 +298,19 @@ class TalkativeApp:
         )
 
     def _on_press(self, key):
-        if key not in config.HOTKEY:
+        if key not in config.HOTKEY and key not in config.DEV_HOTKEY:
             return
         self._hotkey_pressed.add(key)
-        if self._hotkey_pressed != set(config.HOTKEY):
+        dev = bool(config.DEV_HOTKEY) and self._hotkey_pressed == set(config.DEV_HOTKEY)
+        if self._recording:
+            # The developer chord may contain the normal one (default: Right
+            # Ctrl, + Right Shift for developer English). Completing it
+            # mid-recording upgrades this dictation instead of being ignored
+            # -- same audio, only the processing differs.
+            if dev:
+                self._dev_dictation = True
+            return
+        if not dev and self._hotkey_pressed != set(config.HOTKEY):
             return
         # Windows re-fires on_press at the OS key-repeat rate for as long as
         # the chord is held. Without this guard, holding the hotkey over an
@@ -313,11 +323,10 @@ class TalkativeApp:
         if self._chord_active:
             return
         self._chord_active = True
-        if self._recording:
-            return
+        self._dev_dictation = dev
 
         if self._swapping:
-            self.tray.notify("Updating — ready in a moment.")
+            self.tray.notify("Updating â€” ready in a moment.")
             return
 
         if self.transcriber is None:
@@ -347,7 +356,7 @@ class TalkativeApp:
         self._beep("start")
 
     def _on_release(self, key):
-        if key not in config.HOTKEY:
+        if key not in config.HOTKEY and key not in config.DEV_HOTKEY:
             return
         self._hotkey_pressed.discard(key)
         self._chord_active = False
@@ -364,19 +373,22 @@ class TalkativeApp:
         if duration < config.MIN_RECORDING_SECONDS:
             return
 
-        threading.Thread(target=self._process_audio, args=(audio,), daemon=True).start()
+        threading.Thread(
+            target=self._process_audio, args=(audio, self._dev_dictation), daemon=True
+        ).start()
 
-    def _process_audio(self, audio):
+    def _process_audio(self, audio, dev=False):
         self._jobs += 1
         try:
-            self._process_audio_inner(audio)
+            self._process_audio_inner(audio, dev)
         finally:
             self._jobs -= 1
 
-    def _process_audio_inner(self, audio):
-        prompt = " ".join(
-            p for p in (config.PUNCTUATION_PROMPT, vocabulary_prompt()) if p
-        ) or None
+    def _process_audio_inner(self, audio, dev=False):
+        # Developer English swaps the sentence-style bias prompt for one
+        # that keeps spoken symbols as literal words (see dev_mode.py).
+        base_prompt = dev_mode.STT_PROMPT if dev else config.PUNCTUATION_PROMPT
+        prompt = " ".join(p for p in (base_prompt, vocabulary_prompt()) if p) or None
         t0 = time.time()
         try:
             if self._cloud_active():
@@ -393,6 +405,17 @@ class TalkativeApp:
         transcribe_secs = time.time() - t0
 
         raw = text
+        if dev:
+            text, is_code = dev_mode.process(text)
+            if is_code:
+                # A command/code line is final after the rules pass: no
+                # filler/correction/repeat rules, no grammar model, no
+                # sentence period, and no personal dictionary (an expansion
+                # like "AI" -> "artificial intelligence" would corrupt code).
+                _debug_log(raw=raw, final=text,
+                           timing=f"transcribe {transcribe_secs:.1f}s [developer: code]")
+                self._insert_final(text)
+                return
         # Symbol words ("underscore", "dot") first, before anything else
         # sees the text -- this fixes literal-word transcription
         # ("settings dot py") into the intended identifier
@@ -417,6 +440,10 @@ class TalkativeApp:
             else:
                 text = cloud_client.grammar_apply(text)
             grammar_secs = time.time() - t0
+            if dev:
+                # The grammar model likes to wrap paths in backticks
+                # ("`/api/v2/users`"); plain text is wanted here.
+                text = dev_mode.strip_backticks(text)
             after_grammar = text
             text = finish_sentence(text)
         else:
@@ -434,9 +461,12 @@ class TalkativeApp:
             final=text,
             timing=f"transcribe {transcribe_secs:.1f}s, grammar {grammar_secs:.1f}s"
             + (f" [{config.GRAMMAR_MODEL_DIR if grammar_used_local else 'cloud'}]"
-               if grammar_secs else ""),
+               if grammar_secs else "")
+            + (" [developer: prose]" if dev else ""),
         )
+        self._insert_final(text)
 
+    def _insert_final(self, text):
         if not text:
             return
 
@@ -450,7 +480,7 @@ class TalkativeApp:
             history.add(text)
         updater.note_words(len(text.split()))
         if config.INSERT_MODE == "clipboard":
-            self.tray.notify("Copied to clipboard — press Ctrl+V to paste.")
+            self.tray.notify("Copied to clipboard â€” press Ctrl+V to paste.")
 
     def run(self):
         sync_autostart()
@@ -470,7 +500,7 @@ class TalkativeApp:
         updater.start_background_check(self.updater_controller())
         feedback.start_background_check(
             on_reply=lambda text: self.tray.notify(
-                text if len(text) <= 200 else text[:197] + "…",
+                text if len(text) <= 200 else text[:197] + "â€¦",
                 title="Sumit replied",
             )
         )

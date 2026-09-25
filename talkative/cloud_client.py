@@ -15,6 +15,7 @@ urllib.request only, explicit timeouts, and the same graceful-degradation
 contract each function's local counterpart already has.
 """
 
+import base64
 import io
 import json
 import urllib.error
@@ -106,7 +107,16 @@ def transcribe(audio, sample_rate, initial_prompt=None):
     audio = _trim_trailing_silence(audio, sample_rate)
     body = _wav_bytes(audio, sample_rate)
     url = config.CLOUD_ENDPOINT_URL.rstrip("/") + "/transcribe"
-    req = urllib.request.Request(url, data=body, headers=_headers("audio/wav"))
+    headers = _headers("audio/wav")
+    if initial_prompt:
+        # The bias prompt (sentence style + personal-dictionary vocabulary,
+        # or developer mode's literal-symbol style) reaches Groq's `prompt`
+        # field via the Worker. Base64 because headers must be ASCII and
+        # dictionary words needn't be. Until 2026-09-25 this was accepted
+        # and silently dropped, so Cloud mode never got any biasing.
+        headers["X-Prompt-B64"] = base64.b64encode(
+            initial_prompt[:800].encode("utf-8")).decode("ascii")
+    req = urllib.request.Request(url, data=body, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             result = json.loads(r.read().decode("utf-8"))

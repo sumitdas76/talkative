@@ -893,6 +893,53 @@ draft from earlier in the session was never actually posted by the
 user, last known state was a revision incorporating their voice/tone
 feedback.
 
+## Resume point (paused mid-session, 2026-09-25 late evening) -- START HERE
+
+**Shipped this session:** v1.3.5 (live, "Latest"): one-click app
+updates (see that section) + the collapse_repeats list fix. Cloud latency
+work from earlier the same day.
+
+**In progress, committed but UNRELEASED: Developer English** (see its
+section above). Goal set by the user: iterate the vocabulary/rules toward
+~99%. Scores at pause (`tools/dev_mode_study`, all 250 phrases):
+rules alone 250/250; Cloud Ravi (Indian English) 88.4% (from 70%);
+Cloud Zira (US) 86.2% on the 160 transcribed so far; Local four voices
+82.1%; ordinary sentences kept as prose 48/48. Normal mode on the same
+phrases: ~15%. What's left is almost all STT mishearing; only add fixes
+a real speaker would also trigger (the README and `_MISHEARD*` comments
+say how that's judged).
+
+**Next steps, in order:**
+1. **Worker silence filter is written but NOT deployed** (`cloud/worker.js`
+   handleTranscribe: verbose_json + drop segments with no_speech_prob >
+   0.6 && avg_logprob < -1.0, per-segment stats in `timing.segments`).
+   Needed before releasing: with the new prompt plumbing, silent/noisy
+   presses produced invented sentences ("So, I'll show you how to do
+   it.", dev prompt: "dot com"); even today's Cloud pastes "Thank you."
+   on silence. User runs `! cd /c/Users/sumit/Projects/Talkative/cloud
+   && npx wrangler deploy`. This one affects current 1.3.5 users
+   immediately -- right after deploying, re-test silent clips AND real
+   speech from several voices (check `timing.segments` margins); if any
+   real speech is dropped, `npx wrangler rollback`.
+2. Finish Cloud transcripts: Zira has 160/250, then the FINAL set
+   (`stt cloud <voice> <rate> final` for zira 0, ravi 0, heera 2) and
+   report that score -- once, without tuning on it. Reset
+   `groq_requests_today.txt` to 0 on a new day (the study used 399 of its
+   750 budget on 2026-09-25).
+3. Set this machine's `dev_hotkey` to `["ctrl_r"]` (user's choice; normal
+   key stays Left Ctrl + Left Alt), rebuild, and have the user dictate
+   10-15 real commands with their own voice (debug_log is ON in their
+   settings -- read `debug.log`; turn it off afterwards, it stores
+   transcript text).
+4. Release (1.3.6) once 1-3 are done: CHANGELOG entry for Developer
+   English + the Cloud prompt fix. Then the Wispr Flow comparison: give
+   the user corpus3 phrases to speak into Wispr Flow and score its output
+   with the same `score()` rules.
+
+**Also noticed, not fixed:** `settings.py`'s `_SPECIAL_KEYS` has no
+`output_device`, so Settings' output-device choice is never saved --
+looks like a real pre-existing bug; confirm before fixing.
+
 ## Resume point (end of session, 2026-09-25)
 
 **Done this session:** Cloud-mode latency work, all in `cloud/` (Worker
@@ -922,6 +969,57 @@ deploy` (check the shell's current directory first: running it from the
 project root fails with "Could not detect a directory containing static
 files"). `wrangler deploy --dry-run` and `wrangler kv ...` reads are
 allowed and good for pre-checks.
+
+## Developer English (added 2026-09-25, not yet released)
+
+A second hotkey, `config.DEV_HOTKEY` (settings key `dev_hotkey`; default
+Right Ctrl + Right Shift, `[]` = off; this dev machine uses `["ctrl_r"]`
+with Left Ctrl + Left Alt as the normal key), dictates SQL / terminal /
+PowerShell / code as runnable text. Separate key rather than a mode
+toggle at the user's request, so the choice is per dictation.
+`app._on_press` lets the developer chord contain the normal one: adding
+the extra key mid-recording *upgrades* that dictation.
+
+`talkative/dev_mode.py` is all of it, pure rules, no model:
+`process(raw)` classifies (`is_code_line`) and returns `(text, is_code)`.
+Code lines skip fillers/corrections/repeats/grammar/sentence period/
+personal dictionary entirely; prose falls through to the normal pipeline
+after `prose_symbols()`. Its own STT bias prompt (`STT_PROMPT`,
+lowercase literal-symbol style) replaces `PUNCTUATION_PROMPT`.
+
+**Measured, not guessed** -- study harness, corpora and transcript caches
+live in `tools/dev_mode_study/` (see its README): `corpus2.py` 250
+phrases, `corpus3.py` 80-phrase final set never tuned on,
+`prose_guard.py` 48 ordinary sentences that must stay prose,
+`hotkey_test.py`, `pipeline_test.py`, `settings_layout.py`. Synthetic SAPI/OneCore voices incl. Indian English
+Ravi/Heera. Rules alone (perfect transcript): 100% of all 250. Real
+voices are capped by STT mishearings -- see the `_MISHEARD*` lists: every
+entry is something nobody would say literally in a command ("executive"
+for exec, "dish" for dash, Indian "git" heard as "get"); fixes that only
+helped the synthetic voices were deliberately NOT added. Command-only
+fixes (`_MISHEARD_CODE`) never touch prose, and only count for
+*classification* if they turn the first word into a command -- otherwise
+"I washed the dish" read as code. Everyday-verb commands
+(`_ENGLISHY_COMMANDS`: ping/cat/echo/kill/touch/code) need something
+command-like on the line ("ping me when it's green" is English).
+Re-run `prose_guard.py` after any classifier change.
+
+**Cloud STT prompt was silently dropped until 2026-09-25**:
+`cloud_client.transcribe()` accepted `initial_prompt` and never sent it,
+and `worker.js` had no prompt field -- so Cloud mode never got the
+punctuation prompt or personal-dictionary vocabulary biasing, only Local
+did. Fixed: client sends `X-Prompt-B64` (base64 UTF-8, 800-char cap),
+Worker passes it as Groq's `prompt` (deployed, version e7c6803a). Old
+clients don't send it, so released versions are unaffected until they
+update. Watch for Whisper echoing prompt text on near-silent audio now
+that normal mode's Cloud prompt is live in new builds.
+
+**Study traps**: the Worker's per-install cap (300/day) 429s a single
+test install id quickly -- the harness rotates throwaway ids and counts
+its own Groq requests against a budget, keeping ~400 of Groq's ~2000/day
+free transcriptions for real users (the key is shared with them). Two
+processes writing one SAPI temp wav collide (COM Open error) -- use a
+per-pid path.
 
 ## One-click app updates (added 2026-09-25, ships in 1.3.5)
 

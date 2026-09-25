@@ -60,7 +60,7 @@ _KEYS = {
 }
 
 # Keys handled outside the type-checked table.
-_SPECIAL_KEYS = ("hotkey", "input_device")
+_SPECIAL_KEYS = ("hotkey", "dev_hotkey", "input_device")
 
 
 def settings_dir():
@@ -149,6 +149,16 @@ def load_into_config(path=None):
     if hotkey is not None:
         config.HOTKEY = hotkey
         applied["hotkey"] = data["hotkey"]
+
+    # dev_hotkey: same format; an empty list turns developer English off.
+    if data.get("dev_hotkey") == []:
+        config.DEV_HOTKEY = ()
+        applied["dev_hotkey"] = []
+    else:
+        dev_hotkey = _parse_hotkey(data.get("dev_hotkey"))
+        if dev_hotkey is not None:
+            config.DEV_HOTKEY = dev_hotkey
+            applied["dev_hotkey"] = data["dev_hotkey"]
 
     # input_device: None (default) or a sounddevice input index / name.
     if "input_device" in data and isinstance(data["input_device"], (type(None), int, str)):
