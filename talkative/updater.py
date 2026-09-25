@@ -23,6 +23,12 @@ publishing act. Client side, in this module:
   update" with a word countdown; using it restores the old version and
   permanently suppresses that update. Only one step back is ever kept.
 
+New app versions are NOT installed by this module -- the same daily pass
+only checks config.RELEASES_API_URL (the latest GitHub release) and, if
+it's newer than the running __version__, shows a prompt whose Download
+button opens the release page in the browser. "Not now" snoozes that
+version for a week, same as model updates ("app@<version>" in snoozed).
+
 State lives in %LOCALAPPDATA%\\Talkative\\updater.json:
 { "last_check": "2026-07-19", "snoozed": {"grammar@2": "2026-07-26"},
   "suppressed": ["grammar@2"],
@@ -37,7 +43,7 @@ import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
 
-from . import app_icon, config, model_manager, overlay_thread
+from . import __version__, app_icon, config, model_manager, overlay_thread
 
 # Manifest key -> what it is locally. "speech" entries update the
 # faster-whisper repo dirs; "grammar" updates the invisible engine.
@@ -141,6 +147,60 @@ def snooze(key, entry):
     until = (date.today() + timedelta(days=7)).isoformat()
     state.setdefault("snoozed", {})[f"{key}@{entry.get('version')}"] = until
     _save_state(state)
+
+
+def _parse_version(s):
+    """'v1.3.5' / '1.3.5' -> (1, 3, 5); None if it isn't all dotted ints."""
+    parts = str(s).strip().lstrip("vV").split(".")
+    try:
+        return tuple(int(p) for p in parts)
+    except ValueError:
+        return None
+
+
+def fetch_latest_release():
+    """(version, page_url) of the latest published release, or None.
+    Offline, rate-limited, or malformed all silently return None."""
+    url = config.RELEASES_API_URL
+    if not url:
+        return None
+    try:
+        req = urllib.request.Request(url, headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": f"Talkative/{__version__}",
+        })
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        if not isinstance(data, dict) or data.get("draft") or data.get("prerelease"):
+            return None
+        version = str(data.get("tag_name", "")).strip().lstrip("vV")
+        page = str(data.get("html_url", "")).strip()
+        if not version or not page.startswith("https://github.com/"):
+            return None
+        return version, page
+    except Exception:
+        return None
+
+
+def find_app_update(release):
+    """The release if it's newer than the running app and not snoozed."""
+    if not release:
+        return None
+    version, _ = release
+    latest, running = _parse_version(version), _parse_version(__version__)
+    if latest is None or running is None or latest <= running:
+        return None
+    if _load_state().get("snoozed", {}).get(f"app@{version}", "") >= date.today().isoformat():
+        return None
+    return release
+
+
+def snooze_app(version):
+    with _state_lock:
+        state = _load_state()
+        until = (date.today() + timedelta(days=7)).isoformat()
+        state.setdefault("snoozed", {})[f"app@{version}"] = until
+        _save_state(state)
 
 
 def get_status():
@@ -356,8 +416,8 @@ def undo_last_update(controller):
 # Startup check + dialog
 # ---------------------------------------------------------------------------
 
-def _show_dialog(entry, on_download, on_cancel):
-    """Component-blind update prompt. Built as a tk.Toplevel on the shared
+def _prompt(text, on_download, on_cancel):
+    """Download / Not now prompt. Built as a tk.Toplevel on the shared
     overlay thread (see overlay_thread.py -- multiple independent tk.Tk()
     roots across threads caused real crashes), not its own Tk instance;
     no grab, no focus stealing."""
@@ -375,15 +435,6 @@ def _show_dialog(entry, on_download, on_cancel):
             root.title("Talkative")
             app_icon.set_window_icon(root)
             root.resizable(False, False)
-            size = entry.get("size_mb")
-            note = str(entry.get("note", "")).strip()
-            text = "An improvement update is available"
-            if isinstance(size, (int, float)) and size > 0:
-                text += f" ({size:.0f} MB)".replace(".0", "")
-            text += "."
-            if note:
-                text += f"\n\n{note}"
-            text += "\n\nDictation keeps working while it downloads."
             ttk.Label(root, text=text, wraplength=360, padding=16).pack()
             row = ttk.Frame(root, padding=(16, 0, 16, 14))
             row.pack(fill="x")
@@ -403,6 +454,36 @@ def _show_dialog(entry, on_download, on_cancel):
     overlay.build(build)
 
 
+def _show_dialog(entry, on_download, on_cancel):
+    """Component-blind model update prompt -- never names the model."""
+    size = entry.get("size_mb")
+    note = str(entry.get("note", "")).strip()
+    text = "An improvement update is available"
+    if isinstance(size, (int, float)) and size > 0:
+        text += f" ({size:.0f} MB)".replace(".0", "")
+    text += "."
+    if note:
+        text += f"\n\n{note}"
+    text += "\n\nDictation keeps working while it downloads."
+    _prompt(text, on_download, on_cancel)
+
+
+def _show_app_dialog(version, page):
+    import webbrowser
+
+    text = (
+        f"A new version of Talkative is available: {version} "
+        f"(you have {__version__}).\n\n"
+        "Download opens the release page, where you can get the installer. "
+        "Installing it keeps your settings."
+    )
+    _prompt(
+        text,
+        on_download=lambda: webbrowser.open(page),
+        on_cancel=lambda: snooze_app(version),
+    )
+
+
 def start_background_check(controller):
     """Call once at startup. Waits for things to settle, then does the
     at-most-once-a-day manifest check and drives the whole flow."""
@@ -416,6 +497,9 @@ def start_background_check(controller):
                 return
             state["last_check"] = today
             _save_state(state)
+        release = find_app_update(fetch_latest_release())
+        if release:
+            _show_app_dialog(*release)
         manifest = fetch_manifest()
         if not manifest:
             return

@@ -149,7 +149,8 @@ ENABLE_HISTORY = False
 # Near-repeat collapsing: when two consecutive sentences in one dictation are
 # nearly identical, keep only the second (the speaker restated themselves).
 # Deliberately conservative -- both sentences must share their opening word
-# and reach REPEAT_SIMILARITY, because wrongly merging two intentional
+# and exceed REPEAT_SIMILARITY, and runs of 3+ same-opening sentences (spoken
+# lists) are never collapsed, because wrongly merging two intentional
 # sentences deletes the user's words (the worst possible failure).
 ENABLE_REPEAT_COLLAPSE = True
 REPEAT_SIMILARITY = 0.75
@@ -217,6 +218,13 @@ OUTPUT_DEVICE = None
 MANIFEST_URL = (
     "https://raw.githubusercontent.com/sumitdas76/talkative-updates/"
     "main/manifest.json"
+)
+# Latest published app release, checked in the same once-a-day startup pass
+# as MANIFEST_URL. A newer version than the running one shows a prompt that
+# opens the release page -- it never downloads or installs anything itself.
+# Empty string disables the check.
+RELEASES_API_URL = (
+    "https://api.github.com/repos/sumitdas76/talkative/releases/latest"
 )
 # The replaced model is kept for undo until this many words have been
 # dictated with the new one (usage-based grace, spec section 7.6).

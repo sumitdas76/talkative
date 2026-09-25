@@ -72,7 +72,10 @@ def _is_restatement(prev, curr):
     a, b = _content_words(prev), _content_words(curr)
     if not a or not b or a[0] != b[0]:
         return False
-    if SequenceMatcher(None, a, b).ratio() < config.REPEAT_SIMILARITY:
+    # Strictly above: at exactly the threshold, short sentences differing by
+    # one tail word ("I lost my job" / "I lost my deposits", 3 of 4 words)
+    # were collapsed live even though they were two intended list items.
+    if SequenceMatcher(None, a, b).ratio() <= config.REPEAT_SIMILARITY:
         return False
     # A difference sandwiched between a shared prefix AND a shared suffix
     # ("we need three PEOPLE for this" / "we need three CHAIRS for this")
@@ -101,9 +104,19 @@ def collapse_repeats(text):
     if len(sentences) < 2:
         return text
 
+    # Three or more consecutive sentences sharing their first two words
+    # ("I spoke with the head of sales. ... of marketing. ... of finance.")
+    # are a spoken list, not a speaker restating one thing -- nobody corrects
+    # themselves twice in the same shape. Never collapse inside such a run.
+    openings = [tuple(_content_words(s)[:2]) for s in sentences]
+    in_list = [False] * len(sentences)
+    for i in range(len(sentences) - 2):
+        if len(openings[i]) == 2 and openings[i] == openings[i + 1] == openings[i + 2]:
+            in_list[i] = in_list[i + 1] = in_list[i + 2] = True
+
     kept = [sentences[0]]
-    for sentence in sentences[1:]:
-        if _is_restatement(kept[-1], sentence):
+    for i, sentence in enumerate(sentences[1:], start=1):
+        if not in_list[i] and _is_restatement(kept[-1], sentence):
             kept[-1] = sentence  # the restatement wins
         else:
             kept.append(sentence)

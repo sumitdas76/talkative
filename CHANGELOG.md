@@ -2,6 +2,26 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [Unreleased]
+
+### Added
+
+- Talkative now tells you when a new version is out. Once a day at
+  startup it checks for a newer release and, if there is one, shows a
+  short message with a Download button that opens the release page.
+  It never downloads or installs anything on its own, and "Not now"
+  hides the message for a week. Versions before this one can't do this,
+  so this is the last update you'll need to find by hand.
+
+### Fixed
+
+- Short sentences that started the same way could be mistaken for you
+  repeating yourself, and the earlier one was silently deleted -- for
+  example "I lost my job. I lost my deposits." came out as only "I lost
+  my deposits." Lists of sentences like this are now kept in full, while
+  genuine corrections ("Let's meet Monday. Let's meet Tuesday instead.")
+  are still tidied up as before.
+
 ## [1.3.4] - 2026-09-20
 
 ### Changed
