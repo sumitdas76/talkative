@@ -121,15 +121,43 @@ export class QuotaCounter extends DurableObject {
 }
 
 async function checkAndIncrementQuota(env, installId) {
-  const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+  const day = today(); // YYYY-MM-DD (UTC)
   const stub = env.QUOTA_DO.get(env.QUOTA_DO.idFromName(installId));
   return await stub.take(day, DAILY_QUOTA_PER_INSTALL);
+}
+
+// Handlers return a plain payload object (the fetch handler adds timing
+// and builds the Response, since with speculative quota checks the quota
+// result may arrive after the handler finishes), or BUSY for an upstream
+// rate limit.
+const BUSY = Symbol("busy");
+
+// Last quota count this isolate saw per install, for speculative mode
+// (see the fetch handler). Isolate memory only.
+const SPECULATE_MARGIN = 50;
+const knownCounts = new Map();
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function rememberCount(installId, count) {
+  if (knownCounts.size > 10000) {
+    knownCounts.clear();
+  }
+  knownCounts.set(installId, { day: today(), count });
+}
+
+function knownNearCap(installId) {
+  const k = knownCounts.get(installId);
+  return !!k && k.day === today() &&
+    k.count >= DAILY_QUOTA_PER_INSTALL - SPECULATE_MARGIN;
 }
 
 async function handleTranscribe(request, env, timing) {
   const bytes = new Uint8Array(await request.arrayBuffer());
   if (bytes.length === 0) {
-    return Response.json({ text: "" });
+    return { text: "" };
   }
   const form = new FormData();
   form.append("file", new Blob([bytes], { type: "audio/wav" }), "audio.wav");
@@ -150,20 +178,20 @@ async function handleTranscribe(request, env, timing) {
     // Groq's own free-tier limit, not ours -- surface the same "busy" shape
     // our per-install quota uses so cloud_client.py's existing 429 handling
     // (CLOUD_BUSY_MESSAGE) covers this too, no client-side change needed.
-    return quotaExceeded();
+    return BUSY;
   }
   if (!groqResp.ok) {
     throw new Error(`Groq transcription failed: ${groqResp.status} ${await groqResp.text()}`);
   }
   const result = await groqResp.json();
   timing.upstream_ms = Date.now() - t0;
-  return Response.json({ text: result.text || "", timing });
+  return { text: result.text || "" };
 }
 
 async function handleGrammar(request, env, timing) {
   const { text } = await request.json();
   if (!text) {
-    return Response.json({ text: "" });
+    return { text: "" };
   }
   const messages = [{ role: "system", content: SYSTEM }];
   for (const [spoken, cleaned] of SHOTS) {
@@ -211,7 +239,7 @@ async function handleGrammar(request, env, timing) {
         // Groq's own server-side time, to separate model time from the
         // Worker<->Groq network hop.
         timing.groq_total_ms = Math.round((result.usage?.total_time || 0) * 1000);
-        return Response.json({ text: plainText(out), via: "groq", timing });
+        return { text: plainText(out), via: "groq" };
       }
       groqError = "empty completion";
     } else {
@@ -225,16 +253,15 @@ async function handleGrammar(request, env, timing) {
     messages,
     temperature: 0,
   });
-  return Response.json({
+  return {
     text: result.response || text,
     via: "workers-ai",
     groq_error: groqError,
-    timing,
-  });
+  };
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method !== "POST") {
       return new Response("Not found", { status: 404 });
     }
@@ -245,30 +272,58 @@ export default {
     if (!installId) {
       return new Response("Missing X-Install-Id", { status: 400 });
     }
-    // Per-stage server-side timings, returned in each JSON response so
-    // cloud latency can be broken down from the client (see
-    // cloud_client.py's callers / the debug.log timing line).
-    const tq = Date.now();
-    const quota = await checkAndIncrementQuota(env, installId);
-    if (!quota.ok) {
-      return quotaExceeded();
-    }
-    const timing = {
-      quota_ms: Date.now() - tq,
-      quota_count: quota.count,
-      colo: request.cf?.colo,
-    };
     const url = new URL(request.url);
+    const handler = { "/transcribe": handleTranscribe, "/grammar": handleGrammar }[url.pathname];
+    if (!handler) {
+      return new Response("Not found", { status: 404 });
+    }
+
+    // Per-stage server-side timings, returned in each JSON response so
+    // cloud latency can be broken down from the client.
+    const timing = { colo: request.cf?.colo };
+    const tq = Date.now();
+    const quotaPromise = checkAndIncrementQuota(env, installId).then((q) => {
+      timing.quota_ms = Date.now() - tq;
+      timing.quota_count = q.count;
+      rememberCount(installId, q.count);
+      return q;
+    });
+
+    // Speculative mode: the quota check (~70ms from a warm isolate, ~650ms
+    // from a fresh one -- measured 2026-09-25, BOM; real dictations are
+    // minutes apart, so mostly fresh) is taken off the response path
+    // entirely -- it still runs and counts exactly, via ctx.waitUntil,
+    // and its result teaches this isolate the install's count. Installs
+    // this isolate knows are at or near their cap are gated before
+    // anything reaches Groq, exactly as before. Speculating on installs
+    // this isolate hasn't seen costs no real protection: X-Install-Id is client-chosen,
+    // so an abuser could already mint fresh ids that start at zero -- the
+    // per-install quota only ever reined in runaway legitimate installs,
+    // and the providers' free-tier caps remain the real cost backstop. The
+    // leak is at most one served request per fresh isolate for an
+    // over-cap install before that isolate learns its count. (Speculative
+    // responses only carry quota_ms/quota_count if the check happened to
+    // finish before the upstream call did.)
+    const speculative = !knownNearCap(installId);
+    timing.speculative = speculative;
     try {
-      if (url.pathname === "/transcribe") {
-        return await handleTranscribe(request, env, timing);
+      let payload;
+      if (speculative) {
+        ctx.waitUntil(quotaPromise);
+        payload = await handler(request, env, timing);
+      } else {
+        const quota = await quotaPromise;
+        if (!quota.ok) {
+          return quotaExceeded();
+        }
+        payload = await handler(request, env, timing);
       }
-      if (url.pathname === "/grammar") {
-        return await handleGrammar(request, env, timing);
+      if (payload === BUSY) {
+        return quotaExceeded();
       }
+      return Response.json({ ...payload, timing });
     } catch (err) {
       return Response.json({ error: String(err) }, { status: 500 });
     }
-    return new Response("Not found", { status: 404 });
   },
 };

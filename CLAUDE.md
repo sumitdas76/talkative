@@ -279,10 +279,22 @@ the client-side digit guard then rejects (falls back to un-grammared text)
 -- the old model did this too; not yet addressed. Quota moved from KV to a
 Durable Object because KV's per-colo read caching under-counted badly
 (10 requests -> count of 2, even with awaited writes ~2x under); the DO
-counts exactly but still costs ~75ms or ~650ms per call (bimodal, cause
-not yet investigated). Smart Placement enabled in `wrangler.toml`; it only
-takes effect after Cloudflare samples traffic (`Cf-Placement` response
-header shows `local-BOM` until then). Net: ~2-3s -> ~1-1.7s for both calls.
+counts exactly. Its call costs ~70ms from a warm isolate but ~650ms from a
+fresh one (and real dictations, minutes apart, mostly hit fresh isolates),
+so the quota check is now *speculative*: run via `ctx.waitUntil`, off the
+response path, unless the isolate's in-memory `knownCounts` says the
+install is within `SPECULATE_MARGIN` (50) of its cap, in which case it's
+gated first as before. Safe because `X-Install-Id` is client-chosen --
+the per-install quota never stopped a determined abuser (mint new ids),
+only runaway legit installs; leak is one request per fresh isolate for an
+over-cap install. Verified: 310 concurrent requests under one id -> exactly
+300 accepted, 10 x 429 (use empty `/transcribe` bodies for this test: they
+count against the quota but return before calling Groq). Smart Placement
+is enabled in `wrangler.toml`; it only takes effect after Cloudflare
+samples traffic (`Cf-Placement` response header shows `local-BOM` until
+then). Net: ~2-3s -> ~1.0s for both calls, stable with 60s gaps between
+dictations. Remaining floor is the BOM<->Groq hop (~110ms transcribe,
+~330ms grammar, beyond Groq's own time).
 `wrangler deploy` from Claude Code is blocked by the auto-mode classifier;
 the user runs it via `! npx wrangler deploy` from `cloud/`.
 
