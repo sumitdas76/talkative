@@ -1,4 +1,4 @@
-; Talkative installer (product spec section 8).
+﻿; Talkative installer (product spec section 8).
 ; Build:  ISCC.exe installer\Talkative.iss   (from the project root, after
 ; a fresh PyInstaller build in dist\).
 ;
@@ -19,7 +19,7 @@
 ;   half-gigabyte left behind).
 
 #define MyAppName "Talkative"
-#define MyAppVersion "1.3.4"
+#define MyAppVersion "1.3.5"
 #define MyAppExeName "Talkative.exe"
 
 [Setup]
@@ -69,6 +69,79 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; \
     Flags: nowait postinstall skipifsilent
 
 [Code]
+{ /UPDATE is passed only by the app's own one-click updater (updater.py),
+  always together with /VERYSILENT. In that mode the installer makes sure
+  the old app is gone before copying files, and relaunches the app when it
+  finishes -- including when the install FAILED (Inno has already rolled
+  the old files back by then), so an update can never leave the user with
+  Talkative silently not running. }
+function IsUpdateMode: Boolean;
+begin
+  Result := Pos('/UPDATE', UpperCase(GetCmdTail)) > 0;
+end;
+
+function TalkativeRunning: Boolean;
+var
+  ResultCode: Integer;
+  OutFile: String;
+  Output: AnsiString;
+begin
+  Result := False;
+  OutFile := ExpandConstant('{tmp}\tasklist.txt');
+  if Exec(ExpandConstant('{cmd}'),
+          '/C tasklist /FI "IMAGENAME eq {#MyAppExeName}" /NH > "' + OutFile + '"',
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+     and LoadStringFromFile(OutFile, Output) then
+    Result := Pos(Lowercase('{#MyAppExeName}'), Lowercase(String(Output))) > 0;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+  I: Integer;
+begin
+  Result := '';
+  if IsUpdateMode then
+  begin
+    { The app exits by itself right after launching this installer; wait
+      up to ~15s for that, then force-kill whatever is left so the EXE
+      isn't locked. NO /T here, unlike uninstall below: this installer was
+      started BY Talkative, so it's part of Talkative's process tree, and
+      /T killed the installer itself mid-update (found in live testing,
+      2026-09-25). /IM alone still gets both onefile processes -- they
+      share the EXE name. tasklist's output contains the EXE name only
+      while a matching process exists. }
+    for I := 1 to 30 do
+    begin
+      if not TalkativeRunning then
+        Break;
+      Sleep(500);
+    end;
+    if TalkativeRunning then
+    begin
+      Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#MyAppExeName}',
+        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Sleep(1000);
+    end;
+  end;
+end;
+
+procedure DeinitializeSetup;
+var
+  ResultCode: Integer;
+  Exe: String;
+begin
+  if not IsUpdateMode then
+    Exit;
+  try
+    Exe := ExpandConstant('{app}\{#MyAppExeName}');
+  except
+    Exe := ExpandConstant('{userpf}\{#MyAppName}\{#MyAppExeName}');
+  end;
+  if FileExists(Exe) then
+    ShellExec('', Exe, '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+end;
+
 function VCRuntimeMissing: Boolean;
 var
   Installed: Cardinal;

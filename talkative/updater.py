@@ -23,11 +23,14 @@ publishing act. Client side, in this module:
   update" with a word countdown; using it restores the old version and
   permanently suppresses that update. Only one step back is ever kept.
 
-New app versions are NOT installed by this module -- the same daily pass
-only checks config.RELEASES_API_URL (the latest GitHub release) and, if
-it's newer than the running __version__, shows a prompt whose Download
-button opens the release page in the browser. "Not now" snoozes that
-version for a week, same as model updates ("app@<version>" in snoozed).
+New app versions: the same daily pass checks config.RELEASES_API_URL (the
+latest GitHub release). If it's newer than the running __version__, an
+Update / Not now prompt appears. Update downloads TalkativeSetup.exe in the
+background, verifies it against the release asset's sha256 digest, waits
+for an idle moment, starts it with /VERYSILENT /UPDATE and exits; the
+installer replaces the EXE and relaunches Talkative (see
+installer/Talkative.iss). "Not now" snoozes that version for a week, same
+as model updates ("app@<version>" in snoozed).
 
 State lives in %LOCALAPPDATA%\\Talkative\\updater.json:
 { "last_check": "2026-07-19", "snoozed": {"grammar@2": "2026-07-26"},
@@ -149,6 +152,9 @@ def snooze(key, entry):
     _save_state(state)
 
 
+_INSTALLER_NAME = "TalkativeSetup.exe"
+
+
 def _parse_version(s):
     """'v1.3.5' / '1.3.5' -> (1, 3, 5); None if it isn't all dotted ints."""
     parts = str(s).strip().lstrip("vV").split(".")
@@ -158,26 +164,50 @@ def _parse_version(s):
         return None
 
 
+def _request(url):
+    return urllib.request.Request(url, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": f"Talkative/{__version__}",
+    })
+
+
 def fetch_latest_release():
-    """(version, page_url) of the latest published release, or None.
-    Offline, rate-limited, or malformed all silently return None."""
+    """{'version', 'page', 'installer_url', 'size', 'sha256'} for the latest
+    published release, or None. The installer asset must carry GitHub's
+    sha256 digest -- without it there's nothing to verify the download
+    against, so no one-click update is offered. Offline, rate-limited, or
+    malformed all silently return None. (GitHub's /releases/latest never
+    returns drafts or pre-releases, so a pre-release is only reachable by
+    pointing releases_api_url at its /releases/tags/<tag> URL -- that's how
+    the updater itself is tested without users ever seeing the test.)"""
     url = config.RELEASES_API_URL
     if not url:
         return None
     try:
-        req = urllib.request.Request(url, headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": f"Talkative/{__version__}",
-        })
-        with urllib.request.urlopen(req, timeout=8) as r:
+        with urllib.request.urlopen(_request(url), timeout=8) as r:
             data = json.loads(r.read().decode("utf-8"))
-        if not isinstance(data, dict) or data.get("draft") or data.get("prerelease"):
+        if not isinstance(data, dict):
             return None
         version = str(data.get("tag_name", "")).strip().lstrip("vV")
         page = str(data.get("html_url", "")).strip()
-        if not version or not page.startswith("https://github.com/"):
+        asset = next(
+            (a for a in data.get("assets", [])
+             if isinstance(a, dict) and a.get("name") == _INSTALLER_NAME),
+            None,
+        )
+        if not version or not page.startswith("https://github.com/") or not asset:
             return None
-        return version, page
+        digest = str(asset.get("digest") or "")
+        installer_url = str(asset.get("browser_download_url", ""))
+        if not digest.startswith("sha256:") or not installer_url.startswith("https://github.com/"):
+            return None
+        return {
+            "version": version,
+            "page": page,
+            "installer_url": installer_url,
+            "size": int(asset.get("size") or 0),
+            "sha256": digest.split(":", 1)[1].lower(),
+        }
     except Exception:
         return None
 
@@ -186,7 +216,7 @@ def find_app_update(release):
     """The release if it's newer than the running app and not snoozed."""
     if not release:
         return None
-    version, _ = release
+    version = release["version"]
     latest, running = _parse_version(version), _parse_version(__version__)
     if latest is None or running is None or latest <= running:
         return None
@@ -433,6 +463,7 @@ def _prompt(text, on_download, on_cancel):
 
             root = tk.Toplevel(overlay.root)
             root.title("Talkative")
+            root.configure(bg=overlay_thread.bg_color())
             app_icon.set_window_icon(root)
             root.resizable(False, False)
             ttk.Label(root, text=text, wraplength=360, padding=16).pack()
@@ -468,20 +499,174 @@ def _show_dialog(entry, on_download, on_cancel):
     _prompt(text, on_download, on_cancel)
 
 
-def _show_app_dialog(version, page):
-    import webbrowser
+def _app_updates_dir():
+    return model_manager.models_dir().parent / "updates"
 
-    text = (
-        f"A new version of Talkative is available: {version} "
-        f"(you have {__version__}).\n\n"
-        "Download opens the release page, where you can get the installer. "
-        "Installing it keeps your settings."
+
+def _download_installer(release, progress):
+    """Stream the installer into <appdata>/updates, verifying its sha256
+    against the release's digest. Returns the path, or raises -- a file
+    that fails verification is deleted, never run."""
+    import hashlib
+
+    folder = _app_updates_dir()
+    shutil.rmtree(folder, ignore_errors=True)  # stale earlier attempts
+    folder.mkdir(parents=True)
+    path = folder / f"TalkativeSetup-{release['version']}.exe"
+    sha = hashlib.sha256()
+    with urllib.request.urlopen(_request(release["installer_url"]), timeout=30) as r, \
+            open(path, "wb") as f:
+        progress["total"] = int(r.headers.get("Content-Length") or release["size"] or 0)
+        while True:
+            chunk = r.read(256 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
+            sha.update(chunk)
+            progress["done"] += len(chunk)
+    if sha.hexdigest() != release["sha256"]:
+        path.unlink(missing_ok=True)
+        raise ValueError("installer checksum mismatch")
+    return path
+
+
+def _launch_installer(path):
+    """Start the installer detached, with a clean environment: it inherits
+    ours and later relaunches Talkative, and a PyInstaller onefile EXE that
+    starts with its parent's _PYI_*/_MEIPASS* variables set mistakes itself
+    for a child process and fails to start."""
+    import os
+    import subprocess
+
+    env = {k: v for k, v in os.environ.items()
+           if not k.upper().startswith(("_PYI", "_MEI"))}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    subprocess.Popen(
+        [str(path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/UPDATE"],
+        env=env,
+        close_fds=True,
+        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
     )
-    _prompt(
-        text,
-        on_download=lambda: webbrowser.open(page),
-        on_cancel=lambda: snooze_app(version),
-    )
+
+
+def _run_app_update(release, controller, progress):
+    """Download + verify in the background, wait for an idle moment, hand
+    off to the installer, and exit so it can replace the EXE. The installer
+    (/UPDATE mode, see installer/Talkative.iss) relaunches the new version.
+    Any failure before the handoff leaves the running app untouched."""
+    import os
+
+    try:
+        path = _download_installer(release, progress)
+    except Exception:
+        shutil.rmtree(_app_updates_dir(), ignore_errors=True)
+        progress["state"] = "failed"
+        return
+    progress["state"] = "installing"
+    while controller.is_busy():
+        time.sleep(1.0)
+    controller.begin_swap()  # blocks new dictations during the handoff
+    try:
+        _launch_installer(path)
+    except Exception:
+        controller.end_swap(False)
+        progress["state"] = "failed"
+        return
+    time.sleep(1.5)  # let the "restarting" message be seen
+    controller.quit_app()
+    time.sleep(1.0)
+    os._exit(0)  # don't let a lingering non-daemon thread hold the EXE open
+
+
+def _show_app_dialog(release, controller):
+    """One-click app update prompt, on the shared overlay thread like
+    _prompt() (see its docstring for why). Closing the window while
+    downloading just hides it; the update still finishes."""
+    overlay = overlay_thread.get()
+    overlay._ready.wait(timeout=3)
+    if overlay._failed:
+        return
+    version = release["version"]
+
+    def build():
+        try:
+            import tkinter as tk
+            from tkinter import ttk
+
+            root = tk.Toplevel(overlay.root)
+            root.title("Talkative")
+            # Without this the raw Tk background (light grey) shows through
+            # around the progress bar in dark mode -- seen live as a white
+            # strip behind the bar.
+            root.configure(bg=overlay_thread.bg_color())
+            app_icon.set_window_icon(root)
+            root.resizable(False, False)
+            label = ttk.Label(
+                root, wraplength=360, padding=(16, 16, 16, 8),
+                text=(f"A new version of Talkative is available: {version} "
+                      f"(you have {__version__}).\n\nUpdating takes about a "
+                      "minute. Talkative will close and reopen by itself, "
+                      "and your settings are kept."),
+            )
+            label.pack(fill="x")
+            bar = ttk.Progressbar(root, mode="determinate", length=328, maximum=100)
+            row = ttk.Frame(root, padding=(16, 8, 16, 14))
+            row.pack(fill="x")
+            progress = {"done": 0, "total": 0, "state": "downloading"}
+
+            def poll():
+                if not root.winfo_exists():
+                    return
+                state = progress["state"]
+                if state == "downloading":
+                    total = progress["total"]
+                    if total:
+                        bar["value"] = 100 * progress["done"] / total
+                        label["text"] = (
+                            f"Downloading Talkative {version}… "
+                            f"{progress['done'] // 1048576} of {total // 1048576} MB"
+                        )
+                    root.after(300, poll)
+                elif state == "installing":
+                    bar["value"] = 100
+                    label["text"] = (f"Installing Talkative {version}. "
+                                     "It will reopen by itself in a moment.")
+                    root.after(300, poll)
+                else:
+                    bar.pack_forget()
+                    label["text"] = ("The update couldn't be downloaded. "
+                                     "Talkative will offer it again tomorrow.")
+                    ttk.Button(row, text="Close", command=root.destroy).pack(side="right")
+                    row.pack(fill="x")
+                    root.deiconify()
+                    root.protocol("WM_DELETE_WINDOW", root.destroy)
+
+            def update():
+                # The button row goes away entirely while downloading (an
+                # empty row left a blank band under the bar).
+                for w in row.winfo_children():
+                    w.destroy()
+                row.pack_forget()
+                bar.pack(padx=16, pady=(4, 16))
+                label["text"] = f"Downloading Talkative {version}…"
+                root.protocol("WM_DELETE_WINDOW", root.withdraw)
+                threading.Thread(
+                    target=_run_app_update, args=(release, controller, progress),
+                    daemon=True,
+                ).start()
+                root.after(300, poll)
+
+            def not_now():
+                root.destroy()
+                snooze_app(version)
+
+            ttk.Button(row, text="Update", command=update).pack(side="right")
+            ttk.Button(row, text="Not now", command=not_now).pack(side="right", padx=8)
+            root.protocol("WM_DELETE_WINDOW", not_now)
+        except Exception:
+            pass
+
+    overlay.build(build)
 
 
 def start_background_check(controller):
@@ -490,6 +675,9 @@ def start_background_check(controller):
 
     def run():
         time.sleep(10)  # let startup settle (spec: appears a few seconds in)
+        # The installer a previous one-click update ran from; it's been
+        # used by now (or failed and rolled back -- a retry re-downloads).
+        shutil.rmtree(_app_updates_dir(), ignore_errors=True)
         with _state_lock:
             state = _load_state()
             today = date.today().isoformat()
@@ -499,7 +687,7 @@ def start_background_check(controller):
             _save_state(state)
         release = find_app_update(fetch_latest_release())
         if release:
-            _show_app_dialog(*release)
+            _show_app_dialog(release, controller)
         manifest = fetch_manifest()
         if not manifest:
             return

@@ -6,12 +6,14 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
 ### Added
 
-- Talkative now tells you when a new version is out. Once a day at
-  startup it checks for a newer release and, if there is one, shows a
-  short message with a Download button that opens the release page.
-  It never downloads or installs anything on its own, and "Not now"
-  hides the message for a week. Versions before this one can't do this,
-  so this is the last update you'll need to find by hand.
+- One-click updates. Once a day at startup Talkative checks for a newer
+  version and, if there is one, asks whether to update. Clicking Update
+  downloads it in the background (dictation keeps working), checks the
+  download is genuine, then closes Talkative, installs the new version,
+  and reopens it by itself -- your settings are kept. Nothing is ever
+  installed without that click, and "Not now" asks again in a week.
+  Versions before this one can't do this, so this is the last update
+  you'll need to install by hand.
 
 ### Fixed
 

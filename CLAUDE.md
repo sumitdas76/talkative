@@ -923,6 +923,38 @@ project root fails with "Could not detect a directory containing static
 files"). `wrangler deploy --dry-run` and `wrangler kv ...` reads are
 allowed and good for pre-checks.
 
+## One-click app updates (added 2026-09-25, ships in 1.3.5)
+
+`updater.py`'s daily startup pass also reads `config.RELEASES_API_URL`
+(GitHub `/releases/latest` for `sumitdas76/talkative`). A newer version
+shows Update / Not now; Update downloads the `TalkativeSetup.exe` release
+asset to `%LOCALAPPDATA%\Talkative\updates`, verifies it against the
+asset's GitHub `sha256` digest (no digest = no offer), waits for idle,
+launches it with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /UPDATE`, and
+exits. The installer's `/UPDATE` mode (`installer/Talkative.iss`) waits for
+the app to exit, force-kills leftovers, installs, and relaunches from
+`DeinitializeSetup` (runs on failure too). Publishing a release is the
+whole publishing act -- the asset must be named exactly `TalkativeSetup.exe`.
+
+Traps found in live testing:
+- **Never `taskkill /T` in update mode**: the installer is a child of
+  Talkative, so `/T` killed the installer itself mid-update (nothing
+  replaced, nothing relaunched). `/IM Talkative.exe` alone gets both
+  onefile processes. Uninstall's `/T` is fine (not Talkative's child).
+- The installer is launched with `_PYI*`/`_MEI*` env vars stripped and
+  `PYINSTALLER_RESET_ENVIRONMENT=1`, or the relaunched onefile EXE would
+  inherit them and mistake itself for a child process.
+
+**Testing an update end to end** (did this once, 2026-09-25, passed):
+install version N locally; build N+x and publish it as a GitHub
+**pre-release** (`/releases/latest` never returns pre-releases, so users
+never see it); set `"releases_api_url"` in settings.json to
+`.../releases/tags/<tag>`; clear `last_check` in updater.json; launch,
+click Update, then compare the installed EXE's hash to the N+x build.
+Clean up: `gh release delete <tag> --yes --cleanup-tag`, remove the
+settings key, reinstall N. Note `scripts\rebuild.ps1` also overwrites the
+*installed* copy -- build the test version first, the real one last.
+
 ## Packaging notes
 
 `--collect-all` flags in the pyinstaller command are load-bearing:

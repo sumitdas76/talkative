@@ -44,6 +44,7 @@ _KEYS = {
     "cloud_notice_done": "CLOUD_NOTICE_DONE",
     "onboarding_done": "ONBOARDING_DONE",
     "manifest_url": "MANIFEST_URL",
+    "releases_api_url": "RELEASES_API_URL",
     "insert_mode": "INSERT_MODE",
     "append_space": "APPEND_SPACE",
     "press_enter_after": "PRESS_ENTER_AFTER",

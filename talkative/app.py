@@ -293,6 +293,7 @@ class TalkativeApp:
             reload_speech=reload_speech,
             begin_swap=begin_swap,
             end_swap=end_swap,
+            quit_app=lambda: (self.quit(), self.tray.stop()),
         )
 
     def _on_press(self, key):
