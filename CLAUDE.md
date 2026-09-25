@@ -893,6 +893,36 @@ draft from earlier in the session was never actually posted by the
 user, last known state was a revision incorporating their voice/tone
 feedback.
 
+## Resume point (end of session, 2026-09-25)
+
+**Done this session:** Cloud-mode latency work, all in `cloud/` (Worker
+redeployed several times by the user, no app rebuild or release needed).
+Server-side time for both calls went from ~2-3s to ~1.0s -- full detail in
+"Cloud latency (2026-09-25)" above. Committed (`88696db`, `e4b12d3`) and
+pushed.
+
+**Open, in priority order:**
+1. **Not yet confirmed in the real app.** All measurements came from a
+   scratchpad script calling `cloud_client` directly (synthesized SAPI
+   audio); the user hasn't dictated through the installed app since. Ask
+   how it feels, and turn `debug_log` on to read per-dictation timings.
+2. **Spoken numbers -> digits** makes gpt-oss's output fail the client-side
+   digit guard, so that dictation's grammar pass is discarded entirely.
+   Fix is likely a "keep numbers as spoken" line in the prompt, but
+   `SYSTEM` is shared with local `grammar_engine._SYSTEM` -- user's call.
+3. **Smart Placement** not yet active at last check (`Cf-Placement:
+   local-BOM`). Re-measure once it shows a non-local placement; revert the
+   `[placement]` block if it's slower for this user.
+4. Everything from the 2026-09-20 resume point below/above (video music
+   bed, thumbnail/YouTube metadata, LinkedIn post) is still open.
+
+**Process note:** `wrangler deploy` from Claude Code is denied by the
+auto-mode classifier -- have the user run `! cd cloud; npx wrangler
+deploy` (check the shell's current directory first: running it from the
+project root fails with "Could not detect a directory containing static
+files"). `wrangler deploy --dry-run` and `wrangler kv ...` reads are
+allowed and good for pre-checks.
+
 ## Packaging notes
 
 `--collect-all` flags in the pyinstaller command are load-bearing:
