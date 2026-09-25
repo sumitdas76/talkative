@@ -201,14 +201,15 @@ button there calls `model_manager.download()` + the new
 **Backend**: `cloud/worker.js` (Cloudflare Worker, account
 `sumitdas76@gmail.com` / account id `5c8fd5ee36a5fb2a729762b18950f5fb`),
 deployed at `https://talkative-cloud.sumitdas76.workers.dev`. Two routes,
-`/transcribe` and `/grammar` (`@cf/meta/llama-3.2-3b-instruct`, same system
+`/transcribe` and `/grammar` (Groq's `openai/gpt-oss-20b` since 2026-09-25,
+Workers AI `@cf/meta/llama-3.2-3b-instruct` as automatic fallback; same system
 prompt/few-shot shots as `grammar_engine.py`'s `_SYSTEM`/`_SHOTS` for
 parity). Both routes require `X-Shared-Secret` (a soft deterrent only --
 it's a literal constant in `config.py`, extractable/visible in the public
 repo, not real auth) and `X-Install-Id` (the app's existing anonymous
 per-install id from `feedback.install_id()`), enforced against a
-per-install daily quota (300 combined requests/day, `cloud/wrangler.toml`'s
-`QUOTA` KV namespace) that returns HTTP 429 on overrun -- `cloud_client.py`
+per-install daily quota (300 combined requests/day, the `QuotaCounter`
+Durable Object -- see "Cloud latency" below for why not KV) that returns HTTP 429 on overrun -- `cloud_client.py`
 turns that into a friendly "Cloud is busy right now" message rather than a
 raw error.
 
@@ -222,7 +223,8 @@ good enough (missed tag-question punctuation, homophone slips), so
 `https://api.groq.com/openai/v1/audio/transcriptions`, using a
 `GROQ_API_KEY` secret (`wrangler secret put GROQ_API_KEY`, a free-tier key
 from console.groq.com, no card required). `/grammar` is unchanged, still
-on Workers AI's llama-3.2-3b-instruct. Verified live: punctuation
+on Workers AI's llama-3.2-3b-instruct (moved to Groq 2026-09-25, see
+"Cloud latency" below). Verified live: punctuation
 (question marks, ellipses) noticeably improved; occasional near-homophone
 misses (e.g. "collars" heard as "colors") remain -- normal Whisper-family
 ASR noise, not a regression from this change, and not fixable via
@@ -252,11 +254,37 @@ guard.
 **The real cost ceiling is not the shared secret or the quota** -- it's
 each upstream provider's own free-tier cap hard-erroring rather than
 billing, as long as neither account has billing enabled: Workers AI's
-account-wide 10,000 neurons/day (still backs `/grammar`), and Groq's
-no-card free tier (~2,000 requests/day, ~8 hours of audio/day as of
-2026-09) backing `/transcribe`. Do not add a payment method to either
+account-wide 10,000 neurons/day (now only `/grammar`'s fallback), and
+Groq's no-card free tier (~2,000 requests/day, ~8 hours of audio/day as of
+2026-09) backing `/transcribe`, plus its separate per-model limits for
+`gpt-oss-20b` backing `/grammar`. Do not add a payment method to either
 account without re-deriving what that changes for worst-case cost
 exposure.
+
+**Cloud latency (2026-09-25)**: user reported 3-5s per Cloud dictation.
+Each Worker response now carries a `timing` object (`quota_ms`,
+`quota_count`, `upstream_ms`, `groq_total_ms`, `colo`) -- use it to measure
+rather than guess. Findings, from the Mumbai colo (BOM): Workers AI grammar
+took ~1-1.5s; the KV quota read+write cost ~600ms on *every* request; the
+Groq model itself only ~67ms, with ~300ms more being the BOM<->Groq network
+hop. Changes: `/grammar` moved to Groq `openai/gpt-oss-20b`
+(`reasoning_effort: "low"`, `include_reasoning: false`; Workers AI kept as
+fallback, response `via`/`groq_error` fields say which ran and why).
+**Groq's Llama chat models are enterprise-only as of 2026-09** -- a free key
+gets 404 `model_not_found` for `llama-3.1-8b-instant`. gpt-oss emits curly
+quotes / narrow no-break spaces, normalized by `plainText()` in the Worker.
+Quality spot-check was better than the 3B model (kept "before Friday",
+idioms, "I want you to"), but it converts spoken numbers to digits, which
+the client-side digit guard then rejects (falls back to un-grammared text)
+-- the old model did this too; not yet addressed. Quota moved from KV to a
+Durable Object because KV's per-colo read caching under-counted badly
+(10 requests -> count of 2, even with awaited writes ~2x under); the DO
+counts exactly but still costs ~75ms or ~650ms per call (bimodal, cause
+not yet investigated). Smart Placement enabled in `wrangler.toml`; it only
+takes effect after Cloudflare samples traffic (`Cf-Placement` response
+header shows `local-BOM` until then). Net: ~2-3s -> ~1-1.7s for both calls.
+`wrangler deploy` from Claude Code is blocked by the auto-mode classifier;
+the user runs it via `! npx wrangler deploy` from `cloud/`.
 
 **Hybrid grammar source (added 2026-09-19)**: `config.GRAMMAR_SOURCE`
 ("auto" default, or "local") decouples the grammar cleanup stage from

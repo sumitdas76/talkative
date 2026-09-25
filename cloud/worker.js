@@ -1,3 +1,5 @@
+import { DurableObject } from "cloudflare:workers";
+
 // Talkative cloud processing mode -- see talkative/config.py's
 // PROCESSING_MODE and cloud_client.py.
 //
@@ -28,8 +30,17 @@
 // tried first (see the old handleTranscribe comment, still true) and
 // rejected every audio shape tested against its schema, which is why
 // /transcribe ran on the smaller base model until now.
+//
+// /grammar moved to Groq (GROQ_GRAMMAR_MODEL) on 2026-09-25 for latency
+// (same GROQ_API_KEY), with the original Workers AI model kept as an
+// automatic fallback -- see handleGrammar.
 
 const DAILY_QUOTA_PER_INSTALL = 300; // combined /transcribe + /grammar calls
+
+// Groq's Llama chat models (llama-3.1-8b-instant etc.) are enterprise-only
+// as of 2026-09 -- a free-tier key gets 404 model_not_found for them. The
+// gpt-oss models are what a free key can use.
+const GROQ_GRAMMAR_MODEL = "openai/gpt-oss-20b";
 
 // Same system instruction and few-shot examples as
 // talkative/grammar_engine.py's _SYSTEM/_SHOTS, so cloud mode behaves the
@@ -63,6 +74,16 @@ const SHOTS = [
    "it seems random."],
 ];
 
+// gpt-oss likes typographic characters (curly quotes, narrow no-break
+// space in "3 pm") that Whisper never emits -- map them back to the plain
+// ASCII the rest of the pipeline and the dictionary rules expect.
+function plainText(s) {
+  return s
+    .replace(/[‘’‛]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[    ]/g, " ");
+}
+
 function unauthorized() {
   return new Response("Unauthorized", { status: 401 });
 }
@@ -74,25 +95,38 @@ function quotaExceeded() {
   );
 }
 
-// One read + (on success) one write per allowed request, against a
-// per-install-per-day key. KV's free tier caps at 1,000 writes/day
-// account-wide (not per-key) and 1 write/sec per key -- fine at today's
-// scale (a handful to a few dozen daily users), but the fix if that's
-// ever actually hit is upgrading to Workers Paid ($5/mo, removes the
-// write cap), not a redesign of this function.
-async function checkAndIncrementQuota(env, installId) {
-  const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
-  const key = `quota:${installId}:${day}`;
-  const current = parseInt((await env.QUOTA.get(key)) || "0", 10);
-  if (current >= DAILY_QUOTA_PER_INSTALL) {
-    return false;
+// Per-install daily quota, one Durable Object per install id (2026-09-25).
+// Replaced a Workers KV counter that under-counted badly: KV reads are
+// cached per colo for up to ~60s, so back-to-back requests all read the
+// same stale count and wrote the same next value back (measured: 10
+// requests -> counter of 2). A Durable Object is single-threaded with
+// strongly consistent storage, so take() is an exact atomic
+// check-and-increment, and it's fast (a few ms) because the object lives
+// near where it was first used. Storage stays one small record per
+// install: the day rolls the count over rather than adding a new key.
+export class QuotaCounter extends DurableObject {
+  async take(day, limit) {
+    const rec = (await this.ctx.storage.get("rec")) || { day, count: 0 };
+    if (rec.day !== day) {
+      rec.day = day;
+      rec.count = 0;
+    }
+    if (rec.count >= limit) {
+      return { ok: false, count: rec.count };
+    }
+    rec.count += 1;
+    await this.ctx.storage.put("rec", rec);
+    return { ok: true, count: rec.count };
   }
-  // expirationTtl in seconds; 2 days covers the UTC-day boundary safely.
-  await env.QUOTA.put(key, String(current + 1), { expirationTtl: 172800 });
-  return true;
 }
 
-async function handleTranscribe(request, env) {
+async function checkAndIncrementQuota(env, installId) {
+  const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+  const stub = env.QUOTA_DO.get(env.QUOTA_DO.idFromName(installId));
+  return await stub.take(day, DAILY_QUOTA_PER_INSTALL);
+}
+
+async function handleTranscribe(request, env, timing) {
   const bytes = new Uint8Array(await request.arrayBuffer());
   if (bytes.length === 0) {
     return Response.json({ text: "" });
@@ -103,6 +137,7 @@ async function handleTranscribe(request, env) {
   form.append("language", "en"); // matches the local model's small.en (English-only)
   form.append("response_format", "json");
 
+  const t0 = Date.now();
   const groqResp = await fetch(
     "https://api.groq.com/openai/v1/audio/transcriptions",
     {
@@ -121,10 +156,11 @@ async function handleTranscribe(request, env) {
     throw new Error(`Groq transcription failed: ${groqResp.status} ${await groqResp.text()}`);
   }
   const result = await groqResp.json();
-  return Response.json({ text: result.text || "" });
+  timing.upstream_ms = Date.now() - t0;
+  return Response.json({ text: result.text || "", timing });
 }
 
-async function handleGrammar(request, env) {
+async function handleGrammar(request, env, timing) {
   const { text } = await request.json();
   if (!text) {
     return Response.json({ text: "" });
@@ -136,11 +172,65 @@ async function handleGrammar(request, env) {
   }
   messages.push({ role: "user", content: text });
 
+  // Groq first (2026-09-25) for latency: Workers AI's llama-3.2-3b took
+  // ~1-1.5s per call.
+  // Any Groq failure (its own free-tier 429 included) falls back to the
+  // original Workers AI path rather than surfacing an error -- grammar is
+  // optional polish, so a slower answer beats none.
+  // Why the Groq attempt fell back, returned alongside the fallback result
+  // (status + Groq's own error text, never the key) so a silent fallback is
+  // diagnosable from the client without Worker log access.
+  let groqError = null;
+  const t0 = Date.now();
+  try {
+    const groqResp = await fetch(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: GROQ_GRAMMAR_MODEL,
+          messages,
+          temperature: 0,
+          // gpt-oss is a reasoning model: keep its thinking short (that's
+          // where the latency goes) and out of the returned content.
+          reasoning_effort: "low",
+          include_reasoning: false,
+          max_tokens: 2048,
+        }),
+      }
+    );
+    if (groqResp.ok) {
+      const result = await groqResp.json();
+      const out = result.choices?.[0]?.message?.content;
+      if (out) {
+        timing.upstream_ms = Date.now() - t0;
+        // Groq's own server-side time, to separate model time from the
+        // Worker<->Groq network hop.
+        timing.groq_total_ms = Math.round((result.usage?.total_time || 0) * 1000);
+        return Response.json({ text: plainText(out), via: "groq", timing });
+      }
+      groqError = "empty completion";
+    } else {
+      groqError = `${groqResp.status} ${(await groqResp.text()).slice(0, 300)}`;
+    }
+  } catch (err) {
+    groqError = String(err).slice(0, 300);
+  }
+
   const result = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
     messages,
     temperature: 0,
   });
-  return Response.json({ text: result.response || text });
+  return Response.json({
+    text: result.response || text,
+    via: "workers-ai",
+    groq_error: groqError,
+    timing,
+  });
 }
 
 export default {
@@ -155,16 +245,26 @@ export default {
     if (!installId) {
       return new Response("Missing X-Install-Id", { status: 400 });
     }
-    if (!(await checkAndIncrementQuota(env, installId))) {
+    // Per-stage server-side timings, returned in each JSON response so
+    // cloud latency can be broken down from the client (see
+    // cloud_client.py's callers / the debug.log timing line).
+    const tq = Date.now();
+    const quota = await checkAndIncrementQuota(env, installId);
+    if (!quota.ok) {
       return quotaExceeded();
     }
+    const timing = {
+      quota_ms: Date.now() - tq,
+      quota_count: quota.count,
+      colo: request.cf?.colo,
+    };
     const url = new URL(request.url);
     try {
       if (url.pathname === "/transcribe") {
-        return await handleTranscribe(request, env);
+        return await handleTranscribe(request, env, timing);
       }
       if (url.pathname === "/grammar") {
-        return await handleGrammar(request, env);
+        return await handleGrammar(request, env, timing);
       }
     } catch (err) {
       return Response.json({ error: String(err) }, { status: 500 });

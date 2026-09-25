@@ -2,12 +2,27 @@ name = "talkative-cloud"
 main = "worker.js"
 compatibility_date = "2024-09-23"
 
+# Run the Worker near its backends (Groq's API, the quota Durable Objects) rather
+# than at the colo nearest the user: measured 2026-09-25 from Mumbai (BOM),
+# the Worker<->Groq hop cost ~300ms per call vs ~67ms of actual model time.
+[placement]
+mode = "smart"
+
 [ai]
 binding = "AI"
 
-[[kv_namespaces]]
-binding = "QUOTA"
-id = "da428417d9474fd790660e43f10bd272"
+# Per-install daily quota counter (worker.js's QuotaCounter). Replaced the
+# old QUOTA KV namespace (id da428417d9474fd790660e43f10bd272, now unused;
+# its keys expire on their own within 2 days) on 2026-09-25 because KV's
+# per-colo read caching made the count wildly inaccurate. SQLite-backed
+# class = available on the Workers free plan.
+[[durable_objects.bindings]]
+name = "QUOTA_DO"
+class_name = "QuotaCounter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["QuotaCounter"]
 
 # Set both secrets once, per environment, before deploying:
 #   wrangler secret put SHARED_SECRET
@@ -23,7 +38,7 @@ id = "da428417d9474fd790660e43f10bd272"
 # neurons/day, account-wide, still backs /grammar) and Groq's (~2,000
 # requests/day, no card, backs /transcribe). That is the real backstop
 # against the shared secret being extracted from the public EXE. The
-# per-install QUOTA below is a fairness cap on top of that (so one
+# per-install quota (QUOTA_DO above) is a fairness cap on top of that (so one
 # runaway/abusive install can't burn the whole day's shared budget), not
 # the primary cost defense. Do not add a payment method to either account
 # without re-deriving what that changes.
