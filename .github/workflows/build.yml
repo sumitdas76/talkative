@@ -1,0 +1,101 @@
+# Build Talkative.exe and TalkativeSetup.exe from the public source.
+#
+# - Manual run (Actions tab -> Build -> Run workflow): builds both and
+#   keeps them as a downloadable workflow artifact.
+# - Pushing a tag like v1.3.6: same, then attaches both to a DRAFT GitHub
+#   release. Drafts are invisible to /releases/latest, so the in-app
+#   updater never offers one -- nothing reaches users until the draft is
+#   reviewed and published by hand.
+#
+# Builds here (not on a dev machine) are what SignPath Foundation's free
+# open-source code signing requires: the signature vouches that the binary
+# came from this repository's source via this workflow.
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # only used to attach files to a draft release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+
+      - name: Check the version is the same everywhere
+        # Shipping with the About tab on an old version happened twice
+        # (v1.1.1, v1.1.2); a tag that disagrees with the source is the
+        # same mistake.
+        run: |
+          $app = (Select-String -Path talkative\__init__.py -Pattern '__version__\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          $iss = (Select-String -Path installer\Talkative.iss -Pattern '#define MyAppVersion "([^"]+)"').Matches[0].Groups[1].Value
+          Write-Host "talkative/__init__.py: $app   installer/Talkative.iss: $iss"
+          if ($app -ne $iss) { throw "Version mismatch: __init__.py $app vs Talkative.iss $iss" }
+          if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -ne "v$app") {
+            throw "Tag ${{ github.ref_name }} does not match version v$app"
+          }
+          "APP_VERSION=$app" >> $env:GITHUB_ENV
+
+      - name: Install dependencies (pinned)
+        run: python -m pip install -r requirements-lock.txt
+
+      - name: Build Talkative.exe
+        run: .\scripts\build_exe.ps1 -Python python
+
+      - name: Smoke test -- the EXE starts and stays up
+        run: |
+          $p = Start-Process dist\Talkative.exe -PassThru
+          Start-Sleep -Seconds 15
+          $alive = Get-Process Talkative -ErrorAction SilentlyContinue
+          if (-not $alive) { throw "Talkative.exe exited within 15s of launch (exit code $($p.ExitCode))" }
+          Write-Host "Running: PIDs $($alive.Id -join ', ')"
+          $alive | Stop-Process -Force
+
+      - name: Fetch the VC++ runtime the installer bundles
+        run: |
+          New-Item -ItemType Directory -Force installer\redist | Out-Null
+          Invoke-WebRequest https://aka.ms/vs/17/release/vc_redist.x64.exe -OutFile installer\redist\vc_redist.x64.exe
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build TalkativeSetup.exe
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\Talkative.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+
+      - name: Checksums
+        run: |
+          Get-FileHash dist\Talkative.exe, installer\Output\TalkativeSetup.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
+            Tee-Object -FilePath SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Talkative-${{ env.APP_VERSION }}
+          path: |
+            dist/Talkative.exe
+            installer/Output/TalkativeSetup.exe
+            SHA256SUMS.txt
+
+      - name: Attach to a draft release (tag builds only)
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" installer\Output\TalkativeSetup.exe SHA256SUMS.txt `
+            --draft --title "Talkative $env:APP_VERSION" `
+            --notes "Built by GitHub Actions from ${{ github.sha }}. Review, then publish."

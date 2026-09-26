@@ -17,11 +17,7 @@ if ($running) {
     exit 1
 }
 
-& .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --onefile --windowed `
-    --name Talkative --icon assets\icon.ico `
-    --collect-all ctranslate2 --collect-all faster_whisper --collect-all av `
-    --collect-all tokenizers --collect-all uiautomation `
-    --hidden-import win32timezone main.py
+& .\scripts\build_exe.ps1
 
 $built = Get-Item dist\Talkative.exe
 Write-Host "Built dist\Talkative.exe ($($built.LastWriteTime))"
