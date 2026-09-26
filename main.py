@@ -19,6 +19,15 @@ from talkative.app import TalkativeApp
 def main():
     app = TalkativeApp()
     app.run()
+    # Tray -> Quit returns here, but normal interpreter shutdown can hang
+    # forever: garbage-collecting a Tk PhotoImage (Settings' checkbox
+    # glyphs) calls into the Tk interpreter owned by overlay_thread's
+    # daemon thread, which is already frozen -- both EXE processes stayed
+    # in Task Manager after Quit (py-spy, 2026-09-26: stuck in
+    # ImageTk.PhotoImage.__del__). Everything worth keeping (settings,
+    # debug.log) is written as it happens, so skip finalization, as the
+    # updater's exit already does.
+    os._exit(0)
 
 
 if __name__ == "__main__":
