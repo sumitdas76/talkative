@@ -86,6 +86,29 @@ def _trim_trailing_silence(audio, sample_rate, threshold=0.01,
     return audio[:cutoff]
 
 
+def _has_speech(audio, sample_rate):
+    """False only when Silero VAD finds no speech anywhere in `audio`.
+
+    Groq's Whisper invents text for a press with nothing said ("Thank
+    you.", and with a bias prompt whole prompt-flavored sentences like
+    "So, I'll show you how to do it." or "dot com"), and its
+    verbose_json no_speech_prob is always 0 (measured 2026-09-26), so the
+    Worker can't filter it. Local mode never has this problem because
+    faster-whisper's vad_filter runs this same Silero model first; run it
+    here too and don't send silence at all. Measured: 6/6 silent/noise/
+    hum/click clips rejected, 40/40 spoken clips kept (incl. one-word
+    "Yes." and speech at 3% volume), ~5 ms per call. Only gates -- speech
+    audio is sent unchanged. Any VAD failure sends the audio as before.
+    """
+    if audio is None or audio.size == 0:
+        return False
+    try:
+        from faster_whisper.vad import get_speech_timestamps
+        return bool(get_speech_timestamps(audio, sampling_rate=sample_rate))
+    except Exception:
+        return True
+
+
 def _wav_bytes(audio, sample_rate):
     """float32 numpy array in [-1, 1] -> 16-bit PCM WAV bytes, via the
     stdlib wave module (no new dependency needed)."""
@@ -104,6 +127,8 @@ def transcribe(audio, sample_rate, initial_prompt=None):
     """Same contract as Transcriber.transcribe(): returns the transcript
     string, raises on failure (the app.py call site already handles that
     the same way it handles a local transcription failure)."""
+    if not _has_speech(audio, sample_rate):
+        return ""
     audio = _trim_trailing_silence(audio, sample_rate)
     body = _wav_bytes(audio, sample_rate)
     url = config.CLOUD_ENDPOINT_URL.rstrip("/") + "/transcribe"

@@ -910,17 +910,18 @@ a real speaker would also trigger (the README and `_MISHEARD*` comments
 say how that's judged).
 
 **Next steps, in order:**
-1. **Worker silence filter is written but NOT deployed** (`cloud/worker.js`
-   handleTranscribe: verbose_json + drop segments with no_speech_prob >
-   0.6 && avg_logprob < -1.0, per-segment stats in `timing.segments`).
-   Needed before releasing: with the new prompt plumbing, silent/noisy
-   presses produced invented sentences ("So, I'll show you how to do
-   it.", dev prompt: "dot com"); even today's Cloud pastes "Thank you."
-   on silence. User runs `! cd /c/Users/sumit/Projects/Talkative/cloud
-   && npx wrangler deploy`. This one affects current 1.3.5 users
-   immediately -- right after deploying, re-test silent clips AND real
-   speech from several voices (check `timing.segments` margins); if any
-   real speech is dropped, `npx wrangler rollback`.
+1. ~~Worker silence filter~~ **Done 2026-09-26, differently.** Deployed
+   (version 3f234950) but it never fires: Groq's verbose_json reports
+   `no_speech_prob` 0 for every segment, silence included, and
+   avg_logprob doesn't separate either ("Thank you." on pure zeros
+   scored -0.29). Left deployed (harmless; `timing.segments` is useful).
+   The real fix is client-side: `cloud_client._has_speech()` runs the
+   same Silero VAD Local's `vad_filter` uses and skips the request when
+   there's no speech. Live-verified: 12/12 silent/noise/click clips not
+   sent, 32/32 spoken clips (4 voices, incl. "Yes."/"No." and 8%-volume
+   speech) transcribed normally. Ships with 1.3.6 -- 1.3.5 users keep
+   getting "Thank you." on silent presses until they update (the Worker
+   can't fix it for them).
 2. Finish Cloud transcripts: Zira has 160/250, then the FINAL set
    (`stt cloud <voice> <rate> final` for zira 0, ravi 0, heera 2) and
    report that score -- once, without tuning on it. Reset
