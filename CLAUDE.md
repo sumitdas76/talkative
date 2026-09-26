@@ -899,7 +899,30 @@ draft from earlier in the session was never actually posted by the
 user, last known state was a revision incorporating their voice/tone
 feedback.
 
-## Resume point (end of session, 2026-09-26) -- START HERE
+## Resume point (end of session, 2026-09-27) -- START HERE
+
+**Released 1.3.7 and 1.3.8** for SignPath readiness: dictation waits
+for the first-run Cloud/Local choice (`app._on_press` checks
+`ONBOARDING_DONE`), `PRIVACY.md` added and shown by the installer
+(`InfoBeforeFile`; keep that file pure ASCII and plain-text friendly),
+README "Code signing policy" section, release notes carry the policy
+footer (see the release skill), output-device setting now saved, tray
+text mojibake fixed.
+
+**SignPath application deliberately NOT submitted.** Its required
+"Reputation" field would read: 0 stars, ~29 total installer downloads,
+10-week-old project -- SignPath's terms say downloadable apps need
+verifiable reputation, so this would likely be rejected. Plan: build
+visible use first (walkthrough video, LinkedIn post, a forum post), then
+apply. Form answers for when it's time: name Talkative; repo/homepage
+https://github.com/sumitdas76/talkative; download URL `...#download`;
+privacy URL `.../blob/main/PRIVACY.md`; maintainer individual; build
+system GitHub Actions. Publisher name in the installer is "Sumit
+Chatterjee". GitHub 2FA is required -- confirm it's on. Their rule (c),
+"installation options to disable" data transfer, is met by the
+first-run choice, not an installer page -- be ready to explain that.
+
+## Resume point (end of session, 2026-09-26)
 
 **Released 1.3.6** (Developer English / "Code dictation", Cloud silence
 gate, Cloud prompt fix, Quit hang fix, two-section Hotkeys tab) -- the
