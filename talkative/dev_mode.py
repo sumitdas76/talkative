@@ -246,10 +246,11 @@ _STRONG_STARTERS = {
     "self", "this", "lambda", "assert", "raise", "export", "public",
     "private", "protected", "static", "void", "except", "finally",
     "document", "window", "json", "os", "sys", "np", "pd", "kill",
+    "tail", "head",
 }
 # Commands that are also everyday verbs: only a command when the line has
 # something command-like in it (a host, flag, path, number) or is short.
-_ENGLISHY_COMMANDS = {"ping", "kill", "touch", "cat", "echo", "code"}
+_ENGLISHY_COMMANDS = {"ping", "kill", "touch", "cat", "echo", "code", "tail", "head"}
 _WEAK_STARTERS = {
     "select", "insert", "update", "delete", "create", "alter", "drop",
     "begin", "commit", "rollback", "use", "declare", "with", "set", "if",
@@ -326,6 +327,17 @@ def is_code_line(raw):
     return _first_word(fixed) != _first_word(safe) and _classify(fixed)
 
 
+def _mostly_symbols(text):
+    """ "colon", "dollar space dot forward slash dot": a line that is mostly
+    symbol words can only be code -- as prose, grammar cleanup mangled it
+    ("Dollar space. Forward.", 2026-09-26)."""
+    tokens = _symbols(_numbers(re.sub(r"[.!?,]+$", "", text).split()))
+    # Numbers don't count: "the server is at ten dot zero dot zero dot
+    # five" is a sentence.
+    syms = sum(1 for t in tokens if _is_marker(t))
+    return syms >= 1 and syms * 2 >= len(tokens) and (syms >= 2 or len(tokens) == 1)
+
+
 def _classify(text):
     if _first_word(text) in _SQL_STARTERS and _SQL_SHAPES.match(_sql_fix_words(text).rstrip(".")):
         return True
@@ -338,7 +350,7 @@ def _classify(text):
     if first in _ENGLISHY_COMMANDS:
         # "ping me when it's green" is English; "ping google dot com" isn't.
         return bool(re.search(
-            r"\b(dot|dash|slash|colon|localhost|pipe|greater than)\b|[.\-/:|]\S|\d", text))
+            r"\b(dot|dash|slash|colon|localhost|pipe|greater than|dollar)\b|[.\-/:$|]\S|\d", text))
     if first in _STRONG_STARTERS or head in _STRONG_STARTERS:
         return True
     body = text.rstrip(".")
@@ -352,7 +364,7 @@ def _classify(text):
         return True                                   # get dash process
     if _SHORT_CODE.match(text) and len(text.split()) <= 5:
         return True
-    return False
+    return _mostly_symbols(text)
 
 
 def is_sql(text):
@@ -415,6 +427,10 @@ def _numbers(tokens):
     for tok in tokens:
         low = tok.lower()
         if low in _NUMBER_WORDS and not (low == "oh" and not run):
+            # "kill dash nine one two three four": the signal, then the PID
+            if (len(run) == 1 and len(out) >= 2 and out[-1].lower() == "dash"
+                    and out[-2].lower() == "kill"):
+                flush()
             run.append(low)
         else:
             flush()
@@ -640,6 +656,17 @@ def _resolve(tokens, sql, powershell):
     return t
 
 
+def _sql_column_at(tokens, k):
+    """ "created at" / "updated at" as a column name: "at" right after a
+    plain non-keyword word, followed by a keyword, operator, comma or the
+    end -- not by a name, which is a @variable ("exec proc at id")."""
+    prev = tokens[k - 1] if k > 0 else ""
+    nxt = tokens[k + 1] if k + 1 < len(tokens) else None
+    if not re.fullmatch(r"[A-Za-z_]\w*", prev) or prev.lower() in _SQL_KEYWORDS:
+        return False
+    return nxt is None or _is_marker(nxt) or nxt.lower() in _SQL_KEYWORDS
+
+
 def _at_signs(tokens, sql):
     """A spoken "at" becomes @:
     - SQL: "at id" -> @id, "at at version" -> @@version (variables);
@@ -648,6 +675,9 @@ def _at_signs(tokens, sql):
       at gmail dot com, root at server colon -- fused both sides.
     Anything else ("created at") stays a word."""
     out = list(tokens)
+    if sql and len(out) >= 2 and out[-1].lower() == "at" and _sql_column_at(out, len(out) - 1):
+        out[-2] += "_at"                             # ... order by created at
+        del out[-1]
     k = 0
     while k < len(out) - 1:
         tok = out[k]
@@ -663,6 +693,10 @@ def _at_signs(tokens, sql):
             del out[k + 1]
         elif address:
             out[k] = "\x05@"                         # sumit@example.com, root@10.0.0.5
+        elif sql and _sql_column_at(out, k):
+            out[k - 1] += "_at"                      # created at desc -> created_at DESC
+            del out[k]
+            continue
         elif re.fullmatch(r"[A-Za-z][\w-]*", nxt) and after == "\x05/":
             out[k] = "\x0d@"                         # @types/node
         elif sql and re.fullmatch(r"[A-Za-z_]\w*", nxt) and nxt.lower() not in ("least",):
@@ -789,6 +823,7 @@ _SQL_KEYWORDS = {
     "output", "merge", "grant", "nocount", "to", "print", "max", "cascade",
     "nolock", "clustered", "nonclustered", "over", "partition", "return",
     "returns", "function", "trigger", "after", "instead", "of", "for",
+    "limit",
 } | _SQL_FUNCTIONS
 _SQL_MISHEARD = {
     "var char": "varchar", "average": "avg", "descending": "desc",
@@ -984,6 +1019,10 @@ def code_line(raw):
     if re.match(r"^git\b", out):
         out = re.sub(r"\bhead\b", "HEAD", out, flags=re.IGNORECASE)
     out = re.sub(r"^chmod \+ (\w)", r"chmod +\1", out)
+    if re.match(r"^(echo|export)\b", out):
+        # Shell env vars: echo $PATH, export API_KEY=abc (no spaces round =)
+        out = re.sub(r"\$([A-Za-z_]\w*)", lambda m: "$" + m.group(1).upper(), out)
+        out = re.sub(r"^export ([A-Za-z_]\w*) = ", lambda m: f"export {m.group(1).upper()}=", out)
     return out
 
 

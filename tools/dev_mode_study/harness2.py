@@ -127,7 +127,10 @@ def transcribe(audio, engine, prompt):
         try:
             _count_request()
             text = cloud_client.transcribe(audio, config.SAMPLE_RATE, initial_prompt=prompt)
-            time.sleep(3.2)  # Groq free tier ~20 requests/minute
+            # Groq free tier is ~20 requests/minute on a key shared with real
+            # users; at 3.2s the study alone hit it and live dictations got
+            # "Cloud is busy" (2026-09-26). Stay at ~half.
+            time.sleep(6.5)
             return text
         except RuntimeError:
             # 429: either our per-install cap (rotate id) or Groq's own
