@@ -23,7 +23,11 @@ public source are what SignPath code signing requires.
    to a **draft** release. Watch it: `gh run watch <id> --exit-status`.
 5. Check the draft: asset named exactly `TalkativeSetup.exe` (the in-app
    updater looks for that name), title/notes right. Replace the notes
-   with the CHANGELOG entry.
+   with the CHANGELOG entry, followed by this footer -- SignPath's terms
+   require the term "Code signing policy" on every release page:
+
+       ---
+       [Code signing policy](https://github.com/sumitdas76/talkative#code-signing-policy) · [Privacy policy](https://github.com/sumitdas76/talkative/blob/main/PRIVACY.md)
 6. Publish: `gh release edit v<version> --draft=false --latest`. Only
    then does the in-app updater offer it (drafts are invisible to
    `/releases/latest`).

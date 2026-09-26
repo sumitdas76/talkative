@@ -2,6 +2,14 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [1.3.8] - 2026-09-27
+
+### Changed
+
+- The installer now shows Talkative's privacy policy before installing,
+  so you can see exactly what is sent over the internet (and how to
+  keep everything on your PC) before you install.
+
 ## [1.3.7] - 2026-09-27
 
 ### Changed

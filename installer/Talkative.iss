@@ -19,7 +19,7 @@
 ;   half-gigabyte left behind).
 
 #define MyAppName "Talkative"
-#define MyAppVersion "1.3.7"
+#define MyAppVersion "1.3.8"
 #define MyAppExeName "Talkative.exe"
 
 [Setup]
@@ -51,6 +51,12 @@ SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=..\assets\icon.ico
+; Shown as a page before installing: SignPath Foundation's terms require
+; software that sends user data to servers the user didn't specify to
+; display its privacy policy during installation. Kept pure ASCII and
+; plain-text friendly so the same file reads well here and on GitHub.
+; Silent (update) installs skip the page.
+InfoBeforeFile=..\PRIVACY.md
 
 [Tasks]
 Name: "autostart"; Description: "Start {#MyAppName} when Windows starts"
