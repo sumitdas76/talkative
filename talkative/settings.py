@@ -60,7 +60,7 @@ _KEYS = {
 }
 
 # Keys handled outside the type-checked table.
-_SPECIAL_KEYS = ("hotkey", "dev_hotkey", "input_device")
+_SPECIAL_KEYS = ("hotkey", "dev_hotkey", "input_device", "output_device")
 
 
 def settings_dir():
