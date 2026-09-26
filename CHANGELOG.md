@@ -2,6 +2,22 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [Unreleased]
+
+### Changed
+
+- On first start, dictation waits until you've picked Cloud or Local in
+  the setup window, so nothing is sent anywhere before you choose.
+- Added a privacy policy (PRIVACY.md) listing everything the app sends
+  over the internet.
+
+### Fixed
+
+- The output device chosen in Settings is now remembered after a
+  restart.
+- Some tray messages showed garbled characters ("â€”") instead of a
+  dash.
+
 ## [1.3.6] - 2026-09-26
 
 ### Added

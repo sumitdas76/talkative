@@ -13,7 +13,8 @@ Talkative has no accounts, no ads, no analytics and no tracking.
 
 The first time Talkative starts, it asks whether to process dictation
 in the **Cloud** or **Local**ly on your PC. You can change this at any
-time in Settings → General → Processing.
+time in Settings → General → Processing. Dictation doesn't start until
+you've answered, so nothing is sent before you choose.
 
 ### Cloud mode (the default)
 

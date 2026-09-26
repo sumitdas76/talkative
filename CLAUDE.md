@@ -319,10 +319,16 @@ plain-language RAM/disk numbers for each, gated by a new
 `config.ONBOARDING_DONE` settings key. Because that key is absent from
 every `settings.json` written before this existed, it defaults `False`
 and the screen shows once to existing installs updating to this version
-too, not just fresh ones -- deliberate, at the user's request. Non-
-blocking by design: `app.py`'s `run()` starts dictation under whatever
-`PROCESSING_MODE` is already configured (Cloud, normally) while the
-screen is still open; its `on_choice` callback just calls
+too, not just fresh ones -- deliberate, at the user's request. Models
+load under whatever `PROCESSING_MODE` is already configured (Cloud,
+normally) while the screen is open, but since 2026-09-27 `_on_press`
+refuses to record until `ONBOARDING_DONE` (toast: "Choose Cloud or Local
+in the setup window first") -- so no audio reaches Cloud before the user
+chose it, as PRIVACY.md and SignPath's policy require. (Originally fully
+non-blocking; dictation ran in Cloud with the screen still open.)
+onboarding marks itself done if its window fails to build, and closing
+the window counts as Continue, so this can't lock dictation out. Its
+`on_choice` callback just calls
 `_sync_processing_mode()` again if the user's answer differs from that
 default, reusing the exact same sync path Settings already uses. Picking
 Local downloads both models right there (blocking only the onboarding

@@ -255,7 +255,7 @@ class TalkativeApp:
         self.transcriber = None
         self._no_model = True
         gc.collect()
-        self.tray.set_loading("no model â€” open Settings, then Models")
+        self.tray.set_loading("no model — open Settings, then Models")
 
     def updater_controller(self):
         """The narrow surface updater.py drives a model swap through.
@@ -326,7 +326,16 @@ class TalkativeApp:
         self._dev_dictation = dev
 
         if self._swapping:
-            self.tray.notify("Updating â€” ready in a moment.")
+            self.tray.notify("Updating — ready in a moment.")
+            return
+
+        # Nothing is recorded (so nothing is sent to Cloud) until the user
+        # has picked Cloud or Local on the first-run screen -- a network
+        # transfer the user explicitly chose, as PRIVACY.md promises and
+        # SignPath's signing policy expects. onboarding marks itself done
+        # if its window can't open, so this can't lock dictation out.
+        if not config.ONBOARDING_DONE:
+            error_toast.show("Choose Cloud or Local in the setup window first.")
             return
 
         if self.transcriber is None:
@@ -480,7 +489,7 @@ class TalkativeApp:
             history.add(text)
         updater.note_words(len(text.split()))
         if config.INSERT_MODE == "clipboard":
-            self.tray.notify("Copied to clipboard â€” press Ctrl+V to paste.")
+            self.tray.notify("Copied to clipboard — press Ctrl+V to paste.")
 
     def run(self):
         sync_autostart()
@@ -492,15 +501,15 @@ class TalkativeApp:
             # Separate thread: the grammar engine must never delay dictation
             # readiness; until (unless) it loads, cleaned_up mode is rules-only.
             threading.Thread(target=grammar_engine.load, daemon=True).start()
-        # Non-blocking: dictation is already usable under whatever mode is
-        # configured above while this is open. on_choice re-syncs
-        # everything (model loading, grammar source) if the user picks
-        # something different from that default.
+        # Models load above as usual, but _on_press refuses to record until
+        # this screen is answered. on_choice re-syncs everything (model
+        # loading, grammar source) if the user picks something different
+        # from the configured default.
         onboarding.maybe_show(on_choice=lambda mode: self._sync_processing_mode())
         updater.start_background_check(self.updater_controller())
         feedback.start_background_check(
             on_reply=lambda text: self.tray.notify(
-                text if len(text) <= 200 else text[:197] + "â€¦",
+                text if len(text) <= 200 else text[:197] + "…",
                 title="Sumit replied",
             )
         )
