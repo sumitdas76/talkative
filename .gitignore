@@ -7,3 +7,4 @@ __pycache__/
 installer/Output/
 installer/redist/
 cloud/.wrangler/
+tools/dev_mode_study/*.png
