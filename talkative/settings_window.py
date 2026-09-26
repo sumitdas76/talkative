@@ -577,47 +577,45 @@ class _SettingsWindow:
         ttk.Button(bar, text="Close", command=win.destroy).pack(side="right")
 
     def _tab_hotkeys(self, f):
-        ttk.Label(f, text="Dictation key(s) (hold to talk):").pack(anchor="w")
-        row = ttk.Frame(f)
-        row.pack(anchor="w", pady=6)
+        # Two keys, two sections: which key you hold picks the kind of
+        # dictation, every time -- no mode to switch or turn off.
+        normal = ttk.LabelFrame(f, text="Dictation", padding=10)
+        normal.pack(fill="x")
+        row = ttk.Frame(normal)
+        row.pack(anchor="w")
         self.hotkey_btn = ttk.Button(
             row, text=_hotkey_display(config.HOTKEY), command=self._capture_hotkey
         )
         self.hotkey_btn.pack(side="left")
-        ttk.Label(row, text="  Click, then hold the key (or two keys "
-                            "together) you want to use.",
+        ttk.Label(row, text="  Click to change, then hold the key(s) you want.",
                   foreground="grey").pack(side="left")
         ttk.Label(
-            f, wraplength=520, foreground="grey",
-            text="Hold the key (or key combination) while speaking; "
-                 "release to insert the text.",
-        ).pack(anchor="w")
+            normal, wraplength=500, foreground="grey",
+            text="Hold while speaking, release to insert. For emails, messages "
+                 "and anything in sentences.",
+        ).pack(anchor="w", pady=(6, 0))
 
-        ttk.Label(f, text="\nDeveloper key(s) — for SQL, terminal commands "
-                          "and code:").pack(anchor="w")
-        dev_row = ttk.Frame(f)
-        dev_row.pack(anchor="w", pady=6)
+        code = ttk.LabelFrame(f, text="Code dictation", padding=10)
+        code.pack(fill="x", pady=(12, 0))
+        dev_row = ttk.Frame(code)
+        dev_row.pack(anchor="w")
         self.dev_hotkey_btn = ttk.Button(
             dev_row,
-            text=_hotkey_display(config.DEV_HOTKEY) if config.DEV_HOTKEY else "Off",
+            text=_hotkey_display(config.DEV_HOTKEY) if config.DEV_HOTKEY else "Not set",
             command=lambda: self._capture_hotkey("dev"),
         )
         self.dev_hotkey_btn.pack(side="left")
-        ttk.Button(dev_row, text="Turn off",
-                   command=self._dev_hotkey_off).pack(side="left", padx=(6, 0))
-        ttk.Button(dev_row, text="How to say code…",
-                   command=self._show_dev_help).pack(side="left", padx=(6, 0))
+        ttk.Label(dev_row, text="  Click to change, then hold the key(s) you want.",
+                  foreground="grey").pack(side="left")
         ttk.Label(
-            f, wraplength=520, foreground="grey",
-            text="Dictate with this key to get text that runs: “select star "
-                 "from users where id equals five” types SELECT * FROM users "
-                 "WHERE id = 5. It can include your dictation key — hold that, "
-                 "then add the extra key.",
-        ).pack(anchor="w")
-
-    def _dev_hotkey_off(self):
-        self.pending_dev_hotkey = []
-        self.dev_hotkey_btn.config(text="Off")
+            code, wraplength=500, foreground="grey",
+            text="For SQL, terminal commands and code: “select star from users "
+                 "where id equals five” types SELECT * FROM users WHERE id = 5.",
+        ).pack(anchor="w", pady=(6, 0))
+        help_link = ttk.Label(code, text="How to say code…", cursor="hand2",
+                              foreground=self._accent)
+        help_link.pack(anchor="w", pady=(6, 0))
+        help_link.bind("<Button-1>", lambda e: self._show_dev_help())
 
     def _show_dev_help(self):
         win = tk.Toplevel(self.root)

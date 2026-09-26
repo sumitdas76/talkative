@@ -87,8 +87,8 @@ shoot("settings_hotkeys.png")
 
 
 def open_help():
-    b = next(b for b in walk(win, "TButton") if "How to say code" in str(b["text"]))
-    b.invoke()
+    link = next(b for b in walk(win, "TLabel") if "How to say code" in str(b["text"]))
+    link.event_generate("<Button-1>")
 run(open_help)
 time.sleep(1.0)
 
