@@ -13,13 +13,16 @@ By default, Talkative processes dictation via Cloud — your audio goes to
 a remote server for transcription and cleanup, then is discarded, not
 stored. Prefer fully offline? Switch to Local in Settings → General any
 time and download the voice and grammar models (~2 GB) — after that,
-nothing ever leaves your PC.
+your audio and text never leave your PC.
 
 Dictation history, if you turn it on in the Dictation tab, is always
-stored only on your device, regardless of mode. The one other exception
-is the Feedback box in Settings → About: if you type a message there and
-click Send, that message (and only that message) is sent — never
-automatically, only when you choose to.
+stored only on your device, regardless of mode. In either mode the app
+checks GitHub once a day for updates (nothing about you is sent), and
+the Feedback box in Settings → About sends a message only when you
+click Send.
+
+Full details — every network request, what's sent, and to whom — are
+in the [privacy policy](PRIVACY.md).
 
 ## Download
 
@@ -45,6 +48,22 @@ that it works fully offline.
 In Local mode, the app checks once a day for improved models and asks
 before downloading anything. You can undo any update from Settings →
 Models.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io),
+certificate by [SignPath Foundation](https://signpath.org).
+
+- Committers and reviewers: [@sumitdas76](https://github.com/sumitdas76)
+- Approvers: [@sumitdas76](https://github.com/sumitdas76)
+
+Only binaries built by this repository's
+[GitHub Actions workflow](.github/workflows/build.yml) from the public
+source are signed. Every release is reviewed and published by hand.
+
+Privacy policy: see [PRIVACY.md](PRIVACY.md). Talkative sends audio and
+text to a cloud service only in Cloud mode, which the user picks (or
+switches off) at first run and in Settings.
 
 ## Source
 
