@@ -893,7 +893,36 @@ draft from earlier in the session was never actually posted by the
 user, last known state was a revision incorporating their voice/tone
 feedback.
 
-## Resume point (paused mid-session, 2026-09-25 late evening) -- START HERE
+## Resume point (end of session, 2026-09-26) -- START HERE
+
+**Released 1.3.6** (Developer English / "Code dictation", Cloud silence
+gate, Cloud prompt fix, Quit hang fix, two-section Hotkeys tab) -- the
+first release built by GitHub Actions (`.github/workflows/build.yml`,
+see the release skill). Repo is now MIT-licensed.
+
+- **Quit hang (fixed):** after tray Quit, shutdown hung forever in
+  `ImageTk.PhotoImage.__del__` (Settings' checkbox glyphs calling into
+  the overlay thread's dead Tk) -- both EXE processes stayed alive.
+  `main.py` now ends with `os._exit(0)`. Diagnosed with py-spy
+  (`pip install --target <scratch> py-spy`, then `py-spy dump --pid`).
+- **Worker silence filter doesn't work:** Groq's `no_speech_prob` is
+  always 0. Real fix is client-side Silero VAD (`cloud_client._has_speech`).
+- **Study harness vs users:** at 3.2s between requests the study alone
+  hit Groq's ~20/min limit and the user's live dictations got "Cloud is
+  busy" -- now 6.5s. Bigger point: ALL users share one free Groq key at
+  ~20 req/min; several concurrent users will see "busy". Unresolved.
+- **Final-set scores (reported once, not tuned on):** Cloud Zira 85.9%,
+  Ravi 82.1%, Heera 82.1%, rules-only 97.4% (78 phrases).
+- **SignPath (free code signing) still needs:** a privacy policy (Cloud
+  sends audio to Groq/Cloudflare; Local is the opt-out) and a "Code
+  signing policy" section in the README; confirm a solo maintainer may
+  hold author/reviewer/approver. Publisher would show as "SignPath
+  Foundation". Then apply at https://signpath.org/apply and add a signing
+  step to build.yml.
+- debug_log turned OFF in this machine's settings.json; debug.log itself
+  still holds transcripts.
+
+## Resume point (paused mid-session, 2026-09-25 late evening)
 
 **Shipped this session:** v1.3.5 (live, "Latest"): one-click app
 updates (see that section) + the collapse_repeats list fix. Cloud latency

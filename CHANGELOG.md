@@ -2,6 +2,36 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [1.3.6] - 2026-09-26
+
+### Added
+
+- Code dictation. A second key (Right Ctrl + Right Shift by default,
+  changeable in Settings -> Hotkeys) turns what you say into text that
+  runs: "select star from users where id equals five" types
+  SELECT * FROM users WHERE id = 5, and "git commit dash m quote fix
+  login bug quote" types git commit -m "fix login bug". Works for SQL,
+  terminal and PowerShell commands, and code. Ordinary sentences said
+  with this key still come out as normal sentences. "How to say code" on
+  the Hotkeys tab lists the words to use.
+
+### Changed
+
+- The Hotkeys tab is now two simple sections, Dictation and Code
+  dictation, each with its own key.
+
+### Fixed
+
+- In Cloud mode, pressing the key without saying anything could type
+  words you never said, most often "Thank you." Silent presses are now
+  ignored and nothing is sent.
+- Cloud mode now gets the same punctuation and personal-dictionary hints
+  that Local mode always had, so your dictionary words are recognised
+  more reliably.
+- Quitting from the tray icon could leave Talkative running in the
+  background (visible in Task Manager) if Settings had been opened.
+  Quit now always closes it completely.
+
 ## [1.3.5] - 2026-09-25
 
 ### Added
