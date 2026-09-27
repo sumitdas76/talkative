@@ -23,9 +23,15 @@ _lock = threading.Lock()
 
 
 def maybe_show():
-    """Show the notice if it hasn't been shown before; otherwise do nothing."""
+    """Show the notice if it hasn't been shown before; otherwise do nothing.
+
+    Never while the first-run Cloud/Local question is unanswered: on a fresh
+    install both windows used to open at once, this one saying Cloud was in
+    use before the user had chosen it (found in the 1.3.9 fresh-install
+    test). Answering Cloud there marks this notice done, so it now only
+    ever reaches installs that finished onboarding without seeing it."""
     global _opened
-    if config.CLOUD_NOTICE_DONE:
+    if config.CLOUD_NOTICE_DONE or not config.ONBOARDING_DONE:
         return
     with _lock:
         if _opened:

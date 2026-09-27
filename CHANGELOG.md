@@ -30,6 +30,14 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   the report...", "git is complaining about...") now stay sentences when
   said with the code key.
 
+### Fixed
+
+- Versions 1.3.6 to 1.3.8 could fail to start on a new install or after
+  updating ("Unhandled exception in script"). If that happened to you,
+  download and run this version's installer; your settings are kept.
+- On a new install, the "running via Cloud" notice no longer opens on top
+  of the first-run Cloud or Local choice.
+
 ## [1.3.8] - 2026-09-27
 
 ### Changed
