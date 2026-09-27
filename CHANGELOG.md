@@ -2,7 +2,7 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
-## [Unreleased]
+## [1.3.9] - 2026-09-27
 
 ### Changed
 
@@ -16,7 +16,6 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   voice download instead of the full 2 GB: Optimize Narration finishes
   downloading in the background while you work (and resumes if Talkative
   is closed before it's done).
-
 - Local mode's sentence cleanup is about 40% faster: a short dictation's
   cleanup went from about 3 seconds to under 2 on a typical 6-core PC.
 - Code dictation understands much more .NET, JavaScript/TypeScript and
