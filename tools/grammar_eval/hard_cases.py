@@ -47,6 +47,8 @@ CASES = [
     ("numbers", "The invoice total was 4,250 dollars and it's due on the 15th.", ["4,250", "15th"], []),
     ("numbers", "we need about three hundred units by the end of March", ["march"], []),
     ("numbers", "call me on extension 2047 after 5 pm", ["2047", "5"], []),
+    # Spoken numbers stay words (2026-09-27): Cloud wrote 3:30, Local 3:00 PM.
+    ("numbers", "the meeting moved to three thirty on friday", ["three thirty"], ["3:30", "3:00"]),
     ("names", "Please forward this to Ashwini and Rahul, and cc Priyanka from finance.", ["ashwini", "rahul", "priyanka"], []),
     ("names", "Tell Mr. Bajaj that the Kubernetes cluster is back up.", ["bajaj", "kubernetes"], []),
 

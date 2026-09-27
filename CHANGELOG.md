@@ -2,14 +2,20 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
-## [Unreleased]
+## [1.3.10] - 2026-09-27
+
+### Changed
+
+- Cloud mode no longer says "Cloud is busy" when many people dictate at
+  once: if the main speech service is at its limit, a second one with the
+  same accuracy takes over (a second or so slower). This is on our server,
+  so it already works in every version.
 
 ### Fixed
 
 - Code dictation: "docker" misheard as "talker" is understood; "let c
   equal to 5 plus 2" is typed as code again (it had become a sentence);
   a negative number after step or return is written -2, not - 2.
-
 - Sentence cleanup keeps numbers exactly as you said them. Before, a
   dictation like "the meeting moved to three thirty" could lose its
   cleanup entirely (Cloud wrote 3:30, the on-device model even wrote

@@ -8,7 +8,7 @@
     "prose_guard": 48
   },
   "grammar": {
-    "cases": 35,
+    "cases": 36,
     "max_rejections": 0,
     "max_meaning_flags": 1
   }
