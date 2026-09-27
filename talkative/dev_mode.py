@@ -275,6 +275,9 @@ _MISHEARD_CODE = [
     (r"\b(asint|a sink|asynch|a sync)\b", "async"),
     (r"^(npm|yarn|pnpm) create (vt|white|veet|vit)\b", r"\1 create vite"),
     (r"^as (?=(login|logout|account|group|webapp|vm|storage|aks|acr|functionapp)\b)", "az "),
+    # The user's own voice, Cloud (2026-09-27): "docker run" heard as "talker run".
+    (r"^(talker|doctor|darker) (?=(run|ps|build|compose|exec|images|pull|push|logs|stop|rm|rmi|"
+     r"start|restart|inspect|network|volume|system|tag|login)\b)", "docker "),
 ]
 
 
@@ -487,8 +490,12 @@ def _classify(text):
             and not re.search(r"\b(dot|slash|colon|at)\b|[./:@]\S", text))):
         return False                                  # git is complaining about ...
     if first in _ENGLISHY_KEYWORDS:
+        # Arithmetic counts as code-like too: "let c equal to 5 plus 2"
+        # (the user's own dictation, 2026-09-27) -- "let me know" has none.
         return bool(second in _DECL_SECOND or _CODE_SIGNAL.search(text)
-                    or re.search(r"\b(dot|colon)\b|[.:]\S", text))
+                    or re.search(r"\b(dot|colon)\b|[.:]\S", text)
+                    or re.search(r"\b(equal to|equals?|plus|minus|times|divided by)\s+"
+                                 r"(\d|[a-z]\b|minus\b|" + _NUM_WORD + r")", text, re.IGNORECASE))
     if first in _STRONG_STARTERS or head in _STRONG_STARTERS:
         return True
     body = text.rstrip(".")
@@ -829,8 +836,10 @@ def _resolve(tokens, sql, powershell, cli=False):
                 t[k] = "\x05-"                       # my-app old-feature
         elif tok == "\x07--":
             t[k] = "\x0d--"
-        elif tok == "\x01-" and (prev is None or _is_marker(prev, "\x01\x02\x09")) and _is_num(nxt):
-            t[k] = "\x0d-"                           # DATEADD(DAY, -7, ...)
+        elif tok == "\x01-" and _is_num(nxt) and (
+                prev is None or _is_marker(prev, "\x01\x02\x09")
+                or (_is_word(prev) and prev.lower() in ("step", "return", "to", "by", "yield", "case", "in"))):
+            t[k] = "\x0d-"                           # DATEADD(DAY, -7, ...), step -2, return -1
         elif tok == "\x05_" and (
                 prev is None or (_is_word(prev) and prev.lower() in _UNDERSCORE_KEYWORDS)
                 or _is_marker(prev, "\x01\x02\x09") or prev == "\x03>"

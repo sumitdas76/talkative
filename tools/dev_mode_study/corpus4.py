@@ -214,7 +214,17 @@ PROSE = [
     ("prose", "docker desktop keeps crashing after the update", ""),
 ]
 
-TUNE = DOTNET_CLI + CSHARP + JS_CLI + JS_CODE + FULLSTACK_CLI + PROSE
+# From the user's own voice (Cloud, 2026-09-27) -- spoken text as the
+# speech model actually returned it.
+REAL_VOICE = [
+    ("shell", "talker run dash p8080 colon 80 my dash app", "docker run -p 8080:80 my-app"),
+    ("code", "let c equal to 5 plus 2", "let c = 5 + 2"),
+    ("code", "for i equals 9 to 1 step minus 2", "for i = 9 to 1 step -2"),
+    ("code", "return minus 1", "return -1"),
+    ("prose", "let me know if the numbers equal what finance sent", ""),
+]
+
+TUNE = DOTNET_CLI + CSHARP + JS_CLI + JS_CODE + FULLSTACK_CLI + PROSE + REAL_VOICE
 
 # ---------------------------------------------------------------------------
 # FINAL -- never tune on these.

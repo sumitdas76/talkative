@@ -6,6 +6,10 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
 ### Fixed
 
+- Code dictation: "docker" misheard as "talker" is understood; "let c
+  equal to 5 plus 2" is typed as code again (it had become a sentence);
+  a negative number after step or return is written -2, not - 2.
+
 - Sentence cleanup keeps numbers exactly as you said them. Before, a
   dictation like "the meeting moved to three thirty" could lose its
   cleanup entirely (Cloud wrote 3:30, the on-device model even wrote
