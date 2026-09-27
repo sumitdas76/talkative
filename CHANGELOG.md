@@ -2,6 +2,13 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [Unreleased]
+
+### Changed
+
+- Local mode's sentence cleanup is about 40% faster: a short dictation's
+  cleanup went from about 3 seconds to under 2 on a typical 6-core PC.
+
 ## [1.3.8] - 2026-09-27
 
 ### Changed

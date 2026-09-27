@@ -625,15 +625,17 @@ exists for "I"/"we" swaps, negation flips ("won't" → "will"), or
 conditional/certainty flips ("might" → "will")) and add guards as they
 turn up.
 
-**Open, not done:** the user also asked for "a better, more optimized"
-grammar model and picked "faster, even if slightly less capable" when
-asked what to optimize for. This is unstarted — the existing 1.5B model
-is not swapped. A real attempt needs the same kind of dedicated
-evaluation the July 19 session did (3 candidates compared against real
-debug.log transcripts; two rejected for concrete failures: 0.5B dropped a
-sentence, Qwen3-0.6B mangled numbers) — not a quick swap. Whatever
-candidate is tried should be re-validated against the *loosened* guards
-above (a smaller/faster model is more likely to trip them, not less).
+**Faster grammar model: evaluated 2026-09-27, model kept, engine sped
+up instead.** The user asked for "faster, even if slightly less capable".
+Qwen2.5-0.5B, Gemma-3-1B and Llama-3.2-1B were compared against the
+shipped Qwen2.5-1.5B on 68 cases; all three lost (0.5B barely cleans
+unpunctuated text and garbles words the guards can't see; Gemma and
+Llama fail the guards 26-31 times out of 68). Qwen3.5 can't run on
+CTranslate2 (linear attention). Instead `grammar_engine.py` now uses
+physical-core `intra_threads` and passes the system + few-shot prefix as
+`static_prompt` (cached by CTranslate2): 40% faster, equivalent quality,
+not bit-identical outputs. Harness, results table and conversion recipe:
+`tools/grammar_eval/README.md`.
 
 ## Checkbox glyph fix (2026-07-21) -- a real ttk theming trap
 

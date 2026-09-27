@@ -124,7 +124,8 @@ def load():
             from tokenizers import Tokenizer
 
             generator = ctranslate2.Generator(
-                str(engine_dir()), device="cpu", compute_type="int8"
+                str(engine_dir()), device="cpu", compute_type="int8",
+                intra_threads=_threads(),
             )
             tokenizer = Tokenizer.from_file(str(engine_dir() / "tokenizer.json"))
         except Exception:
@@ -156,12 +157,30 @@ def delete():
     shutil.rmtree(engine_dir(), ignore_errors=True)
 
 
-def _build_prompt(text):
+def _threads():
+    """CTranslate2's default is 4 threads. Physical cores (logical / 2 on
+    SMT CPUs) measured faster on a 6-core Ryzen 5 8500G (2026-09-27:
+    long dictation 8.4s -> 6.4s with the static prompt below); more than
+    that gave nothing. Capped so a big workstation doesn't oversubscribe."""
+    import os
+
+    return max(4, min(8, (os.cpu_count() or 8) // 2))
+
+
+def _static_prompt():
+    """The system prompt + few-shot turns: identical on every call, so
+    they go to CTranslate2 as static_prompt, whose model state it caches
+    after the first call instead of re-reading ~330 tokens per dictation
+    (measured 2026-09-27: short dictations 3.2s -> 1.7s with _threads())."""
     p = f"<|im_start|>system\n{_SYSTEM}<|im_end|>\n"
     for spoken, cleaned in _SHOTS:
         p += (f"<|im_start|>user\n{spoken}<|im_end|>\n"
               f"<|im_start|>assistant\n{cleaned}<|im_end|>\n")
-    return p + f"<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n"
+    return p
+
+
+def _user_turn(text):
+    return f"<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n"
 
 
 def _digits_ok(inp, out):
@@ -302,9 +321,11 @@ def apply(text):
             generator, tokenizer = _generator, _tokenizer
             if generator is None:
                 return text
-            tokens = tokenizer.encode(_build_prompt(text)).tokens
+            static = tokenizer.encode(_static_prompt()).tokens
+            tokens = tokenizer.encode(_user_turn(text)).tokens
             result = generator.generate_batch(
                 [tokens],
+                static_prompt=static,
                 max_length=len(tokens) + 250,
                 sampling_temperature=0,
                 include_prompt_in_result=False,

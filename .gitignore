@@ -8,3 +8,7 @@ installer/Output/
 installer/redist/
 cloud/.wrangler/
 tools/dev_mode_study/*.png
+tools/grammar_eval/log_cases.json
+tools/grammar_eval/results_*.json
+tools/grammar_eval/ct2/
+tools/grammar_eval/convvenv/
