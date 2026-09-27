@@ -2,6 +2,15 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [Unreleased]
+
+### Fixed
+
+- Sentence cleanup keeps numbers exactly as you said them. Before, a
+  dictation like "the meeting moved to three thirty" could lose its
+  cleanup entirely (Cloud wrote 3:30, the on-device model even wrote
+  3:00 PM, and the safety check then threw the result away).
+
 ## [1.3.9] - 2026-09-27
 
 ### Changed

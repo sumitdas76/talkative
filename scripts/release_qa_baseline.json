@@ -9,7 +9,7 @@
   },
   "grammar": {
     "cases": 35,
-    "max_rejections": 2,
-    "max_meaning_flags": 5
+    "max_rejections": 0,
+    "max_meaning_flags": 1
   }
 }

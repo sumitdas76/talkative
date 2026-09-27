@@ -37,8 +37,14 @@ _SYSTEM = (
     "and even then stay as close to the speaker's own words as you "
     "reasonably can. Never add information or invent claims the speaker "
     "didn't make, never change names or numbers, and never drop something "
-    "the speaker actually said. Reply with only the cleaned text."
+    "the speaker actually said. Keep every number exactly as the speaker "
+    "said it: number words stay words and digits stay digits. Reply with "
+    "only the cleaned text."
 )
+# The number sentence (2026-09-27): Cloud turned "three thirty" into "3:30"
+# and "two point one" into "2.1", and the local model turned "three
+# thirty" into "3:00 PM" -- each then failed the digit guard, so the whole
+# dictation lost its cleanup. Keep in sync with cloud/worker.js's SYSTEM.
 
 # Few-shot pairs demonstrating the leash; auditioned July 2026 against the
 # debug.log corpus (they materially improve instruction-following in
@@ -59,6 +65,10 @@ _SHOTS = [
      "happens sometimes it's kind of random",
      "There's an issue where clicking the button sometimes does nothing; "
      "it seems random."),
+    # Numbers stay as said (2026-09-27): the 1.5B model ignored the
+    # instruction alone and kept writing "three thirty" as "3:00 PM".
+    ("the call is at four fifteen and the budget is two point five million",
+     "The call is at four fifteen, and the budget is two point five million."),
 ]
 
 _DIGIT_RUN = re.compile(r"\d+")

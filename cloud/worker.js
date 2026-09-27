@@ -56,7 +56,9 @@ const SYSTEM = (
   "and even then stay as close to the speaker's own words as you " +
   "reasonably can. Never add information or invent claims the speaker " +
   "didn't make, never change names or numbers, and never drop something " +
-  "the speaker actually said. Reply with only the cleaned text."
+  "the speaker actually said. Keep every number exactly as the speaker " +
+  "said it: number words stay words and digits stay digits. Reply with " +
+  "only the cleaned text."
 );
 
 const SHOTS = [
@@ -72,6 +74,8 @@ const SHOTS = [
    "happens sometimes it's kind of random",
    "There's an issue where clicking the button sometimes does nothing; " +
    "it seems random."],
+  ["the call is at four fifteen and the budget is two point five million",
+   "The call is at four fifteen, and the budget is two point five million."],
 ];
 
 // gpt-oss likes typographic characters (curly quotes, narrow no-break
