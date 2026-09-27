@@ -24,7 +24,7 @@ worse than no cleanup at all):
 import re
 import threading
 
-from . import config, model_manager
+from . import config, hardware, model_manager
 
 _SYSTEM = (
     "You clean up dictated text. Fix grammar and punctuation. Remove word "
@@ -85,6 +85,12 @@ _STOPWORDS = frozenset({
 _lock = threading.Lock()
 _generator = None
 _tokenizer = None
+# Output tokens per second on this PC -- measured at load, then updated
+# from real dictations (see apply()). None until measured.
+_speed = None
+device = "cpu"
+# Why the last apply() skipped the pass (for debug.log), or None.
+last_skip = None
 
 
 def engine_dir():
@@ -113,7 +119,7 @@ def load():
     """Load the engine if installed. Idempotent, thread-safe, never raises.
     Returns True when the engine is ready. Call from a background thread at
     startup -- loading takes a moment and must not delay dictation."""
-    global _generator, _tokenizer
+    global _generator, _tokenizer, _speed, device
     with _lock:
         if _generator is not None:
             return True
@@ -123,16 +129,27 @@ def load():
             import ctranslate2
             from tokenizers import Tokenizer
 
-            generator = ctranslate2.Generator(
-                str(engine_dir()), device="cpu", compute_type="int8",
-                intra_threads=_threads(),
-            )
             tokenizer = Tokenizer.from_file(str(engine_dir() / "tokenizer.json"))
         except Exception:
             return False
-        _generator = generator
-        _tokenizer = tokenizer
-        return True
+        # GPU first when there is one; the warm-up generation is the real
+        # test (missing CUDA libraries often only fail on first use). The
+        # warm-up also fills the static-prompt cache and measures speed.
+        options = [("cpu", "int8", {"intra_threads": hardware.cpu_threads()})]
+        if config.USE_GPU and hardware.cuda_devices():
+            options.insert(0, ("cuda", "int8_float16", {}))
+        for dev, compute, extra in options:
+            try:
+                generator = ctranslate2.Generator(str(engine_dir()), device=dev,
+                                                  compute_type=compute, **extra)
+                _generate(generator, tokenizer, "so the meeting is on friday")  # fills the cache
+                n, secs, _ = _generate(generator, tokenizer, "i think we should ship it on monday")
+            except Exception:
+                continue
+            _generator, _tokenizer, device = generator, tokenizer, dev
+            _speed = n / secs if secs > 0 and n else None
+            return True
+        return False
 
 
 def unload():
@@ -157,21 +174,11 @@ def delete():
     shutil.rmtree(engine_dir(), ignore_errors=True)
 
 
-def _threads():
-    """CTranslate2's default is 4 threads. Physical cores (logical / 2 on
-    SMT CPUs) measured faster on a 6-core Ryzen 5 8500G (2026-09-27:
-    long dictation 8.4s -> 6.4s with the static prompt below); more than
-    that gave nothing. Capped so a big workstation doesn't oversubscribe."""
-    import os
-
-    return max(4, min(8, (os.cpu_count() or 8) // 2))
-
-
 def _static_prompt():
     """The system prompt + few-shot turns: identical on every call, so
     they go to CTranslate2 as static_prompt, whose model state it caches
     after the first call instead of re-reading ~330 tokens per dictation
-    (measured 2026-09-27: short dictations 3.2s -> 1.7s with _threads())."""
+    (measured 2026-09-27: short dictations 3.2s -> 1.7s with physical-core threads)."""
     p = f"<|im_start|>system\n{_SYSTEM}<|im_end|>\n"
     for spoken, cleaned in _SHOTS:
         p += (f"<|im_start|>user\n{spoken}<|im_end|>\n"
@@ -181,6 +188,38 @@ def _static_prompt():
 
 def _user_turn(text):
     return f"<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n"
+
+
+def _generate(generator, tokenizer, text):
+    """One cleanup generation -> (output tokens, seconds, text). Threads:
+    hardware.cpu_threads() (physical cores) measured faster than
+    CTranslate2's default 4 on a 6-core Ryzen (2026-09-27: long dictation
+    8.4s -> 6.4s together with the static prompt)."""
+    import time
+
+    static = tokenizer.encode(_static_prompt()).tokens
+    tokens = tokenizer.encode(_user_turn(text)).tokens
+    start = time.perf_counter()
+    result = generator.generate_batch(
+        [tokens],
+        static_prompt=static,
+        max_length=len(tokens) + 250,
+        sampling_temperature=0,
+        include_prompt_in_result=False,
+        end_token="<|im_end|>",
+    )[0]
+    secs = time.perf_counter() - start
+    ids = result.sequences_ids[0]
+    return len(ids), secs, tokenizer.decode(ids, skip_special_tokens=True).strip()
+
+
+def predicted_seconds(text):
+    """How long a pass over `text` should take on this PC, from its
+    measured speed; None before the engine has measured itself. Output is
+    about as long as the input, so input tokens are a fair estimate."""
+    if not _speed or _tokenizer is None:
+        return None
+    return (len(_tokenizer.encode(text).tokens) * 1.15 + 8) / _speed
 
 
 def _digits_ok(inp, out):
@@ -208,6 +247,9 @@ def _retention_ok(inp, out):
     # reject. This trades away some of the original protection against the
     # engine quietly changing what was said; watch debug.log for bad
     # rewrites and tighten back up if it misfires in practice.
+    # 2026-09-27: per-sentence tightened back to 0.5 (now content words
+    # only, so less strict than the July 0.5) after a dropped question got
+    # through -- see config.GRAMMAR_MIN_SENTENCE_RETENTION.
     for sentence in re.split(r"(?<=[.!?])\s+", inp):
         words = _WORD.findall(sentence.lower())
         if len(words) < 2:
@@ -228,7 +270,7 @@ def _retention_ok(inp, out):
         # since "you" is also a second-person pronoun -- not by this one,
         # which is the actual guard meant to catch a dropped sentence).
         content = [w for w in words if w not in _STOPWORDS] or words
-        if sum(1 for w in content if w in dst) / len(content) < 0.2:
+        if sum(1 for w in content if w in dst) / len(content) < config.GRAMMAR_MIN_SENTENCE_RETENTION:
             return False
     return True
 
@@ -313,27 +355,27 @@ def validate(inp, out):
 def apply(text):
     """Clean `text` through the engine; on any failure or guard rejection
     return it unchanged. Blocking (seconds on CPU) -- call from the
-    dictation worker thread only."""
+    dictation worker thread only. Skipped (text returned unchanged) when
+    this PC's measured speed predicts it would take longer than
+    config.GRAMMAR_MAX_SECONDS."""
+    global _speed, last_skip
+    last_skip = None
     if not text or _generator is None:
+        return text
+    predicted = predicted_seconds(text)
+    if predicted is not None and predicted > config.GRAMMAR_MAX_SECONDS:
+        last_skip = f"predicted {predicted:.1f}s > {config.GRAMMAR_MAX_SECONDS:g}s"
         return text
     try:
         with _lock:
             generator, tokenizer = _generator, _tokenizer
             if generator is None:
                 return text
-            static = tokenizer.encode(_static_prompt()).tokens
-            tokens = tokenizer.encode(_user_turn(text)).tokens
-            result = generator.generate_batch(
-                [tokens],
-                static_prompt=static,
-                max_length=len(tokens) + 250,
-                sampling_temperature=0,
-                include_prompt_in_result=False,
-                end_token="<|im_end|>",
-            )[0]
-            out = tokenizer.decode(
-                result.sequences_ids[0], skip_special_tokens=True
-            ).strip()
+            n, secs, out = _generate(generator, tokenizer, text)
+            if n and secs > 0:
+                # Follow the machine's real speed (thermal throttling,
+                # battery saver, other load) rather than one warm-up.
+                _speed = n / secs if _speed is None else 0.7 * _speed + 0.3 * (n / secs)
     except Exception:
         return text
 

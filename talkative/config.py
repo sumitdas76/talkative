@@ -110,6 +110,24 @@ GRAMMAR_HF_REPO = "sumitdas76/talkative-grammar"
 # request -- accepts more risk of the model changing what was said in
 # exchange for more helpful rewrites.
 GRAMMAR_MIN_RETENTION = 0.4
+# Guard: every input sentence must keep at least this fraction of its own
+# content words (stopwords excluded) in the output. 0.2 (2026-07-20 to
+# 2026-09-27) let a whole dropped question through because three of its
+# words happened to appear elsewhere in the output ("...company...lot...
+# AI"). 0.5 caught that and rejected none of 130+ good local outputs or
+# 119 good Cloud outputs in the 2026-09-27 evaluation.
+GRAMMAR_MIN_SENTENCE_RETENTION = 0.5
+# Local grammar on slow hardware: the engine measures its own speed on this
+# PC and skips the pass for a dictation it predicts would take longer than
+# this, pasting the rules-cleaned text instead of making the user wait
+# (an old CPU with DDR4 can be several times slower than the 6-core DDR5
+# dev machine, where the longest test dictation took ~6.4s).
+GRAMMAR_MAX_SECONDS = 10.0
+# Use an NVIDIA GPU for the local models when CTranslate2 can see one;
+# anything failing on it falls back to the CPU.
+USE_GPU = True
+# Local speech recognition beam width (faster-whisper's default is 5).
+STT_BEAM_SIZE = 5
 
 # ---------------------------------------------------------------------------
 # Processing: "cloud" (default, ships out of the box -- see cloud/ and

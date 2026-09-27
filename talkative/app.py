@@ -471,6 +471,8 @@ class TalkativeApp:
             timing=f"transcribe {transcribe_secs:.1f}s, grammar {grammar_secs:.1f}s"
             + (f" [{config.GRAMMAR_MODEL_DIR if grammar_used_local else 'cloud'}]"
                if grammar_secs else "")
+            + (f" [grammar skipped: {grammar_engine.last_skip}]"
+               if grammar_used_local and grammar_engine.last_skip else "")
             + (" [developer: prose]" if dev else ""),
         )
         self._insert_final(text)

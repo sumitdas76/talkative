@@ -6,6 +6,13 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
 ### Changed
 
+- Local mode adapts to the PC it runs on: it uses all physical CPU cores,
+  uses an NVIDIA graphics card when one is usable (falling back to the
+  processor otherwise), and on slower PCs skips sentence cleanup for a
+  dictation it predicts would take more than 10 seconds instead of making
+  you wait.
+- Sentence cleanup is stricter about never dropping a sentence you said.
+
 - Local mode's sentence cleanup is about 40% faster: a short dictation's
   cleanup went from about 3 seconds to under 2 on a typical 6-core PC.
 - Code dictation understands much more .NET, JavaScript/TypeScript and

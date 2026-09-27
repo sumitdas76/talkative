@@ -18,6 +18,11 @@ class FakeThread:
 
 
 appmod.threading = types.SimpleNamespace(Thread=FakeThread)
+toasts = []
+appmod.error_toast = types.SimpleNamespace(show=toasts.append)
+# A user who has answered the first-run Cloud/Local question (since 1.3.7
+# nothing records before that -- tested separately at the end).
+config.ONBOARDING_DONE = True
 appmod.is_focus_editable = lambda: True
 appmod.pill = types.SimpleNamespace(show=lambda f: None, hide=lambda: None)
 t = [0.0]
@@ -75,3 +80,10 @@ hold(a, K.ctrl_r, K.shift_r)
 hold(a, K.ctrl_r)
 got = ["dev" if d else "normal" for d in started]
 print(f"{'OK ' if got == ['dev', 'normal'] else 'BAD'} dev then normal: {got}")
+
+# First-run gate: until Cloud/Local is chosen, the hotkey records nothing
+# and says why.
+config.ONBOARDING_DONE = False
+case("before the first-run choice", *DEFAULT, K.ctrl_r, expect=[])
+print(f"{'OK ' if toasts else 'BAD'} ...and a notice was shown: {toasts[-1:]}")
+config.ONBOARDING_DONE = True

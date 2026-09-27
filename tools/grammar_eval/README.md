@@ -54,3 +54,46 @@ the same model 40% faster over all 68 cases (short dictation 3.2s ->
 unchanged, 3 vs 3 meaning flags). Outputs aren't bit-identical -- greedy
 decoding flips on near-ties when float math changes -- so compare
 quality, not strings, after any such change.
+
+## Restraint experiment, 2026-09-27 (`variants.py V0|V1|V2`)
+
+Cloud's grammar model (gpt-oss-20b) mostly leaves the speaker's words
+alone; the local 1.5B rewords. Prompt changes tried on the 68 cases:
+
+| Variant | changed | rejected | meaning flags | reworded words |
+|---|---|---|---|---|
+| V0 shipped prompt | 43 | 7 | 3 | 17 |
+| V1 + two "leave it alone" shots | 40 | 11 | 4 | 22 |
+| V2 strict "never reword" prompt | 47 | 4 | 1 | 19 |
+
+Not shipped: V2 traded rewording for silent deletion -- it dropped a whole
+question ("...Or maybe he is doing a lot in his company regarding AI
+implementation?") that the per-sentence guard let through at 0.2. Shipped
+instead: that guard at 0.5 (config.GRAMMAR_MIN_SENTENCE_RETENTION), which
+rejects that output and none of 130+ good local or 119 good Cloud outputs.
+Prompting a 1.5B model moved errors around rather than removing them.
+
+## Local speech recognition, 2026-09-27 (`stt_bench.py model:beam:threads`)
+
+41 code phrases + 24 sentences, synthetic US (Zira) and Indian English
+(Ravi) voices. WER on the sentences; code = exact code-dictation matches.
+
+| Config | WER US | WER Ind. | code US/Ind. | median |
+|---|---|---|---|---|
+| small.en beam 5, default threads (shipped) | 1.8% | 4.3% | 37/35 | 1.38s |
+| small.en beam 5, 6 threads | 1.8% | 4.3% | 37/35 | 1.32s |
+| small.en beam 1, 6 threads | 1.8% | 4.9% | 37/34 | 1.25s |
+| base.en beam 5, 6 threads | 3.1% | 4.3% | 35/28 | 0.41s |
+| distil-small.en beam 1 | 3.7% | 5.5% | 0/0 | 1.06s |
+| distil-large-v3 beam 1 | 2.5% | 3.1% | 20/20 | 5.11s |
+| large-v3-turbo beam 1 (Groq's model) | 1.8% | 3.1% | 39/34 | 5.19s |
+| simulated older PC (2 cores, AVX2): small.en | 1.8% | 4.3% | 37/35 | 1.65s |
+| simulated older PC: base.en | 3.1% | 4.3% | 35/28 | 0.81s |
+
+Whisper encodes a fixed 30 s window, so beam and threads barely matter;
+model size is the lever. small.en stays the default everywhere (fine even
+on the simulated older PC). large-v3-turbo is worth it only where it's
+fast (an NVIDIA GPU): 4x slower here for fewer Indian English errors.
+Grammar on the simulated older PC: ~6 tok/s vs ~13 here, long dictation
+~19 s, which config.GRAMMAR_MAX_SECONDS now skips. The simulation can't
+reproduce DDR4 memory bandwidth, so real old PCs will be slower still.
