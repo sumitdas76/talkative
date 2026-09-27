@@ -21,6 +21,18 @@ public source are what SignPath code signing requires.
    `git push origin v<version>`. The workflow builds the EXE, smoke-tests
    it, builds `TalkativeSetup.exe`, and attaches it plus `SHA256SUMS.txt`
    to a **draft** release. Watch it: `gh run watch <id> --exit-status`.
+3b. **Keep the QA in step with the product -- required, standing user
+   rule.** For every feature this release adds, add a row to
+   `docs/RELEASE_QA.md` (automated in `scripts/release_qa.py` where
+   practical, with a baseline in `scripts/release_qa_baseline.json` if
+   it's scored); for every feature removed, delete its rows and checks.
+   Same for this skill's own steps. Commit these with the release.
+4a. **Release QA on the CI-built EXE -- required.** Download it (below),
+   then `.venv\Scripts\python scripts\release_qa.py --exe <that EXE>`
+   (add `--grammar` when grammar code or the model changed). Every row
+   must PASS. Then go through the manual rows of `docs/RELEASE_QA.md`;
+   any you skip, say so in the summary to the user. If a score improved,
+   raise `scripts/release_qa_baseline.json` in the same commit.
 4b. **Fresh first-run test of the CI-built EXE before publishing** --
    it caught a launch crash in 1.3.6-1.3.8 that the CI smoke test
    passed (PyInstaller's crash dialog keeps the process alive) and two
