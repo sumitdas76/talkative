@@ -1074,7 +1074,8 @@ attributes / Console, React hooks), casing that keeps is/or/not/async/
 where/set inside a name only when it runs into a call (`_CASING_SOFT`),
 and classification guards so "let me know...", "git is complaining...",
 "select the best candidate from..." stay prose (`_PROSE_SECOND`,
-`_ENGLISHY_KEYWORDS`). Cloud (Groq) scoring of corpus4 not run yet.
+`_ENGLISHY_KEYWORDS`). Cloud (Groq) run done the same day, Zira + Ravi
+(479 requests): tune 88.8 / 84.8%, final 83.6 / 68.9%.
 
 **Cloud STT prompt was silently dropped until 2026-09-25**:
 `cloud_client.transcribe()` accepted `initial_prompt` and never sent it,

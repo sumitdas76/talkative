@@ -58,4 +58,8 @@ small.en tune Zira 85.4%, Mark 81.5%, Ravi 76.4%, Heera 74.2%; final
 80.3 / 72.1 / 65.6 / 59.0%. The remaining gap is almost all STT (lodash ->
 "laddash", res -> "residential"). Not fixable by rules: C# vs JS casing of
 member names (order.Id vs order.id) and "not user" (! in JS, not in Python).
-Cloud (Groq) not run yet -- it spends the shared free-tier key.
+Cloud (Groq, `stt4.py --cloud zira ravi`, 479 requests on 2026-09-27):
+tune Zira 88.8%, Ravi 84.8%; final 83.6 / 68.9% (before the Cloud-derived
+fixes: tune 87.1 / 78.1%, final 83.6 / 65.6%). On every cached corpus2
+transcript (all voices, local and cloud) the 2026-09-27 rules are better
+on 13 and worse on none.

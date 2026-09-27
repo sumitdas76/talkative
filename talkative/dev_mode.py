@@ -264,6 +264,17 @@ _MISHEARD_CODE = [
     (r"^npm(ci|install|start|test|run)\b", r"npm \1"),
     (r"^cd(src|app|docs|tests?|lib|dist|build|public|client|server)\b", r"cd \1"),
     (r"(?<=colon )(\d(?: \d)+)\b", lambda m: m.group(1).replace(" ", "")),   # 8080:80
+    # Cloud (Groq large-v3-turbo) pass, same study.
+    (r"\bdot c ?s ?proj\b", "dot csproj"),
+    (r"\basp ?net ?core underscore\b", "aspnetcore underscore"),     # ASPNETCORE_ENVIRONMENT
+    (r"^npx(tsc|eslint|prisma|create)\b", r"npx \1"),
+    (r"\brouter dash (dumb|dome|dum)\b", "router dash dom"),
+    (r"^(war|wa) (?=\w+ equals (?!equals))", "var "),
+    (r"\busing wa\b", "using var"),
+    (r"\b(pascal|camel) case at (?=\w)", r"\1 case add "),            # AddScoped
+    (r"\b(asint|a sink|asynch|a sync)\b", "async"),
+    (r"^(npm|yarn|pnpm) create (vt|white|veet|vit)\b", r"\1 create vite"),
+    (r"^as (?=(login|logout|account|group|webapp|vm|storage|aks|acr|functionapp)\b)", "az "),
 ]
 
 
@@ -647,7 +658,7 @@ _SYMBOL_PHRASES = [
     ("underscore", "\x05_"), ("slash", "\x05/"),
     ("backslash", "\x05\\"), ("pipe", "\x01|"), ("ampersand", "\x01&"),
     ("dash", "\x07-"), ("hyphen", "\x07-"), ("hash", "\x0d#"),
-    ("dollar", "\x0d$"), ("tilde", "\x05~"), ("backtick", "\x06`"),
+    ("dollar", "\x0d$"), ("tilde", "\x05~"), ("backtick", "\x06`"), ("back tick", "\x06`"),
     ("quote", "\x06Q"),
 ]
 _PHRASES = sorted(((p.split(), s) for p, s in _SYMBOL_PHRASES),
