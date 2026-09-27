@@ -21,6 +21,16 @@ public source are what SignPath code signing requires.
    `git push origin v<version>`. The workflow builds the EXE, smoke-tests
    it, builds `TalkativeSetup.exe`, and attaches it plus `SHA256SUMS.txt`
    to a **draft** release. Watch it: `gh run watch <id> --exit-status`.
+4b. **Fresh first-run test of the CI-built EXE before publishing** --
+   it caught a launch crash in 1.3.6-1.3.8 that the CI smoke test
+   passed (PyInstaller's crash dialog keeps the process alive) and two
+   first-run windows opening at once. From PowerShell (gh downloads hang
+   in Git Bash): `gh run download <id> -D artifact`, check the EXE's hash
+   against SHA256SUMS.txt, then launch it with `LOCALAPPDATA` pointed at an
+   empty folder so it behaves like a new PC without touching real data.
+   Look at every window it opens; for a Local-mode change, drive the
+   setup through the real downloads. Stop the copy afterwards (it has the
+   same process name as the real app).
 5. Check the draft: asset named exactly `TalkativeSetup.exe` (the in-app
    updater looks for that name), title/notes right. Replace the notes
    with the CHANGELOG entry, followed by this footer -- SignPath's terms
