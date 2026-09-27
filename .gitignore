@@ -12,3 +12,12 @@ tools/grammar_eval/log_cases.json
 tools/grammar_eval/results_*.json
 tools/grammar_eval/ct2/
 tools/grammar_eval/convvenv/
+
+# Video project: licensed music (use-in-video licence, not redistribution),
+# mixes that contain it, and large renders -- rebuilt by scripts/build_audio.py
+videos/talkative-walkthrough/assets/audio/music-aylex-seller.mp3
+videos/talkative-walkthrough/assets/audio/soundtrack*.wav
+videos/talkative-walkthrough/assets/audio/music-raw.wav
+videos/talkative-walkthrough/renders/talkative-walkthrough-final.mp4
+videos/talkative-walkthrough/snapshots/
+videos/talkative-walkthrough/thumbnail-src/v2/snapshots/
