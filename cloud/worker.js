@@ -175,33 +175,53 @@ async function handleTranscribe(request, env, timing) {
   // base64 UTF-8 in X-Prompt-B64. Clients before 2026-09-25 never sent
   // one; a malformed value is ignored rather than failing the dictation.
   const promptB64 = request.headers.get("X-Prompt-B64");
+  let prompt = "";
   if (promptB64) {
     try {
       const raw = Uint8Array.from(atob(promptB64), (c) => c.charCodeAt(0));
-      const prompt = new TextDecoder().decode(raw).slice(0, 800);
-      if (prompt.trim()) form.append("prompt", prompt);
+      prompt = new TextDecoder().decode(raw).slice(0, 800).trim();
+      if (prompt) form.append("prompt", prompt);
     } catch (e) {
       // ignore
     }
   }
 
+  // Groq first. Every user shares one free Groq key (~20 requests/minute),
+  // so when it refuses (429), errors or can't be reached, fall back to
+  // Workers AI rather than showing "Cloud is busy" (2026-09-27). Only when
+  // both fail does the client get BUSY. X-Force-Fallback: 1 skips Groq so
+  // the fallback's quality can be measured on demand.
   const t0 = Date.now();
-  const groqResp = await fetch(
-    "https://api.groq.com/openai/v1/audio/transcriptions",
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${env.GROQ_API_KEY}` },
-      body: form,
+  let groqResp = null;
+  let groqProblem = request.headers.get("X-Force-Fallback") === "1" ? "forced" : null;
+  if (!groqProblem) {
+    try {
+      groqResp = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.GROQ_API_KEY}` },
+        body: form,
+      });
+      if (groqResp.status === 429 || groqResp.status >= 500) {
+        groqProblem = `groq ${groqResp.status}`;
+      } else if (!groqResp.ok) {
+        throw new Error(`Groq transcription failed: ${groqResp.status} ${await groqResp.text()}`);
+      }
+    } catch (e) {
+      if (e.message?.startsWith("Groq transcription failed")) throw e;
+      groqProblem = `groq unreachable: ${e}`;
     }
-  );
-  if (groqResp.status === 429) {
-    // Groq's own free-tier limit, not ours -- surface the same "busy" shape
-    // our per-install quota uses so cloud_client.py's existing 429 handling
-    // (CLOUD_BUSY_MESSAGE) covers this too, no client-side change needed.
-    return BUSY;
   }
-  if (!groqResp.ok) {
-    throw new Error(`Groq transcription failed: ${groqResp.status} ${await groqResp.text()}`);
+  if (groqProblem) {
+    timing.groq_problem = groqProblem;
+    try {
+      const fb = await workersAiTranscribe(env, bytes, prompt);
+      timing.upstream_ms = Date.now() - t0;
+      if (fb.turbo_error) timing.turbo_error = fb.turbo_error;
+      return { text: fb.text, via: fb.via };
+    } catch (e) {
+      timing.fallback_error = String(e);
+      return BUSY; // same shape as our per-install quota: the client shows "Cloud is busy"
+    }
   }
   const result = await groqResp.json();
   timing.upstream_ms = Date.now() - t0;
@@ -214,7 +234,7 @@ async function handleTranscribe(request, env, timing) {
   // measurable from the client.
   const segments = Array.isArray(result.segments) ? result.segments : null;
   if (!segments) {
-    return { text: result.text || "" };
+    return { text: result.text || "", via: "groq" };
   }
   const kept = [];
   timing.segments = segments.map((s) => {
@@ -222,7 +242,27 @@ async function handleTranscribe(request, env, timing) {
     if (!silent) kept.push(s.text || "");
     return [round2(s.no_speech_prob), round2(s.avg_logprob), silent ? 0 : 1];
   });
-  return { text: kept.join("").trim() };
+  return { text: kept.join("").trim(), via: "groq" };
+}
+
+// Workers AI speech-to-text, for when Groq can't serve. large-v3-turbo (the
+// same model Groq runs) takes the WAV as a base64 string; the older base
+// "whisper" model takes a byte array and is the last resort. Counts against
+// Workers AI's own free allowance (10,000 neurons/day, account-wide).
+async function workersAiTranscribe(env, bytes, prompt) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  try {
+    const input = { audio: btoa(binary), language: "en" };
+    if (prompt) input.initial_prompt = prompt;
+    const r = await env.AI.run("@cf/openai/whisper-large-v3-turbo", input);
+    return { text: (r.text || "").trim(), via: "workers-ai-large-v3-turbo" };
+  } catch (e) {
+    const r = await env.AI.run("@cf/openai/whisper", { audio: [...bytes] });
+    return { text: (r.text || "").trim(), via: "workers-ai-whisper", turbo_error: String(e) };
+  }
 }
 
 const NO_SPEECH_PROB = 0.6;
