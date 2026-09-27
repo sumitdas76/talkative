@@ -2,6 +2,12 @@
 
 Hold-to-talk dictation for Windows, ready the moment you install it.
 
+[![Download for Windows](https://img.shields.io/badge/Download_for_Windows-TalkativeSetup.exe-2ea44f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sumitdas76/talkative/releases/latest/download/TalkativeSetup.exe)
+
+Free, no account. Windows 10 or 11. The installer isn't code-signed yet, so
+Windows may say "Windows protected your PC": click **More info → Run
+anyway**. [What's new](https://github.com/sumitdas76/talkative/releases/latest)
+
 Hold a key (or two, held together — configurable in Settings; default:
 Right Ctrl), speak, release — your words are typed into whatever
 application has focus. Slips of the tongue, filler words, and spoken
@@ -26,8 +32,10 @@ in the [privacy policy](PRIVACY.md).
 
 ## Download
 
-Get **TalkativeSetup.exe** from the
-[latest release](https://github.com/sumitdas76/talkative/releases/latest).
+[Download TalkativeSetup.exe](https://github.com/sumitdas76/talkative/releases/latest/download/TalkativeSetup.exe)
+(always the latest version), or see the
+[latest release](https://github.com/sumitdas76/talkative/releases/latest) for
+what's new and the SHA-256 checksum.
 
 The installer is not code-signed yet, so Windows SmartScreen may warn you:
 click **More info → Run anyway**. No administrator rights are needed.
