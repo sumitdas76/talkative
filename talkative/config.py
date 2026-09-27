@@ -165,6 +165,12 @@ CLOUD_NOTICE_DONE = False
 # to existing installs too, not just fresh ones (deliberate; see
 # CLAUDE.md's onboarding note).
 ONBOARDING_DONE = False
+# Local setup downloads the grammar model (Optimize Narration) in the
+# background after the speech model, so dictation works minutes sooner.
+# True while that download is owed; resumed at the next start if the app
+# was closed mid-way. Only set by the app itself, so a model the user
+# deleted in Settings is never re-downloaded behind their back.
+GRAMMAR_PENDING_DOWNLOAD = False
 
 # ---------------------------------------------------------------------------
 # Dictation history: an opt-in, local-only log of the final text from each

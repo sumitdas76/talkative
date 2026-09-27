@@ -508,6 +508,10 @@ class TalkativeApp:
         # loading, grammar source) if the user picks something different
         # from the configured default.
         onboarding.maybe_show(on_choice=lambda mode: self._sync_processing_mode())
+        # Local setup's background grammar download, if Talkative was
+        # closed before it finished (see onboarding.finish_local).
+        if config.GRAMMAR_PENDING_DOWNLOAD:
+            grammar_engine.download_in_background()
         updater.start_background_check(self.updater_controller())
         feedback.start_background_check(
             on_reply=lambda text: self.tray.notify(

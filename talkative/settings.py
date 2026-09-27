@@ -43,6 +43,7 @@ _KEYS = {
     "cloud_shared_secret": "CLOUD_SHARED_SECRET",
     "cloud_notice_done": "CLOUD_NOTICE_DONE",
     "onboarding_done": "ONBOARDING_DONE",
+    "grammar_pending_download": "GRAMMAR_PENDING_DOWNLOAD",
     "manifest_url": "MANIFEST_URL",
     "releases_api_url": "RELEASES_API_URL",
     "insert_mode": "INSERT_MODE",

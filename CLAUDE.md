@@ -331,11 +331,17 @@ the window counts as Continue, so this can't lock dictation out. Its
 `on_choice` callback just calls
 `_sync_processing_mode()` again if the user's answer differs from that
 default, reusing the exact same sync path Settings already uses. Picking
-Local downloads both models right there (blocking only the onboarding
-window, with a progress bar) via the same `model_manager.download()` +
-`grammar_engine.download()` pair Settings' "Download local models" button
-calls, so onboarding hands off a fully working offline setup rather than
-leaving the grammar engine as a separate later step. Picking Cloud also
+Local downloads only the voice model in the window (progress bar) and
+then finishes -- dictation works with rules-only cleanup -- while
+`grammar_engine.download_in_background()` fetches the grammar model and
+loads it when done (staged setup, 2026-09-27: an urgent user dictates
+minutes sooner). `config.GRAMMAR_PENDING_DOWNLOAD` (settings key
+`grammar_pending_download`) marks the owed download so `app.run()`
+resumes it after a restart; `grammar_engine.delete()` clears it, so a
+model the user removed is never re-downloaded behind their back.
+`grammar_engine.download()` serializes on `_download_lock` so Settings'
+Download button can't collide with it. (Originally both models downloaded
+before onboarding finished.) Picking Cloud also
 pre-marks `CLOUD_NOTICE_DONE`, since the onboarding screen already covered
 that ground -- avoids showing `cloud_notice.py`'s notice right on top of
 it. The installer's uninstall data-removal prompt (see `installer/

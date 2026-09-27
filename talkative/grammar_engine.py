@@ -83,6 +83,7 @@ _STOPWORDS = frozenset({
 })
 
 _lock = threading.Lock()
+_download_lock = threading.Lock()
 _generator = None
 _tokenizer = None
 # Output tokens per second on this PC -- measured at load, then updated
@@ -112,7 +113,32 @@ def download():
         raise RuntimeError("No grammar engine download source is configured.")
     from huggingface_hub import snapshot_download
 
-    snapshot_download(repo_id=config.GRAMMAR_HF_REPO, local_dir=str(engine_dir()))
+    # One download at a time: Settings' Download button and the background
+    # download from Local setup may overlap.
+    with _download_lock:
+        if not is_installed():
+            snapshot_download(repo_id=config.GRAMMAR_HF_REPO, local_dir=str(engine_dir()))
+
+
+def download_in_background():
+    """Local setup's second stage: fetch the engine without blocking
+    anything, then load it if this mode uses it. Dictation meanwhile runs
+    with rules-only cleanup (apply() returns text unchanged with no
+    engine). On failure the pending flag stays, and app.run() retries at
+    the next start."""
+    from . import settings
+
+    def work():
+        try:
+            download()
+        except Exception:
+            return
+        config.GRAMMAR_PENDING_DOWNLOAD = False
+        settings.save({"grammar_pending_download": False})
+        if config.PROCESSING_MODE == "local" or config.GRAMMAR_SOURCE == "local":
+            load()
+
+    threading.Thread(target=work, daemon=True).start()
 
 
 def load():
@@ -169,9 +195,15 @@ def delete():
     import gc
     import shutil
 
+    from . import settings
+
     unload()
     gc.collect()
     shutil.rmtree(engine_dir(), ignore_errors=True)
+    # The user removed it on purpose: don't resume a background download.
+    if config.GRAMMAR_PENDING_DOWNLOAD:
+        config.GRAMMAR_PENDING_DOWNLOAD = False
+        settings.save({"grammar_pending_download": False})
 
 
 def _static_prompt():

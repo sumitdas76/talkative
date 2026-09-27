@@ -104,10 +104,11 @@ def _build(overlay, on_choice):
         bullets(local_box, [
             "Everything stays private. Your voice and text never leave "
             "this device, and nothing is sent over the internet.",
-            "Downloads about 2 GB once (voice model ~0.5 GB + grammar "
-            "model ~1.5 GB).",
-            "That much RAM will be occupied while the software is "
-            "working. No internet is needed.",
+            "Ready to dictate after a one-time 0.5 GB download. Optimize "
+            "Narration (1.5 GB more) then finishes downloading in the "
+            "background while you work.",
+            "Uses about 2 GB of memory while Talkative runs. No internet "
+            "is needed after the downloads.",
         ])
 
         status = ttk.Label(root, padding=(18, 4, 18, 0), foreground="grey", wraplength=480)
@@ -135,6 +136,14 @@ def _build(overlay, on_choice):
             if on_choice:
                 on_choice(chosen_mode)
 
+        def finish_local():
+            if not grammar_engine.is_installed():
+                config.GRAMMAR_PENDING_DOWNLOAD = True
+                settings.save({"grammar_pending_download": True})
+            finish("local")
+            if config.GRAMMAR_PENDING_DOWNLOAD:
+                grammar_engine.download_in_background()
+
         def on_continue():
             if state["busy"]:
                 return
@@ -142,20 +151,20 @@ def _build(overlay, on_choice):
             if chosen != "local":
                 finish("cloud")
                 return
-            if model_manager.is_downloaded(config.MODEL_SIZE) and grammar_engine.is_installed():
-                finish("local")
+            if model_manager.is_downloaded(config.MODEL_SIZE):
+                finish_local()
                 return
 
-            # Approximate sizes (measured live, 2026-09-19) -- used only as
+            # Only the voice model is waited for: with it, dictation works
+            # (rules-only cleanup); the 1.5 GB grammar model follows in the
+            # background (finish_local). Minutes sooner for someone who
+            # needs to dictate now (2026-09-27).
+            # Approximate size (measured live, 2026-09-19) -- used only as
             # a progress-bar denominator, not for exact accounting. Real
             # per-file byte callbacks would need hooking huggingface_hub's
             # internals; polling disk usage against a known rough total is
             # far simpler and good enough for a progress indicator.
-            needed_mb = 0
-            if not model_manager.is_downloaded(config.MODEL_SIZE):
-                needed_mb += 464
-            if not grammar_engine.is_installed():
-                needed_mb += 1490
+            needed_mb = 464
             baseline_mb = model_manager.storage_used_mb()
 
             state["busy"] = True
@@ -172,7 +181,7 @@ def _build(overlay, on_choice):
                 pct = int(done_mb / needed_mb * 100) if needed_mb else 100
                 status.config(
                     foreground="grey",
-                    text=f"Downloading voice and grammar models... {pct}% "
+                    text=f"Getting dictation ready... {pct}% "
                          f"({int(done_mb)} MB of {needed_mb} MB).",
                 )
                 root.after(500, poll_progress)
@@ -182,10 +191,7 @@ def _build(overlay, on_choice):
             def work():
                 error = None
                 try:
-                    if not model_manager.is_downloaded(config.MODEL_SIZE):
-                        model_manager.download(config.MODEL_SIZE)
-                    if not grammar_engine.is_installed():
-                        grammar_engine.download()
+                    model_manager.download(config.MODEL_SIZE)
                 except Exception as exc:
                     error = exc
 
@@ -200,7 +206,7 @@ def _build(overlay, on_choice):
                                  "connection and try again, or pick Cloud.",
                         )
                         return
-                    finish("local")
+                    finish_local()
 
                 root.after(0, done)
 
