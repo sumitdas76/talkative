@@ -23,7 +23,7 @@ text = f"""VSVersionInfo(
                     subtype=0x0, date=(0, 0)),
   kids=[
     StringFileInfo([StringTable('040904B0', [
-      StringStruct('CompanyName', 'Sumit Chatterjee'),
+      StringStruct('CompanyName', 'Sumit Das'),
       StringStruct('FileDescription', 'Talkative - hold-to-talk dictation'),
       StringStruct('FileVersion', '{version}'),
       StringStruct('InternalName', 'Talkative'),

@@ -26,7 +26,7 @@
 AppId={{7E1B3C52-9A44-4E0B-B7D1-52B4A46C1F0D}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppPublisher=Sumit Chatterjee
+AppPublisher=Sumit Das
 DefaultDirName={userpf}\{#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
