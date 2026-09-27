@@ -201,7 +201,9 @@ CODE = [
     ("function add open bracket a comma b close bracket open curly bracket", "function add(a, b) {"),
     ("return a plus b semicolon", "return a + b;"),
     ("const camel case api url equals quote http colon slash slash localhost colon eight thousand quote semicolon", 'const apiUrl = "http://localhost:8000";'),
-    ("import react from quote react quote semicolon", 'import react from "react";'),
+    # Expectation corrected 2026-09-27: React's default import is
+    # conventionally `React` (was `react` here).
+    ("import react from quote react quote semicolon", 'import React from "react";'),
     ("export default app semicolon", "export default app;"),
     ("const open curly bracket data close curly bracket equals await axios dot get open bracket url close bracket semicolon", "const { data } = await axios.get(url);"),
     ("document dot camel case get element by id open bracket quote app quote close bracket", 'document.getElementById("app")'),

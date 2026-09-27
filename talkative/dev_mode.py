@@ -39,17 +39,22 @@ not equal to                    !=
 greater than / less than        >  <     (or equal to: >= <=)
 plus  minus  times  divided by  +  -  *  /
 plus equals / plus plus         +=  ++
-open bracket / close bracket    (  )
+open bracket / close bracket    (  )     (or open/close paren,
+                                          left/right paren)
 open/close square bracket       [  ]
-open/close curly bracket        {  }
+open/close curly bracket        {  }     (or open/close curly, left/right curly)
 open/close angle bracket        <  >     (List<int>)
+exclamation mark / bang         !        (!user)
+question mark dot               ?.       double question mark -> ??
+spread / dot dot dot            ...
 quote hello world quote         'hello world' in SQL, "hello world" elsewhere
                                 (or: quote hello world unquote)
 comma  semicolon  colon         ,  ;  :
 dot  underscore  slash          .  _  /
 backslash  pipe  arrow          \\  |  =>
 and and / or or                 &&  ||
-dash m / dash dash force        -m  --force
+dash m / dash dash force        -m  --force   (hyphen or minus work too)
+capital x                       X        (curl -X POST)
 my dash app                     my-app   (longer words join)
 at id (SQL)                     @id      at at version -> @@version
 hash temp / dollar env          #temp  $env
@@ -59,6 +64,11 @@ camel case user name            userName
 pascal case user service        UserService
 snake case max retries          max_retries
 constant case max retries       MAX_RETRIES
+
+Also understood as said: use state -> useState (React hooks),
+"add package microsoft dot entity framework core" ->
+Microsoft.EntityFrameworkCore, "migrations add initial create" ->
+InitialCreate, console dot write line -> Console.WriteLine.
 
 Numbers are typed as digits: "eight zero eight zero" -> 8080,
 "fifty thousand" -> 50000, "one point five" -> 1.5.
@@ -118,6 +128,7 @@ _MISHEARD = [
     (r"^(l s)\b", "ls"),
     (r"\bv ?env\b", "venv"),
     (r"\bnode underscore modules\b", "node underscore modules"),
+    (r"\blocal host\b", "localhost"),
 ]
 
 # Command-only fixes: never applied to prose ("washed the dish", "you and me").
@@ -223,11 +234,89 @@ _MISHEARD_CODE = [
     (r"\bclose brackets\b", "close bracket"),
     # "-p8080": a flag letter fused onto its number.
     (r"\bdash ([a-z])(\d{2,})\b", r"dash \1 \2"),
+    # --- .NET / JS / full-stack study (2026-09-27), small.en with US and
+    # Indian English voices. Same bar as above: never meant literally.
+    (r"^dot ?net ?(e ?f|f)\b", "dotnet ef"),          # "dot net f migrations"
+    (r"^dot ?net(?=[a-z])", "dotnet "),                # "dot netsln add"
+    (r"^dot net\b", "dotnet"),
+    (r"\b(dot ?net|dotnet) dash (e ?f|f)\b", "dotnet dash ef"),
+    (r"^(dotnet|yarn|pnpm|git|poetry|cargo) at\b", r"\1 add"),   # add heard as "at"
+    (r"\b(migrations|sln) at\b", r"\1 add"),
+    (r"\b(dash|hyphen|minus) and\b", r"\1 n"),         # -n
+    (r"\b(dash|hyphen|minus) oh\b", r"\1 o"),          # -o
+    (r"\bdesh\b", "dash"),
+    (r"\bdish(?=[a-z]{3,}\b)", "dash "),               # "dishrouter"
+    (r"(?<=[a-z]{2})dish\b", " dash"),                 # "mydish app"
+    (r"\bgit (semicolon|;)", r"get \1"),               # { get; set; }
+    (r"\b(map|http) git\b", r"\1 get"),                # MapGet, [HttpGet]
+    (r"\b(camel|pascal|snake|constant|kebab) case(?=[a-z]{2,})", r"\1 case "),
+    (r"\bread only\b", "readonly"),
+    (r"^for each (?=open bracket|open paren|\()", "foreach "),
+    (r"^while (?=\w+ equals (?!equals))", "var "),     # v heard as w: "while x equals 5"
+    (r"\busing war\b", "using var"),
+    (r"(open bracket|open paren|\() while (?=\w+ in\b)", r"\1 var"),
+    (r"\b(open|close|left|right) parents?\b", r"\1 paren"),
+    (r"^note (?=\S+ dot (js|mjs|cjs|ts)\b)", "node "),
+    (r"\bdot j\.s\.?", "dot js"),
+    (r"\bdot (nv|n v)\b", "dot env"),
+    (r"\b(slash|dash|dot) log in\b", r"\1 login"),     # feature/login
+    (r"\b(e ?s ?lint|s lint|ease ?lint)\b", "eslint"),
+    (r"^npm(ci|install|start|test|run)\b", r"npm \1"),
+    (r"^cd(src|app|docs|tests?|lib|dist|build|public|client|server)\b", r"cd \1"),
+    (r"(?<=colon )(\d(?: \d)+)\b", lambda m: m.group(1).replace(" ", "")),   # 8080:80
+]
+
+
+_pascal = lambda words: "".join(w[:1].upper() + w[1:] for w in words.split())
+
+
+def _package_name(m):
+    """NuGet ids are PascalCase dotted segments, said word by word:
+    "microsoft dot entity framework core dot sql server" ->
+    Microsoft.EntityFrameworkCore.SqlServer. Flags after it are kept."""
+    tail = re.sub(r"(?i)\b(asp)?netcore\b", lambda x: (x.group(1) or "") + " net core", m.group(2))
+    name = " dot ".join(_pascal(seg) for seg in re.split(r"(?i) dot ", tail))
+    return m.group(1) + name + (m.group(3) or "")
+
+
+# Developer vocabulary, spoken the way people say it -- code lines only.
+_CODE_VOCAB = [
+    # Letters: "curl dash capital x post" -> curl -X POST
+    (r"\bcapital ([a-z])\b", lambda m: m.group(1).upper()),
+    # .NET CLI
+    (r"^dotnet e f\b", "dotnet ef"),
+    (r"^dotnet new (web api|web app|class lib|x unit|n unit|ms test|blazor wasm)\b",
+     lambda m: "dotnet new " + m.group(1).replace(" ", "").lower()),
+    (r"^((?:dotnet add (?:\S+ )?package|install dash package) )((?:(?!dash\b)[a-z]+)(?: (?!dash\b)[a-z]+)*)"
+     r"((?: dash .*)?)$", _package_name),
+    # EF Core migration names are PascalCase: "initial create" -> InitialCreate
+    (r"^((?:dotnet ef migrations add|add dash migration) )(?!pascal case)([a-z]+(?: [a-z]+)*)$",
+     lambda m: m.group(1) + _pascal(m.group(2))),
+    # C#
+    (r"\bconsole dot (write line|read line|write|read key)\b",
+     lambda m: "Console dot " + _pascal(m.group(1))),
+    (r"\bcatch (open bracket|open paren|left paren|\() exception\b", r"catch \1 Exception"),
+    (r"\b(async|public|private|protected|internal|static|override|virtual) task\b", r"\1 Task"),
+    (r"(^|open bracket |open paren |comma )open square bracket (http get|http post|http put|"
+     r"http delete|http patch|authorize|allow anonymous|api controller|route|from body|"
+     r"from query|from route|from services|from form|required|key|test method|test class|"
+     r"fact|theory|obsolete|serializable)\b",
+     lambda m: m.group(1) + "open square bracket " + _pascal(m.group(2))),
+    (r"\bname of (?=open bracket|open paren|left paren|\()", "nameof "),
+    (r"\btype of\b", "typeof"),
+    # React
+    (r"(?<!camel case )\buse (state|effect|ref|memo|callback|context|reducer|navigate|params|location|"
+     r"selector|dispatch|query|mutation|form|id|transition|layout effect|search params)\b",
+     lambda m: "use" + _pascal(m.group(1))),
+    # const [count, setCount] = useState(0) -- the setter is set + name
+    (r"(open square bracket (\w+) comma) set (\w+)(?= close square bracket)",
+     lambda m: f"{m.group(1)} set{m.group(3)[:1].upper()}{m.group(3)[1:]}"),
+    (r"^import react\b", "import React"),
 ]
 
 
 def _prefix_fixes(text, code=True):
-    for pattern, repl in _MISHEARD + (_MISHEARD_CODE if code else []):
+    for pattern, repl in _MISHEARD + (_MISHEARD_CODE + _CODE_VOCAB if code else []):
         text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
     return text
 
@@ -246,7 +335,32 @@ _STRONG_STARTERS = {
     "self", "this", "lambda", "assert", "raise", "export", "public",
     "private", "protected", "static", "void", "except", "finally",
     "document", "window", "json", "os", "sys", "np", "pd", "kill",
-    "tail", "head",
+    "tail", "head", "az", "gh", "bun", "deno", "terraform", "helm", "ng",
+    "nuget", "vercel",
+}
+# A tool's name followed by English is a sentence about the tool: "git is
+# complaining about a merge conflict", "docker desktop keeps crashing".
+_PROSE_SECOND = {
+    "is", "are", "was", "were", "has", "have", "had", "keeps", "kept",
+    "seems", "seem", "does", "did", "doesn't", "didn't", "isn't", "wasn't",
+    "won't", "can't", "cannot", "will", "would", "should", "could", "might",
+    "but", "desktop", "still", "just", "really", "also",   # not "and": "yarn and axios" is add
+    "itself", "crashed", "crashes", "crashing", "failed", "fails", "failing",
+    "broke", "hangs", "hung", "says", "said", "gave", "gives", "stopped",
+}
+_ENGLISH_VERB = re.compile(r"\b(is|are|was|were|keeps|kept|seems|going to|has been|have been)\b",
+                           re.IGNORECASE)
+# Keywords that also start everyday sentences ("let me know", "export the
+# report", "public holidays", "this is taking long", "document everything"):
+# code only with a declaration word after them or something code-like.
+_ENGLISHY_KEYWORDS = {"let", "export", "public", "private", "protected", "static",
+                      "this", "document", "window"}
+_DECL_SECOND = {
+    "class", "interface", "record", "struct", "enum", "static", "void", "int",
+    "string", "bool", "async", "abstract", "sealed", "partial", "override",
+    "readonly", "const", "var", "let", "function", "default", "type",
+    "virtual", "double", "float", "decimal", "long", "object", "task", "list",
+    "extern", "unsafe", "new", "final",
 }
 # Commands that are also everyday verbs: only a command when the line has
 # something command-like in it (a host, flag, path, number) or is short.
@@ -284,7 +398,11 @@ _ASSIGNMENT = re.compile(
     re.IGNORECASE,
 )
 _SQL_SHAPES = re.compile(
-    r"^(select\b.*\bfrom\b|select (top|count|star|\*|distinct|getdate|newid|at at|@@)\b|"
+    # "select the best candidate from the list" is English: SQL never puts
+    # an article after SELECT ("select a dot id ..." is an alias, kept).
+    r"^(select (?!(?:the|an|your|my|our|their|his|her|this|that|these|those|some|one|any|which)\b)"
+    r"(?!a (?!dot\b|comma\b|\.|,))"
+    r".*\bfrom\b|select (top|count|star|\*|distinct|getdate|newid|at at|@@)\b|"
     r"insert into\b|update \S+ set\b|delete from\b|"
     r"create (table|index|view|procedure|proc|database|unique)\b|"
     r"alter (table|view|procedure|database)\b|"
@@ -351,6 +469,15 @@ def _classify(text):
         # "ping me when it's green" is English; "ping google dot com" isn't.
         return bool(re.search(
             r"\b(dot|dash|slash|colon|localhost|pipe|greater than|dollar)\b|[.\-/:$|]\S|\d", text))
+    words = text.split()
+    second = words[1].lower().strip(".,") if len(words) > 1 else ""
+    if first in _CLI_TOOLS and (second in _PROSE_SECOND or (
+            len(words) >= 6 and _ENGLISH_VERB.search(text) and not _CODE_SIGNAL.search(text)
+            and not re.search(r"\b(dot|slash|colon|at)\b|[./:@]\S", text))):
+        return False                                  # git is complaining about ...
+    if first in _ENGLISHY_KEYWORDS:
+        return bool(second in _DECL_SECOND or _CODE_SIGNAL.search(text)
+                    or re.search(r"\b(dot|colon)\b|[.:]\S", text))
     if first in _STRONG_STARTERS or head in _STRONG_STARTERS:
         return True
     body = text.rstrip(".")
@@ -475,6 +602,24 @@ _SYMBOL_PHRASES = [
     ("open bracket", "\x02("), ("close bracket", "\x03)"),
     ("open paren", "\x02("), ("close paren", "\x03)"),
     ("open brace", "\x02{"), ("close brace", "\x03}"),
+    # The other ways developers say them (2026-09-27, .NET/JS study):
+    # left/right, "round bracket", and "curly" on its own.
+    ("left parenthesis", "\x02("), ("right parenthesis", "\x03)"),
+    ("left paren", "\x02("), ("right paren", "\x03)"),
+    ("open round bracket", "\x02("), ("close round bracket", "\x03)"),
+    ("left round bracket", "\x02("), ("right round bracket", "\x03)"),
+    ("left square bracket", "\x02["), ("right square bracket", "\x03]"),
+    ("left curly bracket", "\x02{"), ("right curly bracket", "\x03}"),
+    ("left curly brace", "\x02{"), ("right curly brace", "\x03}"),
+    ("left curly", "\x02{"), ("right curly", "\x03}"),
+    ("open curly", "\x02{"), ("close curly", "\x03}"),
+    ("left brace", "\x02{"), ("right brace", "\x03}"),
+    ("semi colon", "\x04;"),
+    ("equals sign", "\x01="), ("equal sign", "\x01="),
+    ("double question mark", "\x01??"), ("question mark question mark", "\x01??"),
+    ("hyphen hyphen", "\x07--"), ("double hyphen", "\x07--"),
+    ("exclamation point", "\x0d!"), ("bang", "\x0d!"),
+    ("spread", "\x0d..."),
     ("not equal to", "\x01!="), ("not equals", "\x01!="),
     ("equals equals equals", "\x01==="), ("triple equals", "\x01==="),
     ("equals equals", "\x01=="), ("double equals", "\x01=="),
@@ -489,7 +634,9 @@ _SYMBOL_PHRASES = [
     ("forward slash", "\x05/"), ("back slash", "\x05\\"),
     ("single quote", "\x06'"), ("double quote", '\x06"'),
     ("at sign", "\x05@"), ("at symbol", "\x05@"),
-    ("question mark", "\x04?"), ("exclamation mark", "\x04!"),
+    # "!" is JS/C# negation far more often than a trailing mark: it fuses
+    # onto what follows (!user). "!=" still comes from "not equal to".
+    ("question mark", "\x04?"), ("exclamation mark", "\x0d!"),
     ("dash dash", "\x07--"), ("double dash", "\x07--"),
     ("dot dot", "\x0d.."),
     ("divided by", "\x01/"),
@@ -546,22 +693,35 @@ _CASINGS = {
     ("kebab", "case"): lambda ws: "-".join(w.lower() for w in ws),
 }
 # A casing command takes the following plain words, up to the next symbol
-# word or code keyword -- "camel case get user open bracket" -> getUser(.
+# phrase or code keyword -- "camel case get user open bracket" -> getUser(.
 _CASING_STOP = {
-    "await", "async", "return", "new", "const", "let", "var", "if", "else",
-    "for", "while", "in", "of", "and", "or", "not", "is", "as", "from",
-    "import", "def", "class", "function", "select", "where", "set", "into",
-    "values", "on", "by", "then", "true", "false", "none", "null", "int",
+    "await", "return", "new", "const", "let", "var", "if", "else",
+    "for", "while", "in", "of", "and", "as", "from",
+    "import", "def", "class", "function", "select", "into",
+    "values", "on", "then", "true", "false", "none", "int",
     "string", "public", "private",
 }
-_CASING_STOP |= {p.split()[0] for p, _ in _SYMBOL_PHRASES}
+# Words that are keywords on their own but common inside method names --
+# IsNullOrEmpty, FindAsync, NotFound, Where, setTimeout. Kept only when the
+# name runs straight into a call/member/end ("pascal case not found open
+# bracket"); otherwise the name ends before them ("camel case user name is
+# none" -> userName is None).
+_CASING_SOFT = {"or", "not", "is", "null", "async", "where", "set"}
+_CASING_END = ("open bracket", "open paren", "open parenthesis", "left paren",
+               "open round bracket", "open angle bracket", "dot", "semicolon",
+               "question mark")
+_PHRASE_WORDS = sorted((p.split() for p, _ in _SYMBOL_PHRASES), key=len, reverse=True)
+
+
+def _phrase_at(low, j):
+    return any(low[j:j + len(w)] == w for w in _PHRASE_WORDS)
 
 
 def _casing(tokens):
     out, i = [], 0
+    low = [t.lower() for t in tokens]
     while i < len(tokens):
-        pair = tuple(t.lower() for t in tokens[i:i + 2])
-        fn = _CASINGS.get(pair)
+        fn = _CASINGS.get(tuple(low[i:i + 2]))
         if fn is None:
             out.append(tokens[i])
             i += 1
@@ -569,15 +729,19 @@ def _casing(tokens):
         j = i + 2
         words = []
         while (j < len(tokens) and re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", tokens[j])
-               and (tokens[j].lower() not in _CASING_STOP
-                    or (tokens[j].lower() in ("by", "id", "in", "on") and words))
-               and tuple(t.lower() for t in tokens[j:j + 2]) not in _CASINGS):
-            # "get element by id" is one identifier; stop words only end
-            # it when they'd start a new clause.
-            if tokens[j].lower() in ("in", "on") and words:
+               and tuple(low[j:j + 2]) not in _CASINGS):
+            # The first word is always part of the name ("pascal case where",
+            # "camel case set timeout"). After that, a symbol phrase or a
+            # keyword ends it -- "get element by id" is one identifier;
+            # "in"/"on" start a new clause.
+            if words and (_phrase_at(low, j) or low[j] in _CASING_STOP):
                 break
             words.append(tokens[j])
             j += 1
+        soft = [k for k, w in enumerate(words) if k and w.lower() in _CASING_SOFT]
+        if soft and not any(low[j:j + len(e.split())] == e.split() for e in _CASING_END):
+            j -= len(words) - soft[0]
+            words = words[:soft[0]]
         if words:
             out.append(fn(words))
         i = j
@@ -593,20 +757,45 @@ _DOTFILES = {"env", "venv", "gitignore", "vscode", "github", "npmrc", "bashrc",
 _SHORT_FLAGS = {"ano", "aux", "xvf", "xzf", "czf", "lah", "lrt", "ef"}
 _NO_CALL = {"if", "while", "for", "switch", "catch", "return", "and", "or",
             "not", "in", "elif", "with", "using", "lock", "foreach", "when",
-            "as", "is", "else", "yield", "await", "new"}
+            "as", "is", "else", "yield", "await", "new", "const", "let", "var",
+            "typeof", "case", "throw", "export", "default", "delete", "void",
+            "async", "of"}
 _UNDERSCORE_KEYWORDS = {"def", "class", "return", "import", "from", "const",
-                        "let", "var", "new", "print", "self"}
+                        "let", "var", "new", "print", "self", "await",
+                        "readonly", "in", "of", "using", "throw", "is", "as",
+                        "typeof", "yield"}
+# Command-line tools: on their lines "minus" is a flag dash, not an operator
+# ("git push minus u origin main", "npm install minus minus save dev").
+_CLI_TOOLS = {
+    "git", "npm", "npx", "pip", "pip3", "python", "python3", "py", "node",
+    "cd", "ls", "dir", "mkdir", "rmdir", "rm", "cp", "mv", "docker",
+    "kubectl", "ssh", "scp", "curl", "wget", "yarn", "pnpm", "dotnet",
+    "cargo", "winget", "choco", "sudo", "chmod", "sqlcmd", "wsl", "javac",
+    "java", "tsc", "pytest", "ipconfig", "netstat", "taskkill", "tracert",
+    "nslookup", "az", "gh", "bun", "deno", "terraform", "helm", "ng",
+    "nuget", "vercel", "code",
+}
 
 
-def _resolve(tokens, sql, powershell):
+def _resolve(tokens, sql, powershell, cli=False):
     t = list(tokens)
     n = len(t)
+    if cli:
+        for k in range(1, n):
+            if t[k] == "\x01-":
+                t[k] = "\x07-"
+            elif t[k] == "\x04--":
+                t[k] = "\x07--"
     for k in range(n):
         tok = t[k]
         prev = t[k - 1] if k > 0 else None
         nxt = t[k + 1] if k + 1 < n else None
 
-        if tok == "\x07-":
+        if tok == "\x07-" and prev and prev.lower() == "dotnet" and nxt and nxt.lower() == "ef":
+            t[k] = "\x05-"                           # dotnet-ef (the tool's name)
+        elif tok == "\x07--" and nxt == "\x07--":
+            t[k] = "\x01--"                          # npm test -- --watch
+        elif tok == "\x07-":
             # dash: hyphen inside a name vs a command-line flag. Real
             # short flags are 1-2 letters (-t -it -rf) or a known few
             # longer ones; a longer word after a dash is a name (my-app).
@@ -631,8 +820,14 @@ def _resolve(tokens, sql, powershell):
             t[k] = "\x0d--"
         elif tok == "\x01-" and (prev is None or _is_marker(prev, "\x01\x02\x09")) and _is_num(nxt):
             t[k] = "\x0d-"                           # DATEADD(DAY, -7, ...)
-        elif tok == "\x05_" and prev and prev.lower() in _UNDERSCORE_KEYWORDS:
-            t[k] = "\x0d_"                           # def __init__
+        elif tok == "\x05_" and (
+                prev is None or (_is_word(prev) and prev.lower() in _UNDERSCORE_KEYWORDS)
+                or _is_marker(prev, "\x01\x02\x09") or prev == "\x03>"
+                or (_is_word(prev) and prev[:1].isupper() and k >= 2 and _is_word(t[k - 2]))):
+            # a leading underscore: def __init__, await _context,
+            # ILogger<T> _logger, x = _cache, (_, value),
+            # readonly AppDbContext _context (after a type name)
+            t[k] = "\x0d_"
         elif tok == "\x05~":
             if k == 1 or (prev and prev.lower() in ("cd", "ls", "cat", "code")):
                 t[k] = "\x0d~"                       # cd ~/projects
@@ -648,9 +843,14 @@ def _resolve(tokens, sql, powershell):
         elif tok == "\x05.":
             if not sql and nxt is None and prev is not None and (_is_word(prev) or prev == "\x06Q"):
                 t[k] = "\x0d."                       # git add .  docker build -t x .
+            elif cli and nxt in ("\x07-", "\x07--") and prev is not None and _is_word(prev):
+                t[k] = "\x01."                       # npx eslint . --fix
+            elif nxt == "\x05/" and prev is not None and not _is_marker(prev, "\x05"):
+                t[k] = "\x0d."                       # -o ./publish
             elif (nxt and nxt.lower() in _DOTFILES and prev is not None
-                  and (_is_word(prev) or _is_marker(prev, "\x0d"))):
-                t[k] = "\x0d."                       # .env .venv
+                  and (_is_word(prev) or _is_marker(prev, "\x0d"))
+                  and not (_is_word(prev) and prev.lower() in ("process", "meta"))):
+                t[k] = "\x0d."                       # .env .venv (not process.env)
             elif prev is None:
                 t[k] = "\x0d."
     return t
@@ -693,6 +893,8 @@ def _at_signs(tokens, sql):
             del out[k + 1]
         elif address:
             out[k] = "\x05@"                         # sumit@example.com, root@10.0.0.5
+        elif not sql and k > 0 and nxt.lower() in ("latest", "next", "beta", "canary", "lts", "rc", "alpha"):
+            out[k] = "\x05@"                         # create-next-app@latest
         elif sql and _sql_column_at(out, k):
             out[k - 1] += "_at"                      # created at desc -> created_at DESC
             del out[k]
@@ -735,6 +937,9 @@ def _assemble(tokens, sql):
     for a, b in zip(qidx[0::2], qidx[1::2]):
         ch = qchar if parts[a][0] == "Q" else parts[a][0]
         inner = _assemble_raw(parts[a + 1:b], sql)
+        # Braces inside a string are placeholders, not blocks: "{id}",
+        # `hello ${name}`, $"Hi {name}".
+        inner = re.sub(r"\{ ([^{}]*?) ?\}", r"{\1}", inner)
         kind = "w"
         # f"hello", r"\d+", b"bytes" -- a string prefix fuses to its quote.
         # (Not after a flag dash: in grep -r "todo" the r is the flag.)
@@ -1005,12 +1210,35 @@ def code_line(raw):
                   and tokens[1] == "\x07-")
     if powershell:
         tokens[1] = "\x05-"                          # Get-ChildItem: the verb's dash fuses
-    tokens = _resolve(tokens, sql, powershell)
+    cli = not sql and bool(tokens) and tokens[0].lower() in _CLI_TOOLS
+    tokens = _resolve(tokens, sql, powershell, cli)
     out = _assemble(tokens, sql)
     out = re.sub(r"\s+", " ", out).strip()
     if sql:
         return _sql_finish(out)
     out = _powershell(out)
+    # C#'s Console is a class, not the JS console object.
+    out = re.sub(r"^console\.(WriteLine|ReadLine|Write|ReadKey)", r"Console.", out)
+    # C#'s Console is a class, not the JS console object.
+    out = re.sub(r"^console\.(WriteLine|ReadLine|Write|ReadKey)\b", r"Console.\1", out)
+    # TypeScript type aliases: "or" is a union there (not Python's or).
+    if re.match(r"^(export )?type \w+ = ", out):
+        pieces = re.split(r'("[^"]*")', out)
+        out = "".join(p if k % 2 else re.sub(r" or ", " | ", p) for k, p in enumerate(pieces))
+    # C# base types: class UserService : IUserService (spaced colon).
+    out = re.sub(r"^((?:(?:public|private|internal|protected|sealed|abstract|static|partial) )*"
+                 r"(?:class|interface|record|struct) \w+(?:<[^>]*>)?): ", r"\1 : ", out)
+    if cli:
+        # Outside quotes a colon inside an argument fuses: test:watch,
+        # nginx:latest. Inside quotes key=value has no spaces:
+        # --filter "Category=Unit".
+        pieces = re.split(r'("[^"]*")', out)
+        for k in range(len(pieces)):
+            if k % 2:
+                pieces[k] = re.sub(r"(?<=\w) = (?=\w)", "=", pieces[k])
+            else:
+                pieces[k] = re.sub(r"(?<=\w): (?=[\w@.])", ":", pieces[k])
+        out = "".join(pieces)
     # Python imports: "import Json" / "from Datetime import ..." -- module
     # names are lowercase (Whisper capitalizes). JS "import React from
     # 'react'" has a quote and is left alone.

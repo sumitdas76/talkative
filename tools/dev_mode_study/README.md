@@ -33,3 +33,29 @@ $py = "..\..\.venv\Scripts\python"
   `groq_requests_today.txt` and stops at `GROQ_BUDGET`. Reset that file
   to `0` on a new day. It rotates throwaway install ids because the
   Worker caps each id at 300/day.
+
+## .NET / JavaScript / full stack (2026-09-27)
+
+```powershell
+& $py score4.py tune              # rules only, perfect transcript
+& $py score4.py final local:ravi:0 -v
+& $py stt4.py zira mark ravi heera   # Local (small.en) transcripts; no Groq
+```
+
+- `corpus4.py` -- `TUNE` (178): dotnet CLI / EF Core / NuGet / Package
+  Manager Console, C#, npm/yarn/pnpm/npx, React/TS/Express, docker,
+  kubectl, az, git, curl -- the same command said several ways ("dash u",
+  "hyphen u", "minus u"; "open curly bracket", "open brace", "left
+  curly"), plus 16 tech-sounding sentences that must stay prose. `FINAL`
+  (61) was written before tuning; scored once at 95.1% rules-only, then
+  two gaps it exposed were fixed via *new* TUNE cases, so its later
+  numbers are no longer independent.
+- `score4.py` is offline: prose is scored on classification only.
+- `stt_cache4_<voice>.json` -- Local transcripts per voice.
+
+Results after tuning (rules only 178/178 tune, 60/61 final): Local
+small.en tune Zira 85.4%, Mark 81.5%, Ravi 76.4%, Heera 74.2%; final
+80.3 / 72.1 / 65.6 / 59.0%. The remaining gap is almost all STT (lodash ->
+"laddash", res -> "residential"). Not fixable by rules: C# vs JS casing of
+member names (order.Id vs order.id) and "not user" (! in JS, not in Python).
+Cloud (Groq) not run yet -- it spends the shared free-tier key.

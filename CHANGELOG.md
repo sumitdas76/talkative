@@ -8,6 +8,17 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
 - Local mode's sentence cleanup is about 40% faster: a short dictation's
   cleanup went from about 3 seconds to under 2 on a typical 6-core PC.
+- Code dictation understands much more .NET, JavaScript/TypeScript and
+  full-stack speech: dotnet and EF Core commands (package names like
+  Microsoft.EntityFrameworkCore, migration names like InitialCreate),
+  C# ({ get; set; }, Console.WriteLine, [HttpGet], nameof), React hooks
+  (useState), npm/yarn/pnpm/npx, docker, az and more -- and the different
+  ways people say symbols: "left paren", "open curly", "semi colon",
+  "hyphen u" or "minus u" for -u, "bang" for !, "double question mark"
+  for ??, "spread" for ..., "capital x" for X.
+- Sentences that merely start like code ("let me know when...", "export
+  the report...", "git is complaining about...") now stay sentences when
+  said with the code key.
 
 ## [1.3.8] - 2026-09-27
 

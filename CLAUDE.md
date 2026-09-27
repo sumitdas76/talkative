@@ -1065,6 +1065,17 @@ fixes (`_MISHEARD_CODE`) never touch prose, and only count for
 command-like on the line ("ping me when it's green" is English).
 Re-run `prose_guard.py` after any classifier change.
 
+**.NET / JS / full-stack pass (2026-09-27)**: `corpus4.py` + `score4.py`
++ `stt4.py` (Local-only transcripts, no Groq) -- see the study README for
+numbers. Added: alternate symbol words (left/right paren, open/left curly,
+semi colon, hyphen/minus flags in CLI lines via `_CLI_TOOLS`, bang, ??,
+spread, capital x), `_CODE_VOCAB` (NuGet ids, migration names, C# types /
+attributes / Console, React hooks), casing that keeps is/or/not/async/
+where/set inside a name only when it runs into a call (`_CASING_SOFT`),
+and classification guards so "let me know...", "git is complaining...",
+"select the best candidate from..." stay prose (`_PROSE_SECOND`,
+`_ENGLISHY_KEYWORDS`). Cloud (Groq) scoring of corpus4 not run yet.
+
 **Cloud STT prompt was silently dropped until 2026-09-25**:
 `cloud_client.transcribe()` accepted `initial_prompt` and never sent it,
 and `worker.js` had no prompt field -- so Cloud mode never got the
