@@ -251,6 +251,19 @@ deleting a genuinely spoken one, which a dictation tool ending an email
 with "Thank you." would hit constantly. Root-cause fix, not a text-level
 guard.
 
+**Groq-busy fallback (2026-09-27)**: every user shares one free Groq key
+(~20 requests/min), so a few people dictating at once got "Cloud is busy".
+`handleTranscribe` now falls back to Workers AI on a Groq 429, 5xx or
+network error: `@cf/openai/whisper-large-v3-turbo` with the WAV as a
+base64 string (that shape works -- September's rejection was the input
+format), then the older `@cf/openai/whisper` as a last resort; BUSY only
+if both fail. Responses carry `via` (groq / workers-ai-large-v3-turbo /
+workers-ai-whisper) and `timing.groq_problem`. `X-Force-Fallback: 1` skips
+Groq for measurement (`tools/grammar_eval/fallback_bench.py`). Measured on
+identical audio, 130 clips: accuracy identical to Groq (same model), median
+1.87 s vs 0.45 s. Open: how many fallback transcriptions Workers AI's
+10,000 neurons/day actually buys.
+
 **The real cost ceiling is not the shared secret or the quota** -- it's
 each upstream provider's own free-tier cap hard-erroring rather than
 billing, as long as neither account has billing enabled: Workers AI's

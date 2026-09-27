@@ -65,6 +65,7 @@ verified** -- do it the next time it's practical.
 | D2 | The real dictation pipeline with a faked transcript: code lines come out as code, with the right speech prompt | auto (pipeline test) | Cloud mode silently dropped the speech prompt until 2026-09-25 |
 | D3 | Code-dictation scores at or above the recorded baseline, and ordinary sentences stay sentences | auto (all corpora, offline) | Classifier and rule regressions |
 | D4 | Cloud: a silent key press sends nothing and types nothing | manual | Groq invented "Thank you." on silence (fixed 1.3.6) |
+| D7 | Cloud fallback when Groq is busy: a forced-fallback request is answered `via: workers-ai-large-v3-turbo` (after any `cloud/worker.js` change) | manual: `tools/grammar_eval/fallback_bench.py fallback` | One shared free Groq key made several users at once see "Cloud is busy" (fixed 2026-09-27) |
 | D5 | Grammar changes: guard rejections and meaning flags no worse than baseline | auto with `--grammar` | A dropped question and I/you swaps that passed the guards |
 | D6 | One real dictation in each mode (Cloud, Local, code key) on the release build | manual | Everything above is simulated; this is the only check with a real microphone |
 
