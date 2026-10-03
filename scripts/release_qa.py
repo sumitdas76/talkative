@@ -221,7 +221,7 @@ def check_corpora():
 
     # prose_guard.py runs its check on import; take only its sentence list.
     src = (STUDY / "prose_guard.py").read_text(encoding="utf-8").split("\nbad = ")[0]
-    ns = {}
+    ns = {"__file__": str(STUDY / "prose_guard.py")}  # it locates the project from its own path
     exec(compile(src, "prose_guard.py", "exec"), ns)
     sentences = ns["SENTENCES"]
 
