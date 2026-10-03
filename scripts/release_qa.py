@@ -7,7 +7,7 @@ usage (from the project root, with the project venv):
              (default: dist\\Talkative.exe)
   --grammar  also run the grammar-guard evaluation (D5, ~3 min, needs the
              local grammar model)
-  --no-gui   skip checks that open windows (F1, W1)
+  --no-gui   skip checks that open windows (F1, W1, W2)
 
 Prints a PASS/FAIL/SKIP table and exits 1 if anything failed. Offline:
 no Groq or Worker requests (prose is scored on classification only).
@@ -27,6 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PY = sys.executable
 STUDY = ROOT / "tools" / "dev_mode_study"
+E2E = ROOT / "tools" / "e2e"
 BASELINE = Path(__file__).with_name("release_qa_baseline.json")
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
@@ -151,6 +152,40 @@ def check_hotkeys():
     record("F4", "Nothing recorded before the first-run choice", "PASS" if gate else "FAIL")
 
 
+def check_tap_mode():
+    code, out = run_py(["toggle_test.py"], E2E, timeout=120)
+    passed = len(re.findall(r"^PASS ", out, re.M))
+    bad = re.findall(r"^FAIL (.*)$", out, re.M)
+    record("D8", "Tap mode: tap on/off, hold, shortcut dropped, auto-stop",
+           "PASS" if code == 0 and passed and not bad else "FAIL",
+           f"{passed} passed" + (f", FAIL: {bad}" if bad else ""))
+
+
+def check_tray():
+    code, out = run_py(["tray_test.py"], E2E, timeout=120)
+    passed = len(re.findall(r"^PASS ", out, re.M))
+    bad = re.findall(r"^FAIL (.*)$", out, re.M)
+    record("W2", "Tray icon: lost icon comes back, concurrent updates safe, errors.log works",
+           "PASS" if code == 0 and passed and not bad else "FAIL",
+           f"{passed} passed" + (f", FAIL: {bad}" if bad else ""))
+
+
+def check_defaults():
+    sys.path.insert(0, str(ROOT))
+    from talkative import config
+    texts = {
+        "LICENSE": (ROOT / "LICENSE").read_text(encoding="utf-8"),
+        "version_info.py": (ROOT / "scripts" / "version_info.py").read_text(encoding="utf-8"),
+        "Talkative.iss": (ROOT / "installer" / "Talkative.iss").read_text(encoding="utf-8"),
+    }
+    old_name = [n for n, t in texts.items() if "Chatterjee" in t]
+    ok = config.DICTIONARY == {} and not old_name
+    record("B7", "New installs: empty dictionary, publisher/copyright Sumit Das",
+           "PASS" if ok else "FAIL",
+           ("" if config.DICTIONARY == {} else f"default dictionary has {len(config.DICTIONARY)} entries; ")
+           + (f"old name in {old_name}" if old_name else ""))
+
+
 def check_pipeline():
     code, out = run_py(["pipeline_test.py"], STUDY, timeout=300)
     want = [
@@ -259,15 +294,19 @@ def main():
     check_version()
     check_tcl(exe)
     check_single_tk_root()
+    check_defaults()
     if a.no_gui:
         record("F1", "Fresh launch: one window, no crash", "SKIP", "--no-gui")
         record("W1", "Settings tabs and help window fit", "SKIP", "--no-gui")
+        record("W2", "Tray icon checks", "SKIP", "--no-gui")
     else:
         check_fresh_launch(exe)
     check_hotkeys()
+    check_tap_mode()
     check_pipeline()
     if not a.no_gui:
         check_layout()
+        check_tray()
     check_corpora()
     if a.grammar:
         check_grammar()

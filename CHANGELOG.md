@@ -2,6 +2,38 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [1.3.11] - 2026-10-04
+
+### Added
+
+- Tap to talk. Instead of holding your key down the whole time you speak,
+  you can now tap it once to start and tap it again when you're done.
+  Turn it on in Settings, under Hotkeys, "How the hotkeys work". Holding
+  the key still works too. If you forget the second tap, Talkative stops
+  listening by itself after 5 minutes and types what you said.
+
+### Changed
+
+- New installs start with an empty personal dictionary. Before, they came
+  with a few of the developer's own words (for example, "AI" was typed out
+  as "artificial intelligence"). If you already use Talkative, your
+  dictionary is not changed.
+- The publisher is now shown as Sumit Das.
+- If something goes wrong, Talkative now writes a short note about the
+  problem to a file on your PC, so it can be found and fixed. It never
+  contains anything you said, and it is never sent anywhere.
+
+### Fixed
+
+- The Talkative icon could disappear from the corner of the taskbar while
+  the app kept working. It now stays put, and comes back on its own if
+  Windows loses it.
+- With a key combination that includes the Windows key (for example Ctrl +
+  Windows), letting go of the keys opened the Start menu. It no longer
+  does.
+- With a key combination that includes Alt, some windows could swallow
+  your words instead of typing them. Fixed.
+
 ## [1.3.10] - 2026-09-27
 
 ### Changed
