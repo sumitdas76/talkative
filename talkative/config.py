@@ -1,7 +1,8 @@
 from pynput import keyboard
 
 # Hold this key (or these two keys together) to dictate, release any of
-# them to transcribe + insert. Always a tuple of 1-2 pynput Key/KeyCode
+# them to transcribe + insert (or tap to start/stop, see HOTKEY_MODE).
+# Always a tuple of 1-2 pynput Key/KeyCode
 # objects, even for a single-key hotkey, so app.py's listener can treat
 # every hotkey as a chord uniformly. Right Ctrl is rarely bound to anything
 # else system-wide.
@@ -28,6 +29,22 @@ PUNCTUATION_PROMPT = (
 
 # Presses shorter than this are treated as accidental taps and discarded.
 MIN_RECORDING_SECONDS = 0.3
+
+# "hold": hold the hotkey while speaking, release to insert.
+# "toggle": tap the hotkey to start, tap it again to stop and insert, for
+# users who find holding a key through a long dictation tiring. Holding
+# still works in toggle mode: a press longer than TAP_MAX_SECONDS stops on
+# release, exactly like "hold".
+HOTKEY_MODE = "hold"
+
+# Toggle mode: a press released within this many seconds is a tap and
+# leaves recording on.
+TAP_MAX_SECONDS = 0.4
+
+# Toggle mode: a recording left on stops itself (and is inserted) after
+# this long, so a forgotten tap can't record indefinitely. Well under
+# Groq's 25 MB upload limit (~13 minutes of 16 kHz 16-bit WAV).
+TOGGLE_MAX_SECONDS = 300
 
 # How long to wait after simulating Ctrl+V before restoring the user's original clipboard.
 CLIPBOARD_RESTORE_DELAY = 0.4

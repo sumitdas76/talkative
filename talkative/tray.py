@@ -102,9 +102,11 @@ class TrayApp:
         self._on_quit()
         self.icon.stop()
 
-    def set_hotkey_label(self, label, dev_label=""):
+    def set_hotkey_label(self, label, dev_label="", verb="hold"):
+        """verb: "hold" or "tap", matching config.HOTKEY_MODE."""
         self._hotkey_label = label
         self._dev_hotkey_label = dev_label
+        self._hotkey_verb = verb
 
     def set_mode_label(self, label):
         """label: "Cloud", "Local", or "" to omit it from the tooltip."""
@@ -117,7 +119,8 @@ class TrayApp:
         self.icon.icon = self._idle_image
         dev = getattr(self, "_dev_hotkey_label", "")
         self.icon.title = (
-            f"Talkative ({self._mode_prefix()}hold {self._hotkey_label} to dictate"
+            f"Talkative ({self._mode_prefix()}{getattr(self, '_hotkey_verb', 'hold')} "
+            f"{self._hotkey_label} to dictate"
             + (f", {dev} for code" if dev else "") + ")"
         )
 

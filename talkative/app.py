@@ -76,10 +76,27 @@ class TalkativeApp:
         self._hotkey_pressed = set()  # currently-held keys that are part of HOTKEY or DEV_HOTKEY
         self._chord_active = False  # chord already handled for this press-hold, ignore OS key-repeat
         self._dev_dictation = False  # current recording is developer English (DEV_HOTKEY)
+        self._latched = False  # toggle mode: recording stays on after a tap, until the next one
+        self._recording_id = 0  # bumped per recording, so a stale auto-stop timer can't stop a later one
+        self._stop_lock = threading.Lock()
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
             hotkey_label=friendly_key(config.HOTKEY),
         )
+        self._refresh_hotkey_label()
+
+    def _refresh_hotkey_label(self):
+        self.tray.set_hotkey_label(
+            friendly_key(config.HOTKEY),
+            friendly_key(config.DEV_HOTKEY) if config.DEV_HOTKEY else "",
+            verb="tap" if self._toggle_mode() else "hold",
+        )
+
+    def _ready_hint(self):
+        key = friendly_key(config.HOTKEY)
+        if self._toggle_mode():
+            return f"Tap {key} to start dictating, tap again to stop."
+        return f"Hold {key} to dictate."
 
     def open_settings(self):
         from types import SimpleNamespace
@@ -99,7 +116,7 @@ class TalkativeApp:
         self.recorder.device = config.INPUT_DEVICE
         self._hotkey_pressed.clear()
         self._chord_active = False
-        self.tray.set_hotkey_label(friendly_key(config.HOTKEY), friendly_key(config.DEV_HOTKEY) if config.DEV_HOTKEY else "")
+        self._refresh_hotkey_label()
         self._sync_processing_mode()
         if self.transcriber is not None and not self._recording:
             self.tray.set_idle()  # refresh the tooltip with the new hotkey
@@ -122,7 +139,7 @@ class TalkativeApp:
         self._no_model = False
         self.tray.set_mode_label("Cloud")
         self.tray.set_idle()
-        self.tray.notify(f"Ready (cloud). Hold {friendly_key(config.HOTKEY)} to dictate.")
+        self.tray.notify(f"Ready (cloud). {self._ready_hint()}")
         cloud_notice.maybe_show()
 
     def _sync_processing_mode(self):
@@ -206,7 +223,7 @@ class TalkativeApp:
                 self.tray.set_mode_label("Local")
                 self.tray.set_idle()
                 self.tray.notify(
-                    f"Ready. Hold {friendly_key(config.HOTKEY)} to dictate."
+                    f"Ready. {self._ready_hint()}"
                 )
                 try_it_now.maybe_show()
             except Exception as exc:
@@ -297,11 +314,31 @@ class TalkativeApp:
             quit_app=lambda: (self.quit(), self.tray.stop()),
         )
 
+    def _toggle_mode(self):
+        return config.HOTKEY_MODE == "toggle"
+
     def _on_press(self, key):
         if key not in config.HOTKEY and key not in config.DEV_HOTKEY:
+            # Toggle mode: another key pressed while the hotkey is still
+            # down means the hotkey was part of a shortcut (Right Ctrl+C),
+            # not a tap -- drop the recording that press started instead
+            # of leaving it latched on. Hold mode is unchanged.
+            if (self._toggle_mode() and self._recording and not self._latched
+                    and self._hotkey_pressed):
+                self._stop_recording(process=False)
             return
         self._hotkey_pressed.add(key)
         dev = bool(config.DEV_HOTKEY) and self._hotkey_pressed == set(config.DEV_HOTKEY)
+        if self._recording and self._latched:
+            # Toggle mode, recording left on by an earlier tap: a fresh
+            # press of either chord stops it. _chord_active stays set until
+            # release so OS key-repeat can't start a new recording.
+            if self._chord_active:
+                return
+            if self._hotkey_pressed == set(config.HOTKEY) or dev:
+                self._chord_active = True
+                self._stop_recording()
+            return
         if self._recording:
             # The developer chord may contain the normal one (default: Right
             # Ctrl, + Right Shift for developer English). Completing it
@@ -359,6 +396,8 @@ class TalkativeApp:
             return
 
         self._recording = True
+        self._latched = False
+        self._recording_id += 1
         self._record_start_time = time.time()
         self.tray.set_recording()
         pill.show(lambda: self.recorder.level)
@@ -368,23 +407,62 @@ class TalkativeApp:
         if key not in config.HOTKEY and key not in config.DEV_HOTKEY:
             return
         self._hotkey_pressed.discard(key)
+        if self._latched:
+            # Only re-arm once every hotkey key is up, so the second key of
+            # a two-key tap being released (or still held) can't count as
+            # the stopping press.
+            if not self._hotkey_pressed:
+                self._chord_active = False
+            return
         self._chord_active = False
         if not self._recording:
             return
 
-        self._recording = False
+        # Toggle mode: a quick tap leaves recording on until the next tap.
+        # A longer press behaves like hold mode and stops here.
+        if (self._toggle_mode()
+                and time.time() - self._record_start_time < config.TAP_MAX_SECONDS):
+            self._latched = True
+            self._chord_active = bool(self._hotkey_pressed)
+            timer = threading.Timer(
+                config.TOGGLE_MAX_SECONDS, self._auto_stop, args=(self._recording_id,)
+            )
+            timer.daemon = True
+            timer.start()
+            return
+
+        self._stop_recording()
+
+    def _auto_stop(self, rec_id):
+        if self._recording_id != rec_id:
+            return
+        if self._stop_recording():
+            self.tray.notify(
+                f"Stopped listening after {config.TOGGLE_MAX_SECONDS // 60} minutes."
+            )
+
+    def _stop_recording(self, process=True):
+        """Stop the current recording and, unless process=False, send it
+        down the pipeline. Returns False if nothing was recording. Locked:
+        toggle mode's auto-stop timer can race a key press."""
+        with self._stop_lock:
+            if not self._recording:
+                return False
+            self._recording = False
+            self._latched = False
         self.tray.set_idle()
         pill.hide()
         self._beep("stop")
         audio = self.recorder.stop()
         duration = time.time() - self._record_start_time
 
-        if duration < config.MIN_RECORDING_SECONDS:
-            return
+        if not process or duration < config.MIN_RECORDING_SECONDS:
+            return True
 
         threading.Thread(
             target=self._process_audio, args=(audio, self._dev_dictation), daemon=True
         ).start()
+        return True
 
     def _process_audio(self, audio, dev=False):
         self._jobs += 1

@@ -51,6 +51,7 @@ _KEYS = {
     "press_enter_after": "PRESS_ENTER_AFTER",
     "start_with_windows": "START_WITH_WINDOWS",
     "play_sounds": "PLAY_SOUNDS",
+    "hotkey_mode": "HOTKEY_MODE",
     "theme": "THEME",
     "first_run_done": "FIRST_RUN_DONE",
     "debug_log": "DEBUG_LOG",

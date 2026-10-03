@@ -591,8 +591,7 @@ class _SettingsWindow:
                   foreground="grey").pack(side="left")
         ttk.Label(
             normal, wraplength=500, foreground="grey",
-            text="Hold while speaking, release to insert. For emails, messages "
-                 "and anything in sentences.",
+            text="For emails, messages and anything in sentences.",
         ).pack(anchor="w", pady=(6, 0))
 
         code = ttk.LabelFrame(f, text="Code dictation", padding=10)
@@ -616,6 +615,27 @@ class _SettingsWindow:
                               foreground=self._accent)
         help_link.pack(anchor="w", pady=(6, 0))
         help_link.bind("<Button-1>", lambda e: self._show_dev_help())
+
+        # Applies to both hotkeys. Toggle is for long dictations where
+        # holding a key the whole time gets tiring.
+        style_box = ttk.LabelFrame(f, text="How the hotkeys work", padding=10)
+        style_box.pack(fill="x", pady=(12, 0))
+        self.var_hotkey_mode = tk.StringVar(
+            value="toggle" if config.HOTKEY_MODE == "toggle" else "hold"
+        )
+        ttk.Radiobutton(
+            style_box, variable=self.var_hotkey_mode, value="hold",
+            text="Hold to talk: hold the key while speaking, release to insert",
+        ).pack(anchor="w")
+        ttk.Radiobutton(
+            style_box, variable=self.var_hotkey_mode, value="toggle",
+            text="Tap to start, tap again to stop and insert",
+        ).pack(anchor="w", pady=(4, 0))
+        ttk.Label(
+            style_box, wraplength=500, foreground="grey",
+            text="Holding still works in tap mode. Listening stops by itself "
+                 f"after {config.TOGGLE_MAX_SECONDS // 60} minutes.",
+        ).pack(anchor="w", pady=(6, 0))
 
     def _show_dev_help(self):
         win = tk.Toplevel(self.root)
@@ -1199,6 +1219,7 @@ class _SettingsWindow:
             "insert_mode": self.var_insert.get(),
             "append_space": self.var_space.get(),
             "press_enter_after": self.var_enter.get(),
+            "hotkey_mode": self.var_hotkey_mode.get(),
             "dictionary": dictionary,
         }
         if self.pending_hotkey:
