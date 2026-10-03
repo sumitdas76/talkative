@@ -146,6 +146,16 @@ def _build(overlay, on_choice):
 
         def on_continue():
             if state["busy"]:
+                # Changed their mind mid-download (slow connection, slow
+                # laptop): let them go with Cloud now instead of being
+                # stuck in this window until Local finishes -- a user
+                # reported being unable to get back to Cloud (2026-10-04).
+                # The download carries on in the background; nothing waits
+                # for it.
+                if mode.get() == "cloud":
+                    state["busy"] = False
+                    state["cancelled"] = True
+                    finish("cloud")
                 return
             chosen = mode.get()
             if chosen != "local":
@@ -182,7 +192,9 @@ def _build(overlay, on_choice):
                 status.config(
                     foreground="grey",
                     text=f"Getting dictation ready... {pct}% "
-                         f"({int(done_mb)} MB of {needed_mb} MB).",
+                         f"({int(done_mb)} MB of {needed_mb} MB). "
+                         "Changed your mind? Choose Online above to "
+                         "start with Cloud right away.",
                 )
                 root.after(500, poll_progress)
 
@@ -196,6 +208,8 @@ def _build(overlay, on_choice):
                     error = exc
 
                 def done():
+                    if state.get("cancelled"):
+                        return  # the user went with Cloud; window is gone
                     state["busy"] = False
                     bar.pack_forget()
                     if error is not None:
@@ -208,10 +222,24 @@ def _build(overlay, on_choice):
                         return
                     finish_local()
 
-                root.after(0, done)
+                if state.get("cancelled"):
+                    return
+                try:
+                    root.after(0, done)
+                except Exception:
+                    pass  # window already closed
 
             threading.Thread(target=work, daemon=True).start()
 
+        def on_mode_change(*_):
+            if not state["busy"]:
+                return
+            if mode.get() == "cloud":
+                continue_btn.config(state="normal", text="Use Cloud instead")
+            else:
+                continue_btn.config(state="disabled", text="Downloading…")
+
+        mode.trace_add("write", on_mode_change)
         continue_btn.config(command=on_continue)
         root.protocol("WM_DELETE_WINDOW", on_continue)
     except Exception:

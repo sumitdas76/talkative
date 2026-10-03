@@ -145,10 +145,17 @@ def download_in_background():
             return
         config.GRAMMAR_PENDING_DOWNLOAD = False
         settings.save({"grammar_pending_download": False})
-        if config.PROCESSING_MODE == "local" or config.GRAMMAR_SOURCE == "local":
-            load()
+        load_if_used()
 
     threading.Thread(target=work, daemon=True).start()
+
+
+def load_if_used():
+    """Load the engine when the current mode uses it (Local, or Cloud with
+    grammar on this device). Call after any download: a download alone
+    used to leave the new engine unused until the next restart."""
+    if config.PROCESSING_MODE == "local" or config.GRAMMAR_SOURCE == "local":
+        load()
 
 
 def load():

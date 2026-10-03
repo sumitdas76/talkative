@@ -1,4 +1,5 @@
 import datetime
+import logging
 import threading
 import time
 
@@ -87,6 +88,15 @@ class TalkativeApp:
         self._no_model = False  # active model was deleted; not merely still loading
         self._tones = {}  # (freq, seconds) -> generated sample array, cached
         self._jobs = 0  # dictations currently in the pipeline (updater idle check)
+        # Dictations are typed in the order they were spoken: each gets a
+        # number when recording stops and waits for its turn to paste. Two
+        # quick dictations are processed side by side, so a short second
+        # one could otherwise be typed before a long first one.
+        self._order = threading.Condition()
+        self._next_seq = 0       # number for the next dictation
+        self._turn = 0           # the dictation whose turn it is to paste
+        self._finished = set()   # finished early, waiting for earlier ones
+        self._job_seq = threading.local()
         self._swapping = False  # model swap in progress (update install/undo)
         self._hotkey_pressed = set()  # currently-held keys that are part of HOTKEY or DEV_HOTKEY
         self._chord_active = False  # chord already handled for this press-hold, ignore OS key-repeat
@@ -183,8 +193,13 @@ class TalkativeApp:
         """Load the local grammar engine, then drop it again if the mode
         changed while it loaded and no longer wants it -- it's ~1.5 GB of
         memory, which matters on 8 GB laptops."""
+        def wanted():
+            return not self._cloud_active() or config.GRAMMAR_SOURCE == "local"
+
+        if not wanted():
+            return
         grammar_engine.load()
-        if self._cloud_active() and config.GRAMMAR_SOURCE != "local":
+        if not wanted():
             grammar_engine.unload()
 
     def _sync_grammar_source(self):
@@ -332,18 +347,28 @@ class TalkativeApp:
 
         from types import SimpleNamespace
 
+        # In Cloud mode the local models aren't in use: an update to them
+        # (for someone who tried Local once) must not block Cloud dictation
+        # during the swap, nor load the local model over Cloud afterwards.
         def unload_speech():
-            self.transcriber = None
+            if not self._cloud_active():
+                self.transcriber = None
             gc.collect()  # release the model.bin mapping so files can move
 
         def reload_speech():
+            if self._cloud_active():
+                return
             try:
-                self.transcriber = Transcriber(
+                model = Transcriber(
                     config.MODEL_SIZE, config.DEVICE, config.COMPUTE_TYPE,
                     download_root=str(model_manager.models_dir()),
                 )
             except Exception as exc:
                 show_error_popup(f"Failed to load speech model:\n{exc}")
+                return
+            with self._mode_lock:
+                if not self._cloud_active():
+                    self.transcriber = model
 
         def begin_swap():
             self._swapping = True
@@ -360,6 +385,7 @@ class TalkativeApp:
             is_busy=lambda: self._recording or self._jobs > 0,
             unload_speech=unload_speech,
             reload_speech=reload_speech,
+            reload_grammar=self._load_grammar,
             begin_swap=begin_swap,
             end_swap=end_swap,
             quit_app=lambda: (self.quit(), self.tray.stop()),
@@ -524,17 +550,39 @@ class TalkativeApp:
         if not process or duration < config.MIN_RECORDING_SECONDS:
             return True
 
+        with self._order:
+            seq = self._next_seq
+            self._next_seq += 1
         threading.Thread(
-            target=self._process_audio, args=(audio, self._dev_dictation), daemon=True
+            target=self._process_audio, args=(audio, self._dev_dictation, seq), daemon=True
         ).start()
         return True
 
-    def _process_audio(self, audio, dev=False):
-        self._jobs += 1
+    def _process_audio(self, audio, dev=False, seq=None):
+        with self._order:
+            self._jobs += 1
+        self._job_seq.value = seq
         try:
             self._process_audio_inner(audio, dev)
         finally:
-            self._jobs -= 1
+            with self._order:
+                self._jobs -= 1
+                if seq is not None:
+                    self._finished.add(seq)
+                    while self._turn in self._finished:
+                        self._finished.remove(self._turn)
+                        self._turn += 1
+                    self._order.notify_all()
+
+    def _wait_for_turn(self):
+        """Block until every earlier dictation has pasted (or finished
+        without text). Capped, so one stuck dictation can't hold the rest
+        back for ever."""
+        seq = getattr(self._job_seq, "value", None)
+        if seq is None:
+            return
+        with self._order:
+            self._order.wait_for(lambda: self._turn >= seq, timeout=30)
 
     def _process_audio_inner(self, audio, dev=False):
         # Developer English swaps the sentence-style bias prompt for one
@@ -542,13 +590,22 @@ class TalkativeApp:
         base_prompt = dev_mode.STT_PROMPT if dev else config.PUNCTUATION_PROMPT
         prompt = " ".join(p for p in (base_prompt, vocabulary_prompt()) if p) or None
         t0 = time.time()
+        transcriber = self.transcriber
+        if not self._cloud_active() and (
+                transcriber is None or transcriber is _CLOUD_TRANSCRIBER):
+            # Switched to Local while this one was being recorded, and the
+            # local model isn't loaded yet. Never fall back to Cloud here:
+            # the user just chose Local.
+            self.tray.notify("Local mode is still getting ready, so that "
+                             "dictation was skipped. Try again in a moment.")
+            return
         try:
             if self._cloud_active():
                 text = cloud_client.transcribe(
                     audio, config.SAMPLE_RATE, initial_prompt=prompt
                 )
             else:
-                text = self.transcriber.transcribe(
+                text = transcriber.transcribe(
                     audio, config.SAMPLE_RATE, initial_prompt=prompt
                 )
         except Exception as exc:
@@ -623,6 +680,7 @@ class TalkativeApp:
     def _insert_final(self, text):
         if not text:
             return
+        self._wait_for_turn()
 
         if not is_focus_editable():
             self._no_target_cue()
@@ -662,8 +720,18 @@ class TalkativeApp:
                 title="Sumit replied",
             )
         )
+        # pynput stops the listener for good when a callback raises, which
+        # silently ends dictation until a restart. Log and carry on.
+        def guarded(handler):
+            def call(key):
+                try:
+                    handler(key)
+                except Exception:
+                    logging.getLogger(__name__).exception("hotkey handler failed")
+            return call
+
         self._listener = keyboard.Listener(
-            on_press=self._on_press, on_release=self._on_release
+            on_press=guarded(self._on_press), on_release=guarded(self._on_release)
         )
         self._listener.start()
         self.tray.run_detached()

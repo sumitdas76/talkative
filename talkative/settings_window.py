@@ -146,6 +146,36 @@ def open_settings(on_applied=None, model_controller=None):
     overlay.build(_build)
 
 
+# Keys people type with. A hotkey made only of these would start (in tap
+# mode: toggle) dictation in the middle of ordinary typing.
+_TYPING_KEYS = {"space", "enter", "tab", "backspace"}
+
+
+def _key_names(keys):
+    return [getattr(k, "name", None) or getattr(k, "char", None) for k in keys]
+
+
+def _hotkey_problem(normal, dev):
+    """Why this pair of hotkeys can't be saved, or None. Both are lists of
+    key names (settings.json format); dev may be [] (code key off)."""
+    def typing_only(names):
+        # Shift counts too: Shift + A is a capital A, and Shift alone goes
+        # down with every capital letter.
+        return names and all(
+            n in _TYPING_KEYS or len(n) == 1 or n.startswith("shift") for n in names)
+
+    if typing_only(normal) or typing_only(dev):
+        return ("A hotkey can't be only letters, numbers, Shift, Space or Enter -- "
+                "dictation would start while you type. Pick a key like "
+                "Right Ctrl, or a pair such as Ctrl + Alt. Your previous "
+                "hotkeys are kept.")
+    if dev and set(dev) == set(normal):
+        return ("The dictation key and the code dictation key are the same, "
+                "so every dictation would come out as code. Pick a different "
+                "key for one of them. Your previous hotkeys are kept.")
+    return None
+
+
 def _hotkey_display(key):
     return _friendly_key_name(key)
 
@@ -404,6 +434,7 @@ class _SettingsWindow:
                     model_manager.download(config.MODEL_SIZE)
                 if not grammar_engine.is_installed():
                     grammar_engine.download()
+                grammar_engine.load_if_used()
             except Exception as exc:
                 self._local_error.append(f"Could not download local models:\n{exc}")
             finally:
@@ -951,6 +982,7 @@ class _SettingsWindow:
         def work():
             try:
                 grammar_engine.download()
+                grammar_engine.load_if_used()
             except Exception as exc:
                 self._model_errors.append(
                     f"Could not download the grammar engine:\n{exc}"
@@ -1230,6 +1262,19 @@ class _SettingsWindow:
             "hotkey_mode": self.var_hotkey_mode.get(),
             "dictionary": dictionary,
         }
+        problem = _hotkey_problem(
+            self.pending_hotkey or _key_names(config.HOTKEY),
+            self.pending_dev_hotkey if self.pending_dev_hotkey is not None
+            else _key_names(config.DEV_HOTKEY),
+        )
+        if problem:
+            # Keep the current keys; everything else still saves.
+            messagebox.showwarning(APP_NAME, problem, parent=self.root)
+            self.pending_hotkey = None
+            self.pending_dev_hotkey = None
+            self.hotkey_btn.config(text=_hotkey_display(config.HOTKEY))
+            self.dev_hotkey_btn.config(
+                text=_hotkey_display(config.DEV_HOTKEY) if config.DEV_HOTKEY else "Not set")
         if self.pending_hotkey:
             values["hotkey"] = self.pending_hotkey
         if self.pending_dev_hotkey is not None:

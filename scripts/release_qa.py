@@ -7,7 +7,7 @@ usage (from the project root, with the project venv):
              (default: dist\\Talkative.exe)
   --grammar  also run the grammar-guard evaluation (D5, ~3 min, needs the
              local grammar model)
-  --no-gui   skip checks that open windows (F1, W1, W2)
+  --no-gui   skip checks that open windows (F1, W1, W2, D12, F6)
 
 Prints a PASS/FAIL/SKIP table and exits 1 if anything failed. Offline:
 no Groq or Worker requests (prose is scored on classification only).
@@ -190,15 +190,34 @@ def check_mode_switch():
     """Local -> Cloud while the local model is still loading, and deleting
     the local voice model while in Cloud. Needs the local models on this PC."""
     problems = []
-    for scenario in ("during", "delete"):
+    for scenario in ("during", "delete", "update"):
         code, out = run_py(["mode_switch_test.py", scenario], E2E, timeout=180)
-        last = [l for l in out.splitlines() if l.startswith(("25 s later:", "after deleting"))]
+        last = [l for l in out.splitlines() if l.startswith(("25 s later:", "after deleting", "after a model update"))]
         if code != 0 or not last or "transcriber=CLOUD" not in last[-1] or "(Cloud" not in last[-1]:
             problems.append(f"{scenario}: {last[-1].split('transcriber=')[-1][:40] if last else 'no output'}")
         if scenario == "delete" and "dictation blocked: False" not in out:
             problems.append("delete: dictation blocked")
-    record("D10", "Switching Local -> Cloud sticks (mid-load too); deleting the local model keeps Cloud working",
+    record("D10", "Local -> Cloud sticks (mid-load too); deleting or updating local models leaves Cloud alone",
            "PASS" if not problems else "FAIL", "; ".join(problems))
+
+
+def _script_check(check_id, name, script, timeout=180):
+    code, out = run_py([script], E2E, timeout=timeout)
+    passed = len(re.findall(r"^PASS ", out, re.M))
+    bad = re.findall(r"^(?:FAIL |ABORT)(.*)$", out, re.M)
+    record(check_id, name, "PASS" if code == 0 and passed and not bad else "FAIL",
+           f"{passed} passed" + (f", FAIL: {bad}" if bad else ""))
+
+
+def check_hotkey_rules():
+    sys.path.insert(0, str(ROOT))
+    from talkative.settings_window import _hotkey_problem as p
+    must_pass = [(["ctrl_r"], ["ctrl_r", "shift_r"]), (["ctrl_l", "alt_l"], ["ctrl_r"]), (["f9"], [])]
+    must_block = [(["a"], []), (["space"], []), (["shift", "a"], []), (["shift_r"], []),
+                  (["ctrl_r"], ["ctrl_r"]), (["alt_l", "ctrl_l"], ["ctrl_l", "alt_l"])]
+    wrong = [c for c in must_pass if p(*c)] + [c for c in must_block if not p(*c)]
+    record("W3", "Settings refuses typing-key hotkeys and identical normal/code keys",
+           "PASS" if not wrong else "FAIL", f"wrong: {wrong}" if wrong else "")
 
 
 def check_pipeline():
@@ -314,15 +333,21 @@ def main():
         record("F1", "Fresh launch: one window, no crash", "SKIP", "--no-gui")
         record("W1", "Settings tabs and help window fit", "SKIP", "--no-gui")
         record("W2", "Tray icon checks", "SKIP", "--no-gui")
+        record("D12", "Overlapping pastes keep the clipboard", "SKIP", "--no-gui")
+        record("F6", "First-run switch to Cloud mid-download", "SKIP", "--no-gui")
     else:
         check_fresh_launch(exe)
     check_hotkeys()
     check_tap_mode()
     check_mode_switch()
+    _script_check("D11", "Overlapping dictations are typed in spoken order", "order_test.py")
+    check_hotkey_rules()
     check_pipeline()
     if not a.no_gui:
         check_layout()
         check_tray()
+        _script_check("D12", "Overlapping pastes keep the user's clipboard", "clipboard_race_test.py", 90)
+        _script_check("F6", "First-run setup: switching to Cloud mid Local download works", "onboarding_cloud_test.py", 150)
     check_corpora()
     if a.grammar:
         check_grammar()

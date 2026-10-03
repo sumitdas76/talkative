@@ -340,7 +340,7 @@ def _swap(key, entry, new_dir, controller):
         if is_active_speech:
             controller.reload_speech()
         elif info["kind"] == "grammar":
-            grammar_engine.load()
+            controller.reload_grammar()
         return True
     except Exception:
         # Restore: put the old model back and bring it up again.
@@ -353,7 +353,7 @@ def _swap(key, entry, new_dir, controller):
             if is_active_speech:
                 controller.reload_speech()
             elif info["kind"] == "grammar":
-                grammar_engine.load()
+                controller.reload_grammar()
         shutil.rmtree(previous, ignore_errors=True)
         return False
 
@@ -428,7 +428,7 @@ def undo_last_update(controller):
             if is_active_speech:
                 controller.reload_speech()
             elif info["kind"] == "grammar":
-                grammar_engine.load()
+                controller.reload_grammar()
             controller.end_swap(ok)
         if ok:
             with _state_lock:

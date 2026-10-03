@@ -35,9 +35,19 @@ class AudioRecorder:
         if self._stream is None:
             return np.array([], dtype="float32")
 
-        self._stream.stop()
-        self._stream.close()
-        self._stream = None
+        # The device can vanish mid-recording (Bluetooth headset dropping,
+        # USB mic unplugged) and stop() then raises. That used to escape
+        # into the hotkey listener and end dictation until a restart; keep
+        # whatever was captured instead.
+        stream, self._stream = self._stream, None
+        try:
+            stream.stop()
+        except Exception:
+            pass
+        try:
+            stream.close()
+        except Exception:
+            pass
 
         if not self._frames:
             return np.array([], dtype="float32")
