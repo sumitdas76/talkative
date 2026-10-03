@@ -2,13 +2,40 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [1.3.12] - 2026-10-04
+
+Thank you to Aman Sah for the idea behind tap to talk (new in 1.3.11):
+tap your key once to start and again to stop, instead of holding it
+down. Turn it on in Settings, under Hotkeys.
+
+### Fixed
+
+- After choosing Local, you can now switch back to Cloud. Before, it
+  could look as if the switch didn't work, and the setup window couldn't
+  be left while Local was downloading. Now you can pick Online at any
+  point during that download and start with Cloud right away.
+- If you tried Local once and went back to Cloud, Talkative no longer
+  loads the Local files again in the background (they take up a lot of
+  memory), and removing them no longer stops dictation.
+- Downloading Optimize Narration now takes effect straight away, without
+  restarting Talkative.
+- When you dictate twice in quick succession, whatever you had copied is
+  kept, and your words are typed in the order you said them.
+- If your microphone disconnects in the middle of a dictation (for
+  example a Bluetooth headset), Talkative keeps working instead of
+  needing a restart.
+- Settings no longer lets you pick a hotkey that would go off while you
+  type (such as a letter, Shift or Space), or the same key for normal
+  and code dictation.
+
 ## [1.3.11] - 2026-10-04
 
 ### Added
 
-- Tap to talk. Instead of holding your key down the whole time you speak,
-  you can now tap it once to start and tap it again when you're done.
-  Turn it on in Settings, under Hotkeys, "How the hotkeys work". Holding
+- Tap to talk (thanks to Aman Sah for the idea). Instead of holding your
+  key down the whole time you speak, you can now tap it once to start and
+  tap it again when you're done. Turn it on in Settings, under Hotkeys,
+  "How the hotkeys work". Holding
   the key still works too. If you forget the second tap, Talkative stops
   listening by itself after 5 minutes and types what you said.
 
