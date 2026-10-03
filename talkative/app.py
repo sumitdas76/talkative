@@ -94,6 +94,7 @@ class TalkativeApp:
         self._latched = False  # toggle mode: recording stays on after a tap, until the next one
         self._recording_id = 0  # bumped per recording, so a stale auto-stop timer can't stop a later one
         self._stop_lock = threading.Lock()
+        self._mode_lock = threading.Lock()  # transcriber swaps vs. a finishing background load
         self._masked = False  # mask key already sent for the chord currently held
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
@@ -165,15 +166,26 @@ class TalkativeApp:
         import gc
 
         if self._cloud_active():
-            if self.transcriber is not _CLOUD_TRANSCRIBER:
-                self.transcriber = None
+            with self._mode_lock:
+                switched = self.transcriber is not _CLOUD_TRANSCRIBER
+                if switched:
+                    self.transcriber = _CLOUD_TRANSCRIBER
+            if switched:
                 gc.collect()  # release the local model.bin mapping, if any
                 self._enter_cloud_mode()
             self._sync_grammar_source()
         elif self.transcriber is _CLOUD_TRANSCRIBER:
             self.transcriber = None
             self._load_model_async()
-            threading.Thread(target=grammar_engine.load, daemon=True).start()
+            threading.Thread(target=self._load_grammar, daemon=True).start()
+
+    def _load_grammar(self):
+        """Load the local grammar engine, then drop it again if the mode
+        changed while it loaded and no longer wants it -- it's ~1.5 GB of
+        memory, which matters on 8 GB laptops."""
+        grammar_engine.load()
+        if self._cloud_active() and config.GRAMMAR_SOURCE != "local":
+            grammar_engine.unload()
 
     def _sync_grammar_source(self):
         """While Cloud transcription is active, load or unload the local
@@ -184,7 +196,7 @@ class TalkativeApp:
         the other branch of _sync_processing_mode, so this only runs from
         the Cloud branch."""
         if config.GRAMMAR_SOURCE == "local":
-            threading.Thread(target=grammar_engine.load, daemon=True).start()
+            threading.Thread(target=self._load_grammar, daemon=True).start()
         else:
             grammar_engine.unload()
 
@@ -231,10 +243,20 @@ class TalkativeApp:
         def _load():
             try:
                 model_manager.migrate_from_hf_cache()
-                self.transcriber = Transcriber(
+                model = Transcriber(
                     config.MODEL_SIZE, config.DEVICE, config.COMPUTE_TYPE,
                     download_root=str(model_manager.models_dir()),
                 )
+                # Loading takes seconds (longer on slow PCs). If the user
+                # switched to Cloud meanwhile, drop the model instead of
+                # installing it over Cloud -- that left the tray saying
+                # Local and the model in memory, so switching back to
+                # Cloud looked like it never worked (user report
+                # 2026-10-04, reproduced by tools/e2e/mode_switch_test.py).
+                with self._mode_lock:
+                    if self._cloud_active():
+                        return
+                    self.transcriber = model
                 self._no_model = False
                 self.tray.set_mode_label("Local")
                 self.tray.set_idle()
@@ -253,6 +275,14 @@ class TalkativeApp:
         The choice is persisted only on success."""
 
         def _reload():
+            if self._cloud_active():
+                # Cloud doesn't use the local model: remember the choice
+                # for Local mode, but don't install it over Cloud.
+                config.MODEL_SIZE = size
+                settings.save({"model_size": size})
+                if on_done is not None:
+                    on_done(True)
+                return
             old = self.transcriber
             self.transcriber = None
             self.tray.set_loading("switching model...")
@@ -285,6 +315,11 @@ class TalkativeApp:
         of model.bin so the file can actually be deleted."""
         import gc
 
+        if self._cloud_active():
+            # Cloud dictation doesn't need the local model: deleting it
+            # used to turn Cloud dictation off too, until a restart.
+            gc.collect()
+            return
         self.transcriber = None
         self._no_model = True
         gc.collect()
@@ -610,7 +645,7 @@ class TalkativeApp:
             self._load_model_async()
             # Separate thread: the grammar engine must never delay dictation
             # readiness; until (unless) it loads, cleaned_up mode is rules-only.
-            threading.Thread(target=grammar_engine.load, daemon=True).start()
+            threading.Thread(target=self._load_grammar, daemon=True).start()
         # Models load above as usual, but _on_press refuses to record until
         # this screen is answered. on_choice re-syncs everything (model
         # loading, grammar source) if the user picks something different

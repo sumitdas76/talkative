@@ -186,6 +186,21 @@ def check_defaults():
            + (f"old name in {old_name}" if old_name else ""))
 
 
+def check_mode_switch():
+    """Local -> Cloud while the local model is still loading, and deleting
+    the local voice model while in Cloud. Needs the local models on this PC."""
+    problems = []
+    for scenario in ("during", "delete"):
+        code, out = run_py(["mode_switch_test.py", scenario], E2E, timeout=180)
+        last = [l for l in out.splitlines() if l.startswith(("25 s later:", "after deleting"))]
+        if code != 0 or not last or "transcriber=CLOUD" not in last[-1] or "(Cloud" not in last[-1]:
+            problems.append(f"{scenario}: {last[-1].split('transcriber=')[-1][:40] if last else 'no output'}")
+        if scenario == "delete" and "dictation blocked: False" not in out:
+            problems.append("delete: dictation blocked")
+    record("D10", "Switching Local -> Cloud sticks (mid-load too); deleting the local model keeps Cloud working",
+           "PASS" if not problems else "FAIL", "; ".join(problems))
+
+
 def check_pipeline():
     code, out = run_py(["pipeline_test.py"], STUDY, timeout=300)
     want = [
@@ -303,6 +318,7 @@ def main():
         check_fresh_launch(exe)
     check_hotkeys()
     check_tap_mode()
+    check_mode_switch()
     check_pipeline()
     if not a.no_gui:
         check_layout()

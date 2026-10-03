@@ -1116,12 +1116,20 @@ class _SettingsWindow:
             self.model_controller.reload(other["size"], on_done=done)
             return
 
+        if config.PROCESSING_MODE == "cloud":
+            question = (
+                f"Delete the {info['label']} model?\n\n"
+                "Cloud dictation keeps working. Local mode needs it, so "
+                "you'd download it again before switching to Local."
+            )
+        else:
+            question = (
+                f"The {info['label']} model is the only model downloaded.\n\n"
+                "Deleting it turns dictation off until you download a model "
+                "again. Delete anyway?"
+            )
         if messagebox.askyesno(
-            APP_NAME,
-            f"The {info['label']} model is the only model downloaded.\n\n"
-            "Deleting it turns dictation off until you download a model "
-            "again. Delete anyway?",
-            icon="warning", parent=self.root,
+            APP_NAME, question, icon="warning", parent=self.root,
         ):
             self.model_controller.unload()
             self._model_delete_worker(tier, size)

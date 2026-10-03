@@ -144,6 +144,12 @@ def load_into_config(path=None):
             continue
         if not isinstance(value, type(default)):
             continue
+        # Settings let users edit this field from 2026-09-19 to 09-20; a
+        # blank saved there silently pinned the app to Local forever
+        # (_cloud_active() needs an endpoint), with no way to fix it now
+        # that the field is read-only. Keep the built-in address instead.
+        if key == "cloud_endpoint_url" and not value.strip():
+            continue
         setattr(config, attr, value)
         applied[key] = value
 
