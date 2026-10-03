@@ -165,7 +165,15 @@ async function handleTranscribe(request, env, timing) {
   }
   const form = new FormData();
   form.append("file", new Blob([bytes], { type: "audio/wav" }), "audio.wav");
-  form.append("model", "whisper-large-v3-turbo");
+  // X-Stt-Model picks Groq's other Whisper for measurement (A/B against the
+  // default, tools/grammar_eval/cloud_stt_ab.py, 2026-10-04). Allow-listed:
+  // both have the same free-tier limits, so a test can't reach anything
+  // the default couldn't.
+  const STT_MODELS = ["whisper-large-v3-turbo", "whisper-large-v3"];
+  const requested = request.headers.get("X-Stt-Model");
+  const sttModel = STT_MODELS.includes(requested) ? requested : STT_MODELS[0];
+  timing.stt_model = sttModel;
+  form.append("model", sttModel);
   form.append("language", "en"); // matches the local model's small.en (English-only)
   // verbose_json for per-segment no_speech_prob / avg_logprob, so segments
   // that are really silence can be dropped (see below).
