@@ -27,7 +27,7 @@ text = f"""VSVersionInfo(
       StringStruct('FileDescription', 'Talkative - hold-to-talk dictation'),
       StringStruct('FileVersion', '{version}'),
       StringStruct('InternalName', 'Talkative'),
-      StringStruct('LegalCopyright', 'Copyright (c) 2026 Sumit Chatterjee. MIT License.'),
+      StringStruct('LegalCopyright', 'Copyright (c) 2026 Sumit Das. MIT License.'),
       StringStruct('OriginalFilename', 'Talkative.exe'),
       StringStruct('ProductName', 'Talkative'),
       StringStruct('ProductVersion', '{version}')])]),

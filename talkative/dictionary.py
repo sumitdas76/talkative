@@ -4,9 +4,9 @@ Personal dictionary: spoken -> typed replacements.
 Purely local, deterministic, rule-based -- no LLM or network call. Matches
 whole words/phrases case-insensitively and preserves sentence-start
 capitalization. The typed forms are also included in the match pattern
-mapped to themselves, so an already-expanded phrase ("Sumit Chatterjee") is
+mapped to themselves, so an already-expanded phrase ("Sumit Das") is
 matched whole and left alone instead of having its first word re-expanded
-("Sumit Chatterjee Chatterjee").
+("Sumit Das Das").
 
 Also builds a vocabulary hint prompt for the transcriber so dictionary terms
 are more likely to be recognized correctly in the first place.
@@ -20,7 +20,7 @@ from . import config
 # these characters with no surrounding space, producing filenames, paths,
 # identifiers, and email addresses ("settings_window.py", "c:\users\sumit",
 # "john.smith@company.com"). A dictionary term that happens to also be a
-# path/username component ("Sumit" -> "Sumit Chatterjee") must not expand
+# path/username component ("Sumit" -> "Sumit Das") must not expand
 # when it's actually sitting inside one of these fused tokens -- confirmed
 # live 2026-09-20: dictating a path containing the literal folder name
 # matching a dictionary entry silently corrupted the path into a folder

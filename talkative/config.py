@@ -213,17 +213,14 @@ REPEAT_SIMILARITY = 0.75
 # case-insensitive; the replacement is capitalized when it starts a sentence.
 # The terms are also fed to Whisper as vocabulary hints so they are more
 # likely to be *heard* correctly in the first place.
-DICTIONARY = {
-    "asap": "as soon as possible",
-    "AI": "artificial intelligence",
-    "Captivate": "Adobe Captivate",
-    "PPT": "PowerPoint",
-    "Sumit": "Sumit Chatterjee",
-}
+# Empty by default: users add their own entries in Settings > Auto Text.
+# (Until 1.3.11 this shipped the developer's personal entries, so every new
+# install expanded "AI" to "artificial intelligence".)
+DICTIONARY = {}
 # Off by default: biasing Whisper toward short name-like terms makes it
 # mishear ordinary phrases as those terms (observed live: "Send it Monday"
 # transcribed as "Sumit Monday", which the dictionary then expanded to
-# "Sumit Chatterjee Monday"). Text replacement above is unaffected. Only
+# "Sumit Das Monday"). Text replacement above is unaffected. Only
 # re-enable after testing with the specific dictionary in use.
 ENABLE_RECOGNITION_BIAS = False
 
