@@ -13,10 +13,12 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
+from talkative import error_log
 from talkative.app import TalkativeApp
 
 
 def main():
+    error_log.install()
     app = TalkativeApp()
     app.run()
     # Tray -> Quit returns here, but normal interpreter shutdown can hang

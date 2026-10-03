@@ -1,5 +1,7 @@
 import ctypes
+import logging
 import threading
+import time
 
 import pystray
 from PIL import Image, ImageDraw
@@ -75,6 +77,7 @@ class TrayApp:
     def __init__(self, on_quit, on_settings=None, hotkey_label="Right Ctrl"):
         self._hotkey_label = hotkey_label
         self._mode_label = ""
+        self._lock = threading.RLock()
         self._idle_image = _make_icon_image((70, 130, 180, 255))  # steel blue
         self._recording_image = _make_icon_image((200, 40, 40, 255))  # red
         self._loading_image = _make_icon_image((150, 150, 150, 255))  # grey
@@ -115,31 +118,74 @@ class TrayApp:
     def _mode_prefix(self):
         return f"{self._mode_label} — " if self._mode_label else ""
 
+    def _set(self, image, title):
+        """Every icon/tooltip change goes through here. pystray isn't
+        thread-safe and these are called from the hotkey listener, model
+        loading, updater and Settings threads: two overlapping icon swaps
+        can DestroyIcon one handle twice (pystray raises) or hand the
+        shell a destroyed handle (blank icon). Errors are logged, never
+        raised -- a raise here inside the hotkey listener's callback
+        would stop the listener and dictation with it."""
+        try:
+            with self._lock:
+                self.icon.icon = image
+                self.icon.title = title
+        except Exception:
+            logging.getLogger(__name__).exception("tray icon update failed")
+
     def set_idle(self):
-        self.icon.icon = self._idle_image
         dev = getattr(self, "_dev_hotkey_label", "")
-        self.icon.title = (
+        self._set(
+            self._idle_image,
             f"Talkative ({self._mode_prefix()}{getattr(self, '_hotkey_verb', 'hold')} "
             f"{self._hotkey_label} to dictate"
-            + (f", {dev} for code" if dev else "") + ")"
+            + (f", {dev} for code" if dev else "") + ")",
         )
 
     def set_loading(self, note="loading model..."):
-        self.icon.icon = self._loading_image
-        self.icon.title = f"Talkative ({self._mode_prefix()}{note})"
+        self._set(self._loading_image, f"Talkative ({self._mode_prefix()}{note})")
 
     def set_recording(self):
-        self.icon.icon = self._recording_image
-        self.icon.title = "Talkative (listening...)"
+        self._set(self._recording_image, "Talkative (listening...)")
 
     def notify(self, message, title="Talkative"):
         try:
-            self.icon.notify(message, title)
+            with self._lock:
+                self.icon.notify(message, title)
         except Exception:
             pass
 
     def run_detached(self):
         self.icon.run_detached()
+        threading.Thread(target=self._keep_icon_alive, daemon=True).start()
+
+    def _keep_icon_alive(self):
+        """Put the icon back if Windows has lost it. A user saw dictation
+        keep working with no tray icon (2026-10-03). pystray ignores
+        Shell_NotifyIcon's result, so an add that fails is never retried:
+        at login before the taskbar is ready, or when Explorer restarts
+        and pystray's WM_TASKBARCREATED re-add fails. NIM_MODIFY fails
+        exactly when our icon isn't in the tray, so it doubles as the
+        check; NIM_ADD on an icon that is there fails harmlessly."""
+        from pystray._util import win32
+
+        time.sleep(5)
+        while True:
+            try:
+                with self._lock:
+                    icon = self.icon
+                    hwnd = getattr(icon, "_hwnd", None)
+                    if icon.visible and hwnd:
+                        present = win32.Shell_NotifyIcon(win32.NIM_MODIFY, win32.NOTIFYICONDATAW(
+                            cbSize=ctypes.sizeof(win32.NOTIFYICONDATAW),
+                            hWnd=hwnd, hID=id(icon), uFlags=win32.NIF_TIP,
+                            szTip=icon.title))
+                        if not present:
+                            logging.getLogger(__name__).warning("tray icon missing, re-adding")
+                            icon._show()
+            except Exception:
+                logging.getLogger(__name__).exception("tray icon check failed")
+            time.sleep(15)
 
     def stop(self):
         self.icon.stop()

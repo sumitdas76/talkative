@@ -26,6 +26,21 @@ _CLOUD_TRANSCRIBER = object()
 
 _TONE_RATE = 16000
 
+# A hotkey chord containing a Windows or Alt key: Windows treats that key
+# as "pressed alone" if nothing else was typed between its down and up,
+# and on release opens the Start menu (Win) or puts the focused window in
+# menu mode (Alt -- which then swallows the Ctrl+V paste). Tapping an
+# unassigned virtual key while the chord is down marks it as used, the
+# same trick AutoHotkey uses (its default mask key is also vk E8). Wispr
+# Flow doesn't open Start on the same chords; Talkative did (user report
+# 2026-10-03).
+_MASK_KEY = keyboard.KeyCode.from_vk(0xE8)
+_MASKED_KEYS = {
+    keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r,
+    keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt_gr,
+}
+_mask_controller = keyboard.Controller()
+
 
 def _tone_samples(freq, seconds, volume, rate=_TONE_RATE):
     """A soft mono sine tone as float32 samples in [-1, 1], with a 5ms fade
@@ -79,6 +94,7 @@ class TalkativeApp:
         self._latched = False  # toggle mode: recording stays on after a tap, until the next one
         self._recording_id = 0  # bumped per recording, so a stale auto-stop timer can't stop a later one
         self._stop_lock = threading.Lock()
+        self._masked = False  # mask key already sent for the chord currently held
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
             hotkey_label=friendly_key(config.HOTKEY),
@@ -318,6 +334,8 @@ class TalkativeApp:
         return config.HOTKEY_MODE == "toggle"
 
     def _on_press(self, key):
+        if getattr(key, "vk", None) == _MASK_KEY.vk:
+            return  # our own mask keystroke, see _MASK_KEY
         if key not in config.HOTKEY and key not in config.DEV_HOTKEY:
             # Toggle mode: another key pressed while the hotkey is still
             # down means the hotkey was part of a shortcut (Right Ctrl+C),
@@ -329,6 +347,17 @@ class TalkativeApp:
             return
         self._hotkey_pressed.add(key)
         dev = bool(config.DEV_HOTKEY) and self._hotkey_pressed == set(config.DEV_HOTKEY)
+        # Once per physical chord press (key-repeat re-fires on_press), and
+        # only for the complete chord -- the Windows key pressed on its
+        # own must still open Start.
+        if (not self._masked and self._hotkey_pressed & _MASKED_KEYS
+                and (dev or self._hotkey_pressed == set(config.HOTKEY))):
+            self._masked = True
+            try:
+                _mask_controller.press(_MASK_KEY)
+                _mask_controller.release(_MASK_KEY)
+            except Exception:
+                pass
         if self._recording and self._latched:
             # Toggle mode, recording left on by an earlier tap: a fresh
             # press of either chord stops it. _chord_active stays set until
@@ -407,6 +436,7 @@ class TalkativeApp:
         if key not in config.HOTKEY and key not in config.DEV_HOTKEY:
             return
         self._hotkey_pressed.discard(key)
+        self._masked = False
         if self._latched:
             # Only re-arm once every hotkey key is up, so the second key of
             # a two-key tap being released (or still held) can't count as

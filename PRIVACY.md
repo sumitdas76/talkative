@@ -79,6 +79,8 @@ What stays on your PC
 - Dictation history, only if you turn it on in the Dictation tab. It is
   never uploaded, in either mode.
 - A debug log, off by default, which holds dictated text if turned on.
+- An error log (errors.log) of program errors, so a problem can be
+  diagnosed. It never contains dictated text and is never uploaded.
 
 All of these are in %LOCALAPPDATA%\Talkative. The uninstaller offers to
 delete that folder.
