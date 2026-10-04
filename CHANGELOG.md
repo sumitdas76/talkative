@@ -15,6 +15,11 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   words you never said ("...as well as the file?"); now your words are
   kept as spoken. It also can't drop a "not" or "never" anymore.
 
+### Changed
+
+- The setup screen now says how much memory Local mode needs: about
+  2.3 GB while running, best with 16 GB of RAM, works on 8 GB.
+
 ## [1.3.12] - 2026-10-04
 
 Thank you to Aman Sah for the idea behind tap to talk (new in 1.3.11):

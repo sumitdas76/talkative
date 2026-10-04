@@ -49,7 +49,8 @@ click **More info → Run anyway**. No administrator rights are needed.
 - Windows 10 or 11, 64-bit
 - A microphone
 - An internet connection (Cloud mode, the default). Switching to Local
-  needs about 2 GB of free disk space and 4 GB of RAM instead.
+  needs about 2 GB of free disk space instead, and uses about 2.3 GB of
+  memory while running: 16 GB of RAM recommended, works on 8 GB.
 
 Talkative works right after installing — nothing to download first. If
 you switch to Local mode, that download takes a couple of minutes; after

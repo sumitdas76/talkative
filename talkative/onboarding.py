@@ -107,8 +107,9 @@ def _build(overlay, on_choice):
             "Ready to dictate after a one-time 0.5 GB download. Optimize "
             "Narration (1.5 GB more) then finishes downloading in the "
             "background while you work.",
-            "Uses about 2 GB of memory while Talkative runs. No internet "
-            "is needed after the downloads.",
+            "Uses about 2.3 GB of memory while Talkative runs: best with "
+            "16 GB of RAM, works on 8 GB. No internet is needed after "
+            "the downloads.",
         ])
 
         status = ttk.Label(root, padding=(18, 4, 18, 0), foreground="grey", wraplength=480)
