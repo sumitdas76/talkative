@@ -2,6 +2,10 @@
 
 Hold-to-talk dictation for Windows, ready the moment you install it.
 
+**Free · Open source · Windows 10/11 · Cloud or fully offline**
+
+![Hold Right Ctrl, speak, let go: your words are typed where your cursor is](assets/demo.gif)
+
 [![Download for Windows](https://img.shields.io/badge/Download_for_Windows-TalkativeSetup.exe-2ea44f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sumitdas76/talkative/releases/latest/download/TalkativeSetup.exe)
 
 Free, no account. Windows 10 or 11. The installer isn't code-signed yet, so
