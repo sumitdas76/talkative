@@ -346,16 +346,10 @@ class _SettingsWindow:
 
     def _tab_general(self, f):
         self.var_autostart = tk.BooleanVar(value=config.START_WITH_WINDOWS)
-        self.var_sounds = tk.BooleanVar(value=config.PLAY_SOUNDS)
         self.var_theme = tk.StringVar(value=config.THEME)
         ttk.Checkbutton(
             f, text=f"Start “{APP_NAME}” when Windows starts",
             variable=self.var_autostart,
-        ).pack(anchor="w", pady=4)
-        ttk.Checkbutton(
-            f, text="Play sounds when recording starts, stops, and when "
-                    "text is inserted",
-            variable=self.var_sounds,
         ).pack(anchor="w", pady=4)
 
         box = ttk.LabelFrame(f, text="Appearance", padding=10)
@@ -746,35 +740,6 @@ class _SettingsWindow:
             f, wraplength=520, foreground="grey",
             text="If dictation hears nothing, the wrong microphone is "
                  "selected. Takes effect from the next dictation.",
-        ).pack(anchor="w")
-
-        ttk.Label(f, text="Output device:").pack(anchor="w", pady=(14, 0))
-        self._output_values = [None]
-        out_names = ["System default"]
-        try:
-            import sounddevice as sd
-
-            from .audio_recorder import PA_LOCK
-
-            with PA_LOCK:
-                devices = sd.query_devices()
-            for index, dev in enumerate(devices):
-                if dev.get("max_output_channels", 0) > 0:
-                    self._output_values.append(index)
-                    out_names.append(f"{dev['name']}")
-        except Exception:
-            pass
-
-        self.output_combo = ttk.Combobox(f, values=out_names, state="readonly", width=48)
-        try:
-            self.output_combo.current(self._output_values.index(config.OUTPUT_DEVICE))
-        except ValueError:
-            self.output_combo.current(0)
-        self.output_combo.pack(anchor="w", pady=6)
-        ttk.Label(
-            f, wraplength=520, foreground="grey",
-            text="Where dictation tones and spoken messages play — "
-                 "headphones, Bluetooth earphones, speakers.",
         ).pack(anchor="w")
 
     def _tab_output(self, f):
@@ -1258,7 +1223,6 @@ class _SettingsWindow:
 
         values = {
             "start_with_windows": self.var_autostart.get(),
-            "play_sounds": self.var_sounds.get(),
             "theme": self.var_theme.get(),
             "processing_mode": self.var_processing.get(),
             "grammar_source": "local" if self.var_grammar_local.get() else "auto",
@@ -1289,10 +1253,6 @@ class _SettingsWindow:
             values["dev_hotkey"] = self.pending_dev_hotkey
         try:
             values["input_device"] = self._audio_values[self.audio_combo.current()]
-        except Exception:
-            pass
-        try:
-            values["output_device"] = self._output_values[self.output_combo.current()]
         except Exception:
             pass
 

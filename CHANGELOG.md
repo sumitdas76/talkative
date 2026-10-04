@@ -7,9 +7,8 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 ### Fixed
 
 - Fixed a crash that could close Talkative when you pressed the hotkey
-  again right after a dictation: the start/stop sound and the microphone
-  were opened at the same moment from two places, which the audio system
-  doesn't allow.
+  again right after a dictation. It came from the start and stop sounds
+  being played while the microphone was starting or stopping.
 - When Cloud is busy or your internet drops, your dictation is no longer
   lost. If the Local voice model is downloaded, that dictation is
   transcribed on your PC instead; otherwise Talkative tries Cloud again
@@ -24,6 +23,9 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
 ### Changed
 
+- No more beeps. The listening animation shows when Talkative is ready
+  for your words, so the start, stop and "done" sounds are gone, along
+  with the sound and output device options in Settings.
 - The setup screen now says how much memory Local mode needs: about
   2.3 GB while running, best with 16 GB of RAM, works on 8 GB.
 

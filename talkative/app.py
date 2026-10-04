@@ -6,7 +6,7 @@ import time
 from pynput import keyboard
 
 from . import cloud_client, cloud_notice, config, dev_mode, error_toast, feedback, grammar_engine, history, model_manager, onboarding, pill, settings, temp_cleanup, try_it_now, updater
-from .audio_recorder import AudioRecorder, play as play_audio
+from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
 from .dictionary import apply_dictionary, vocabulary_prompt
@@ -24,9 +24,6 @@ from .tray import TrayApp, show_error_popup
 # though nothing ever calls .transcribe() on it -- _process_audio_inner
 # branches on _cloud_active() before it would.
 _CLOUD_TRANSCRIBER = object()
-_BEEP_LOCK = threading.Lock()
-
-_TONE_RATE = 16000
 
 # A hotkey chord containing a Windows or Alt key: Windows treats that key
 # as "pressed alone" if nothing else was typed between its down and up,
@@ -42,20 +39,6 @@ _MASKED_KEYS = {
     keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt_gr,
 }
 _mask_controller = keyboard.Controller()
-
-
-def _tone_samples(freq, seconds, volume, rate=_TONE_RATE):
-    """A soft mono sine tone as float32 samples in [-1, 1], with a 5ms fade
-    in/out so it doesn't click. Played via sounddevice (not winsound, which
-    always uses the system default output regardless of OUTPUT_DEVICE)."""
-    import numpy as np
-
-    n = int(rate * seconds)
-    fade = max(1, int(rate * 0.005))
-    t = np.arange(n)
-    env = np.minimum(1.0, np.minimum(t / fade, (n - t) / fade))
-    amp = max(0.0, min(1.0, volume))
-    return (amp * env * np.sin(2 * np.pi * freq * t / rate)).astype("float32")
 
 
 def _debug_log(**stages):
@@ -87,7 +70,6 @@ class TalkativeApp:
         self._running = True
         self._listener = None
         self._no_model = False  # active model was deleted; not merely still loading
-        self._tones = {}  # (freq, seconds) -> generated sample array, cached
         self._jobs = 0  # dictations currently in the pipeline (updater idle check)
         # Dictations are typed in the order they were spoken: each gets a
         # number when recording stops and waits for its turn to paste. Two
@@ -219,38 +201,6 @@ class TalkativeApp:
             threading.Thread(target=self._load_grammar, daemon=True).start()
         else:
             grammar_engine.unload()
-
-    # kind -> sequence of (freq_hz, seconds). "done" is a rising two-note
-    # chime, distinct from the single start/stop tones, played after the
-    # text lands in the target application.
-    _SOUNDS = {
-        "start": [(880, 0.07)],
-        "stop": [(440, 0.07)],
-        "done": [(660, 0.08), (880, 0.10)],
-    }
-
-    def _beep(self, kind):
-        if not config.PLAY_SOUNDS:
-            return
-
-        def _play():
-            try:
-                # One cue at a time (a quick tap's stop beep waits for the
-                # start beep); audio_recorder.play keeps PortAudio calls
-                # off other threads' toes -- see PA_LOCK there.
-                with _BEEP_LOCK:
-                    for freq, seconds in self._SOUNDS[kind]:
-                        # Cached: building the samples isn't free.
-                        tone = self._tones.get((freq, seconds))
-                        if tone is None:
-                            tone = _tone_samples(freq, seconds, config.SOUND_VOLUME)
-                            self._tones[(freq, seconds)] = tone
-                        # Blocking playback so multi-note sequences chain.
-                        play_audio(tone, _TONE_RATE, device=config.OUTPUT_DEVICE)
-            except Exception:
-                pass
-
-        threading.Thread(target=_play, daemon=True).start()
 
     def _no_target_cue(self):
         """Nothing editable is focused. An on-screen error instead of a
@@ -499,7 +449,6 @@ class TalkativeApp:
         self._record_start_time = time.time()
         self.tray.set_recording()
         pill.show(lambda: self.recorder.level)
-        self._beep("start")
 
     def _on_release(self, key):
         if key not in config.HOTKEY and key not in config.DEV_HOTKEY:
@@ -551,7 +500,6 @@ class TalkativeApp:
             self._latched = False
         self.tray.set_idle()
         pill.hide()
-        self._beep("stop")
         audio = self.recorder.stop()
         duration = time.time() - self._record_start_time
 
@@ -770,7 +718,6 @@ class TalkativeApp:
             return
 
         insert_text(text)
-        self._beep("done")
         if config.ENABLE_HISTORY:
             history.add(text)
         updater.note_words(len(text.split()))

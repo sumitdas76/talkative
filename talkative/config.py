@@ -246,21 +246,12 @@ PRESS_ENTER_AFTER = False
 # Windows app theme).
 THEME = "system"
 
-# Short tones when recording starts/stops and when text is inserted.
-PLAY_SOUNDS = True
-# Loudness of those tones, 0.0-1.0. They are generated soft sine waves played
-# through the sound mixer -- winsound.Beep was rejected because it plays a
-# harsh square wave at full volume with no volume control. (0.2 was still
-# too loud for the user; halved July 19.)
-SOUND_VOLUME = 0.1
+# No sounds: the start/stop/done beeps were removed 2026-10-04 at the
+# user's request (the listening pill already shows when Talkative is
+# hearing you), and they were what crashed it -- see audio_recorder.PA_LOCK.
 # None = system default input device; otherwise a sounddevice input index
 # (set via the Audio tab in Settings).
 INPUT_DEVICE = None
-# None = system default output device; otherwise a sounddevice output index
-# (set via the Audio tab in Settings). Tones and the spoken no-focus cue are
-# played through sounddevice (not winsound, which always uses the system
-# default output) so this setting actually takes effect.
-OUTPUT_DEVICE = None
 
 # ---------------------------------------------------------------------------
 # Updates (spec section 7)

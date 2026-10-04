@@ -50,7 +50,6 @@ _KEYS = {
     "append_space": "APPEND_SPACE",
     "press_enter_after": "PRESS_ENTER_AFTER",
     "start_with_windows": "START_WITH_WINDOWS",
-    "play_sounds": "PLAY_SOUNDS",
     "hotkey_mode": "HOTKEY_MODE",
     "theme": "THEME",
     "first_run_done": "FIRST_RUN_DONE",
@@ -62,7 +61,9 @@ _KEYS = {
 }
 
 # Keys handled outside the type-checked table.
-_SPECIAL_KEYS = ("hotkey", "dev_hotkey", "input_device", "output_device")
+# "play_sounds" and "output_device" (the start/stop beeps, removed
+# 2026-10-04) may still be in old files; they are ignored.
+_SPECIAL_KEYS = ("hotkey", "dev_hotkey", "input_device")
 
 
 def settings_dir():
@@ -172,11 +173,6 @@ def load_into_config(path=None):
     if "input_device" in data and isinstance(data["input_device"], (type(None), int, str)):
         config.INPUT_DEVICE = data["input_device"]
         applied["input_device"] = data["input_device"]
-
-    # output_device: None (default) or a sounddevice output index / name.
-    if "output_device" in data and isinstance(data["output_device"], (type(None), int, str)):
-        config.OUTPUT_DEVICE = data["output_device"]
-        applied["output_device"] = data["output_device"]
 
     return applied
 

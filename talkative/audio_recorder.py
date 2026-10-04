@@ -8,27 +8,10 @@ import sounddevice as sd
 # did exactly that -- the start/stop beep opened an output stream on its
 # own thread while the hotkey thread started or closed the microphone --
 # and crashed in ntdll on the input callback thread (2026-10-03 and
-# 2026-10-04, same signature both times; tools/e2e/audio_race_test.py
-# reproduces it in seconds). Every PortAudio call goes through this lock.
+# 2026-10-04, same signature both times). The beeps are gone since, but
+# every PortAudio call (recording here, Settings' device list) still
+# goes through this lock, so a future sound can't bring the crash back.
 PA_LOCK = threading.RLock()
-
-
-def play(samples, sample_rate, device=None):
-    """Blocking playback of a mono float32 array on a stream of its own.
-    Not sd.play(): that shares one module-global stream between callers,
-    so a second beep thread stopped the first one's stream mid-callback."""
-    with PA_LOCK:
-        stream = sd.OutputStream(samplerate=sample_rate, channels=1,
-                                 dtype="float32", device=device)
-        stream.start()
-    try:
-        stream.write(np.ascontiguousarray(samples, dtype="float32").reshape(-1, 1))
-    finally:
-        with PA_LOCK:
-            try:
-                stream.stop()
-            finally:
-                stream.close()
 
 
 class AudioRecorder:
