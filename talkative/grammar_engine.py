@@ -18,7 +18,9 @@ worse than no cleanup at all):
 - at least GRAMMAR_MIN_RETENTION of the input's words must appear in the
   output (loose enough for legitimate retraction removal, strict enough
   to reject summarization of long rambling input);
-- output length must stay within sane bounds of the input.
+- output length must stay within sane bounds of the input;
+- no "you" lost or invented, no "?" lost, no negation lost, and no words
+  invented after the end of what was said (see each guard below).
 """
 
 import re
@@ -388,8 +390,52 @@ def _question_ok(inp, out):
     return True
 
 
+_NEGATION = re.compile(
+    r"\b(?:not|no|nor|never|neither|none|nobody|nothing|nowhere|cannot)\b|n't\b",
+    re.IGNORECASE)
+
+
+def _negation_ok(inp, out):
+    """A negation must not vanish: "Nor is his manner less interesting"
+    -> "His manner is less interesting" (Local, 2026-10-04) flips the
+    meaning while keeping almost every word. Counted, so one "not" lost
+    among several is caught too; a rewrite that adds one is fine."""
+    norm = lambda s: s.replace("’", "'")
+    return len(_NEGATION.findall(norm(out))) >= len(_NEGATION.findall(norm(inp)))
+
+
+def _ending_ok(inp, out):
+    """No words invented after the end of what was said. A dictation cut
+    off mid-sentence (the key released before the thought ended, often to
+    go on in the next one) gets "finished" by the model: "...and also the"
+    -> "...as well as the file?", "Tell Mr. Bajaj that the Kubernetes" ->
+    "...the Kubernetes deployment is ready." (Local, 2026-10-04).
+
+    The output's last word must be one of the input's last three, or the
+    same word in another form ("homes" -> "home", "doc" -> "document",
+    "did not" -> "didn't"), or a content word from the input's last
+    twelve words (reordering a sentence's end: "...wait Sunday morning for one
+    hour of G.I. Joe" -> "...one hour of G.I. Joe on Sunday morning").
+    Function words like "it" don't count for that last case: "...then we
+    cleared" -> "...cleared it." is exactly the invention this catches.
+    Measured with tools/grammar_eval/guard_eval.py."""
+    norm = lambda s: s.lower().replace("’", "'")
+    src = _WORD.findall(norm(inp))
+    dst = _WORD.findall(norm(out))
+    if len(src) < 3 or not dst:
+        return True
+    last = dst[-1]
+
+    def same(a, b):
+        return a == b or (min(len(a), len(b)) >= 3 and (a.startswith(b) or b.startswith(a)))
+
+    if any(same(last, w) for w in src[-3:]):
+        return True
+    return last not in _STOPWORDS and last in src[-12:]
+
+
 def validate(inp, out):
-    """Run all six deterministic guards against an (input, output) pair.
+    """Run all eight deterministic guards against an (input, output) pair.
     True only if `out` is safe to use in place of `inp`. Shared by the local
     engine's apply() below and cloud_client.grammar_apply() (same leash
     applied to a remote model's output -- see grammar_engine.py's module
@@ -398,7 +444,8 @@ def validate(inp, out):
         return False
     return (_digits_ok(inp, out) and _retention_ok(inp, out)
             and _length_ok(inp, out) and _second_person_ok(inp, out)
-            and _question_ok(inp, out) and _no_invented_second_person(inp, out))
+            and _question_ok(inp, out) and _no_invented_second_person(inp, out)
+            and _negation_ok(inp, out) and _ending_ok(inp, out))
 
 
 def apply(text):

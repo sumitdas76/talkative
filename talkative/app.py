@@ -105,6 +105,10 @@ class TalkativeApp:
         self._recording_id = 0  # bumped per recording, so a stale auto-stop timer can't stop a later one
         self._stop_lock = threading.Lock()
         self._mode_lock = threading.Lock()  # transcriber swaps vs. a finishing background load
+        self._fallback = None  # Local model borrowed while Cloud is busy (_cloud_transcribe)
+        self._fallback_timer = None
+        self._fallback_lock = threading.Lock()
+        self._cloud_down = threading.local()  # .value: this dictation's Cloud transcription failed
         self._masked = False  # mask key already sent for the chord currently held
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
@@ -330,6 +334,7 @@ class TalkativeApp:
         of model.bin so the file can actually be deleted."""
         import gc
 
+        self._drop_fallback()
         if self._cloud_active():
             # Cloud dictation doesn't need the local model: deleting it
             # used to turn Cloud dictation off too, until a restart.
@@ -353,6 +358,7 @@ class TalkativeApp:
         def unload_speech():
             if not self._cloud_active():
                 self.transcriber = None
+            self._drop_fallback()
             gc.collect()  # release the model.bin mapping so files can move
 
         def reload_speech():
@@ -590,6 +596,7 @@ class TalkativeApp:
         base_prompt = dev_mode.STT_PROMPT if dev else config.PUNCTUATION_PROMPT
         prompt = " ".join(p for p in (base_prompt, vocabulary_prompt()) if p) or None
         t0 = time.time()
+        self._cloud_down.value = False
         transcriber = self.transcriber
         if not self._cloud_active() and (
                 transcriber is None or transcriber is _CLOUD_TRANSCRIBER):
@@ -601,9 +608,7 @@ class TalkativeApp:
             return
         try:
             if self._cloud_active():
-                text = cloud_client.transcribe(
-                    audio, config.SAMPLE_RATE, initial_prompt=prompt
-                )
+                text = self._cloud_transcribe(audio, prompt)
             else:
                 text = transcriber.transcribe(
                     audio, config.SAMPLE_RATE, initial_prompt=prompt
@@ -646,7 +651,10 @@ class TalkativeApp:
             grammar_used_local = self._grammar_uses_local()
             if grammar_used_local:
                 text = grammar_engine.apply(text)
-            else:
+            elif not self._cloud_down.value:
+                # Skipped when Cloud just refused the transcription: it
+                # would most likely refuse this too, maybe after a 20 s
+                # timeout. The rule-based cleanup above still ran.
                 text = cloud_client.grammar_apply(text)
             grammar_secs = time.time() - t0
             if dev:
@@ -676,6 +684,79 @@ class TalkativeApp:
             + (" [developer: prose]" if dev else ""),
         )
         self._insert_final(text)
+
+    def _cloud_transcribe(self, audio, prompt):
+        """Cloud transcription that doesn't lose the dictation when Cloud
+        is busy or unreachable (both Groq and the Workers AI fallback
+        refused, the per-install daily cap, no internet). If the Local
+        voice model is downloaded, that dictation is transcribed on this
+        PC instead -- the audio never leaves it, so nothing new for
+        PRIVACY.md. Without it, Cloud is retried twice (Groq's limit is
+        per minute, so seconds later usually works) before giving up.
+        Windows' own recognizer is no fallback: the one apps can call
+        (SAPI dictation) got 85% of words wrong on the 59 real recordings
+        Cloud gets 14.6% on (2026-10-04); Win+H voice typing has no API."""
+        try:
+            return cloud_client.transcribe(audio, config.SAMPLE_RATE,
+                                           initial_prompt=prompt)
+        except Exception as exc:
+            first_error = exc
+        self._cloud_down.value = True
+        logging.warning("Cloud transcription failed (%s); falling back", first_error)
+        local = self._fallback_transcriber()
+        if local is not None:
+            text = local.transcribe(audio, config.SAMPLE_RATE, initial_prompt=prompt)
+            self.tray.notify("Cloud was busy, so this dictation was "
+                             "transcribed on this PC instead.")
+            return text
+        for delay in config.CLOUD_RETRY_DELAYS:
+            time.sleep(delay)
+            if not self._cloud_active():
+                break
+            try:
+                text = cloud_client.transcribe(audio, config.SAMPLE_RATE,
+                                               initial_prompt=prompt)
+                self._cloud_down.value = False
+                return text
+            except Exception as exc:
+                logging.warning("Cloud retry failed (%s)", exc)
+        raise first_error
+
+    def _fallback_transcriber(self):
+        """The Local voice model for a Cloud-busy dictation, loaded on
+        first need and dropped again after FALLBACK_IDLE_SECONDS unused
+        (~0.5 GB of memory a Cloud user didn't ask for). None when it
+        isn't downloaded or won't load, or while an update swaps it."""
+        if self._swapping or not model_manager.is_downloaded(config.MODEL_SIZE):
+            return None
+        with self._fallback_lock:
+            if self._fallback is None:
+                try:
+                    self._fallback = Transcriber(
+                        config.MODEL_SIZE, config.DEVICE, config.COMPUTE_TYPE,
+                        download_root=str(model_manager.models_dir()),
+                    )
+                except Exception as exc:
+                    logging.warning("Local fallback model failed to load: %s", exc)
+                    return None
+            model = self._fallback
+            if self._fallback_timer is not None:
+                self._fallback_timer.cancel()
+            self._fallback_timer = threading.Timer(
+                config.FALLBACK_IDLE_SECONDS, self._drop_fallback)
+            self._fallback_timer.daemon = True
+            self._fallback_timer.start()
+        return model
+
+    def _drop_fallback(self):
+        import gc
+
+        with self._fallback_lock:
+            self._fallback = None
+            if self._fallback_timer is not None:
+                self._fallback_timer.cancel()
+                self._fallback_timer = None
+        gc.collect()  # release the model.bin mapping (updates move the files)
 
     def _insert_final(self, text):
         if not text:

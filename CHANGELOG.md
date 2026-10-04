@@ -2,6 +2,19 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [Unreleased]
+
+### Fixed
+
+- When Cloud is busy or your internet drops, your dictation is no longer
+  lost. If the Local voice model is downloaded, that dictation is
+  transcribed on your PC instead; otherwise Talkative tries Cloud again
+  a few seconds later.
+- The cleanup step no longer finishes a sentence you didn't finish. If
+  you let go of the key mid-sentence ("...and also the"), it used to add
+  words you never said ("...as well as the file?"); now your words are
+  kept as spoken. It also can't drop a "not" or "never" anymore.
+
 ## [1.3.12] - 2026-10-04
 
 Thank you to Aman Sah for the idea behind tap to talk (new in 1.3.11):

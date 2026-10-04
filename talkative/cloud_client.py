@@ -155,7 +155,7 @@ def transcribe(audio, sample_rate, initial_prompt=None):
 def grammar_apply(text):
     """Same contract as grammar_engine.apply(): on any failure or guard
     rejection, return `text` unchanged -- cleanup must never break
-    dictation. The six deterministic guards run here client-side (the
+    dictation. The eight deterministic guards run here client-side (the
     Worker's model output is trusted no more than the local model's)."""
     if not text:
         return text

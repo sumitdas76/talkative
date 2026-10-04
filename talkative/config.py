@@ -166,6 +166,11 @@ CLOUD_ENDPOINT_URL = "https://talkative-cloud.sumitdas76.workers.dev"
 # PROCESSING_MODE is already "local" -- that path always uses the local
 # engine regardless of this setting.
 GRAMMAR_SOURCE = "auto"
+# Cloud busy or unreachable: app._cloud_transcribe() uses the Local voice
+# model when it's downloaded (kept loaded FALLBACK_IDLE_SECONDS after its
+# last use), otherwise retries Cloud after each of these waits (seconds).
+CLOUD_RETRY_DELAYS = (2.0, 6.0)
+FALLBACK_IDLE_SECONDS = 300
 # Sent as the X-Shared-Secret header on every cloud request -- a soft
 # deterrent only (it ships inside a public EXE, so treat it as
 # extractable), not real auth. The real protection is the Worker's
