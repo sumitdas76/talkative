@@ -14,6 +14,9 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   you let go of the key mid-sentence ("...and also the"), it used to add
   words you never said ("...as well as the file?"); now your words are
   kept as spoken. It also can't drop a "not" or "never" anymore.
+- Talkative now cleans up after itself in your Temp folder. Each time it
+  was closed by force (a crash, or End task in Task Manager), it left a
+  250 MB copy of itself behind; those are now removed when it next starts.
 
 ### Changed
 

@@ -5,7 +5,7 @@ import time
 
 from pynput import keyboard
 
-from . import cloud_client, cloud_notice, config, dev_mode, error_toast, feedback, grammar_engine, history, model_manager, onboarding, pill, settings, try_it_now, updater
+from . import cloud_client, cloud_notice, config, dev_mode, error_toast, feedback, grammar_engine, history, model_manager, onboarding, pill, settings, temp_cleanup, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -795,6 +795,11 @@ class TalkativeApp:
         if config.GRAMMAR_PENDING_DOWNLOAD:
             grammar_engine.download_in_background()
         updater.start_background_check(self.updater_controller())
+        # A minute in, so it never competes with startup or the first
+        # dictation; see temp_cleanup.py for why the folders pile up.
+        cleanup = threading.Timer(60, temp_cleanup.sweep)
+        cleanup.daemon = True
+        cleanup.start()
         feedback.start_background_check(
             on_reply=lambda text: self.tray.notify(
                 text if len(text) <= 200 else text[:197] + "…",
