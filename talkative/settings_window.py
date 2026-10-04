@@ -725,7 +725,11 @@ class _SettingsWindow:
         try:
             import sounddevice as sd
 
-            for index, dev in enumerate(sd.query_devices()):
+            from .audio_recorder import PA_LOCK
+
+            with PA_LOCK:  # PortAudio isn't thread-safe; see audio_recorder
+                devices = sd.query_devices()
+            for index, dev in enumerate(devices):
                 if dev.get("max_input_channels", 0) > 0:
                     self._audio_values.append(index)
                     names.append(f"{dev['name']}")
@@ -750,7 +754,11 @@ class _SettingsWindow:
         try:
             import sounddevice as sd
 
-            for index, dev in enumerate(sd.query_devices()):
+            from .audio_recorder import PA_LOCK
+
+            with PA_LOCK:
+                devices = sd.query_devices()
+            for index, dev in enumerate(devices):
                 if dev.get("max_output_channels", 0) > 0:
                     self._output_values.append(index)
                     out_names.append(f"{dev['name']}")

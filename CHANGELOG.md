@@ -6,6 +6,10 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
 ### Fixed
 
+- Fixed a crash that could close Talkative when you pressed the hotkey
+  again right after a dictation: the start/stop sound and the microphone
+  were opened at the same moment from two places, which the audio system
+  doesn't allow.
 - When Cloud is busy or your internet drops, your dictation is no longer
   lost. If the Local voice model is downloaded, that dictation is
   transcribed on your PC instead; otherwise Talkative tries Cloud again

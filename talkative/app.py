@@ -6,7 +6,7 @@ import time
 from pynput import keyboard
 
 from . import cloud_client, cloud_notice, config, dev_mode, error_toast, feedback, grammar_engine, history, model_manager, onboarding, pill, settings, temp_cleanup, try_it_now, updater
-from .audio_recorder import AudioRecorder
+from .audio_recorder import AudioRecorder, play as play_audio
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
 from .dictionary import apply_dictionary, vocabulary_prompt
@@ -24,6 +24,7 @@ from .tray import TrayApp, show_error_popup
 # though nothing ever calls .transcribe() on it -- _process_audio_inner
 # branches on _cloud_active() before it would.
 _CLOUD_TRANSCRIBER = object()
+_BEEP_LOCK = threading.Lock()
 
 _TONE_RATE = 16000
 
@@ -234,17 +235,18 @@ class TalkativeApp:
 
         def _play():
             try:
-                import sounddevice as sd
-
-                for freq, seconds in self._SOUNDS[kind]:
-                    # Cached: building the samples isn't free.
-                    tone = self._tones.get((freq, seconds))
-                    if tone is None:
-                        tone = _tone_samples(freq, seconds, config.SOUND_VOLUME)
-                        self._tones[(freq, seconds)] = tone
-                    # Blocking playback so multi-note sequences chain.
-                    sd.play(tone, samplerate=_TONE_RATE,
-                            device=config.OUTPUT_DEVICE, blocking=True)
+                # One cue at a time (a quick tap's stop beep waits for the
+                # start beep); audio_recorder.play keeps PortAudio calls
+                # off other threads' toes -- see PA_LOCK there.
+                with _BEEP_LOCK:
+                    for freq, seconds in self._SOUNDS[kind]:
+                        # Cached: building the samples isn't free.
+                        tone = self._tones.get((freq, seconds))
+                        if tone is None:
+                            tone = _tone_samples(freq, seconds, config.SOUND_VOLUME)
+                            self._tones[(freq, seconds)] = tone
+                        # Blocking playback so multi-note sequences chain.
+                        play_audio(tone, _TONE_RATE, device=config.OUTPUT_DEVICE)
             except Exception:
                 pass
 
