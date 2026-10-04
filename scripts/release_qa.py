@@ -246,6 +246,30 @@ def check_layout():
            f"{len(tabs)} tabs" + (f", PROBLEM: {probs}" if probs else "") + ("" if help_ok else ", help window doesn't fit"))
 
 
+def check_audio_race():
+    """Rapid mic start/stop while another thread lists devices: the
+    pattern that crashed on PortAudio (2026-10-03/04). Real microphone."""
+    code, out = run_py(["audio_race_test.py", "30"], E2E, timeout=200)
+    ok = code == 0 and "exit code 0 " in out
+    record("D14", "Microphone start/stop under load doesn't crash", "PASS" if ok else "FAIL",
+           out.strip().splitlines()[-1][:120] if out.strip() else f"exit {code}")
+
+
+def check_guard_eval():
+    """Invented endings / lost negations (2026-10-04): the cached model
+    outputs in guard_eval.json must still be caught, with no new false
+    alarms on the hand-written and everyday sets."""
+    code, out = run_py(["guard_eval.py"], ROOT / "tools" / "grammar_eval", timeout=1800)
+    rows = {m[0]: tuple(int(x) for x in m[1:]) for m in
+            re.findall(r"^(\S+/\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)$", out, re.M)}
+    cut, hard, prose = rows.get("local/cut"), rows.get("local/hard"), rows.get("local/prose")
+    ok = (code == 0 and cut and hard and prose and cut[4] >= 9
+          and hard[3] + hard[4] == 0 and prose[3] + prose[4] == 0)
+    record("D15", "Grammar: invented endings caught, no new false alarms", "PASS" if ok else "FAIL",
+           f"cut endings caught {cut[4] if cut else '?'} (min 9), hard {hard[3:] if hard else '?'}, "
+           f"prose {prose[3:] if prose else '?'}")
+
+
 # --------------------------------------------------------------------- D3
 def check_corpora():
     sys.path.insert(0, str(ROOT))
@@ -341,6 +365,9 @@ def main():
     check_tap_mode()
     check_mode_switch()
     _script_check("D11", "Overlapping dictations are typed in spoken order", "order_test.py")
+    _script_check("D13", "Cloud busy/offline: Local fallback or retry, never lost", "cloud_busy_test.py", 300)
+    _script_check("P4", "Leftover temp copies removed, a copy in use never touched", "temp_cleanup_test.py", 60)
+    check_audio_race()
     check_hotkey_rules()
     check_pipeline()
     if not a.no_gui:
@@ -351,8 +378,10 @@ def main():
     check_corpora()
     if a.grammar:
         check_grammar()
+        check_guard_eval()
     else:
         record("D5", "Grammar guards vs baseline", "SKIP", "add --grammar")
+        record("D15", "Grammar: invented endings caught", "SKIP", "add --grammar")
     failed = [r for r in results if r[2] == "FAIL"]
     print(f"\n{len(results)} checks: {sum(r[2] == 'PASS' for r in results)} passed, "
           f"{len(failed)} failed, {sum(r[2] == 'SKIP' for r in results)} skipped."
