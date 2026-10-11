@@ -214,6 +214,16 @@ ENABLE_HISTORY = False
 ENABLE_REPEAT_COLLAPSE = True
 REPEAT_SIMILARITY = 0.75
 
+# Numbers written as a careful writer would type them: digits for 10+, times,
+# money, percentages, dates; words for small counts and sentence openers
+# (numbers.py). Cleaned-up mode only, never for developer English.
+ENABLE_NUMBER_FORMAT = True
+
+# Spoken points ("first ... second ...", "point one ... point two ...")
+# typed as "• " bullet lines under the lead-in sentence (bullets.py).
+# Cleaned-up mode only, never for developer English.
+ENABLE_BULLETS = True
+
 # ---------------------------------------------------------------------------
 # Personal dictionary: spoken -> typed
 # ---------------------------------------------------------------------------

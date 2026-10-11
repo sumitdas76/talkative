@@ -220,6 +220,14 @@ def check_hotkey_rules():
            "PASS" if not wrong else "FAIL", f"wrong: {wrong}" if wrong else "")
 
 
+def check_text_rules():
+    """D17: number formatting and spoken bullets, fixed cases."""
+    for script in ("numbers_test.py", "bullets_test.py"):
+        code, out = run_py([script], ROOT / "tools", timeout=60)
+        last = out.strip().splitlines()[-1] if out.strip() else "no output"
+        record("D17", f"Text rules: {script[:-8]}", "PASS" if code == 0 else "FAIL", last)
+
+
 def check_pipeline():
     code, out = run_py(["pipeline_test.py"], STUDY, timeout=300)
     want = [
@@ -358,6 +366,7 @@ def main():
         record("W1", "Settings tabs and help window fit", "SKIP", "--no-gui")
         record("W2", "Tray icon checks", "SKIP", "--no-gui")
         record("D12", "Overlapping pastes keep the clipboard", "SKIP", "--no-gui")
+        record("D16", "Clipboard formats survive a dictation", "SKIP", "--no-gui")
         record("F6", "First-run switch to Cloud mid-download", "SKIP", "--no-gui")
     else:
         check_fresh_launch(exe)
@@ -370,10 +379,13 @@ def main():
     check_audio_race()
     check_hotkey_rules()
     check_pipeline()
+    check_text_rules()
     if not a.no_gui:
         check_layout()
         check_tray()
         _script_check("D12", "Overlapping pastes keep the user's clipboard", "clipboard_race_test.py", 90)
+        _script_check("D16", "Clipboard image/files/rich text survive; dictation kept out of history",
+                      "clipboard_formats_test.py", 60)
         _script_check("F6", "First-run setup: switching to Cloud mid Local download works", "onboarding_cloud_test.py", 150)
     check_corpora()
     if a.grammar:

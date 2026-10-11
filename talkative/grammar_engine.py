@@ -404,6 +404,68 @@ def _negation_ok(inp, out):
     return len(_NEGATION.findall(norm(out))) >= len(_NEGATION.findall(norm(inp)))
 
 
+# Word pairs whose swap inverts a sentence while keeping every other word,
+# as word-start stems so "postponed"/"postponing" count. Found in the QA
+# run of 2026-10-11: Local turned "Please prepone the meeting" into
+# "Please postpone the meeting" (Indian English "prepone" read as a typo).
+_OPPOSITES = [(a, b) for a, b in (
+    ("prepon", "postpon"), ("before", "after"), ("earlier", "later"),
+    ("early", "late"), ("increas", "decreas"), ("maxim", "minim"),
+    ("above", "below"), ("approv", "reject"), ("accept", "reject"),
+    ("accept", "declin"), ("includ", "exclud"), ("enabl", "disabl"),
+    ("buy", "sell"), ("bought", "sold"), ("upload", "download"),
+    ("import", "export"), ("higher", "lower"), ("ascend", "descend"),
+    ("credit", "debit"), ("profit", "loss"), ("allow", "deny"),
+    ("tomorrow", "yesterday"), ("next", "previous"), ("more", "less"),
+    ("more", "fewer"), ("open", "clos"), ("start", "stop"),
+    ("add", "remov"), ("left", "right"), ("win", "los"), ("hire", "fire"),
+)]
+
+
+def _opposites_ok(inp, out):
+    """The model must not swap a word for its opposite. For each pair, if
+    the output has more of one side than the input did while the input
+    used the other side, the rewrite is rejected."""
+    lo_in, lo_out = inp.lower(), out.lower()
+
+    def count(stem, s):
+        return len(re.findall(r"\b" + stem + r"\w*", s))
+
+    for a, b in _OPPOSITES:
+        for x, y in ((a, b), (b, a)):
+            if count(y, lo_out) > count(y, lo_in) and count(x, lo_in) > count(x, lo_out):
+                return False
+    return True
+
+
+_ANSWER = re.compile(r"\b(?:yes|yeah|yep|yup|nope|please|kindly|thanks|thank)\b",
+                     re.IGNORECASE)
+
+
+def _answer_ok(inp, out):
+    """A reply's "Yeah, ..." is the answer, not a filler: Cloud turned
+    "Yeah, it's sunny after a rainy day" into "It's sunny..." (QA run
+    2026-10-11). Politeness is the speaker's tone, not padding: the same
+    run turned "Please prepone the meeting" into "Prepone the meeting"
+    (0 of 14 cached outputs with please/thanks drop it, so no false
+    alarms). A warm-up "okay so" may still go; it isn't listed."""
+    return len(_ANSWER.findall(out)) >= len(_ANSWER.findall(inp))
+
+
+_HEDGE = re.compile(
+    r"\b(?:think|maybe|perhaps|probably|possibly|guess|might|seems?|"
+    r"apparently|likely|suppose)\b", re.IGNORECASE)
+
+
+def _hedge_ok(inp, out):
+    """Uncertainty must survive: "For me, I think it's Harry Potter" ->
+    "For me, it's Harry Potter" (Local) and "...going forward I think we
+    need a check" -> "Going forward, we need a check" (Cloud) turn an
+    opinion into a statement (QA run 2026-10-11; 2 of 275 cached outputs,
+    both real)."""
+    return len(_HEDGE.findall(out)) >= len(_HEDGE.findall(inp))
+
+
 def _ending_ok(inp, out):
     """No words invented after the end of what was said. A dictation cut
     off mid-sentence (the key released before the thought ended, often to
@@ -435,7 +497,7 @@ def _ending_ok(inp, out):
 
 
 def validate(inp, out):
-    """Run all eight deterministic guards against an (input, output) pair.
+    """Run all eleven deterministic guards against an (input, output) pair.
     True only if `out` is safe to use in place of `inp`. Shared by the local
     engine's apply() below and cloud_client.grammar_apply() (same leash
     applied to a remote model's output -- see grammar_engine.py's module
@@ -445,7 +507,9 @@ def validate(inp, out):
     return (_digits_ok(inp, out) and _retention_ok(inp, out)
             and _length_ok(inp, out) and _second_person_ok(inp, out)
             and _question_ok(inp, out) and _no_invented_second_person(inp, out)
-            and _negation_ok(inp, out) and _ending_ok(inp, out))
+            and _negation_ok(inp, out) and _ending_ok(inp, out)
+            and _opposites_ok(inp, out) and _answer_ok(inp, out)
+            and _hedge_ok(inp, out))
 
 
 def apply(text):

@@ -9,6 +9,8 @@ from . import cloud_client, cloud_notice, config, dev_mode, error_toast, feedbac
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
+from .bullets import BULLET, format_bullets
+from .numbers import format_numbers, restore_spoken_point
 from .dictionary import apply_dictionary, vocabulary_prompt
 from .focus_check import is_focus_editable
 from .keynames import friendly as friendly_key
@@ -664,6 +666,9 @@ class TalkativeApp:
         # word-retention guard checks against the already-fused text
         # instead of expecting "dot" to survive verbatim.
         text = apply_spoken_symbols(text)
+        if config.ENABLE_NUMBER_FORMAT and config.CLEANUP_MODE == "cleaned_up":
+            # Before grammar, which would turn ".1" into "0.1".
+            text = restore_spoken_point(text)
         # Fillers first: "sorry, um, I mean" must become "sorry I mean"
         # before the correction triggers run.
         if config.CLEANUP_MODE == "cleaned_up":
@@ -674,6 +679,7 @@ class TalkativeApp:
             after_corrections = text
             text = collapse_repeats(text)
             after_collapse = text
+            pre_grammar = text
             t0 = time.time()
             grammar_used_local = self._grammar_uses_local()
             if grammar_used_local:
@@ -690,6 +696,24 @@ class TalkativeApp:
                 text = dev_mode.strip_backticks(text)
             after_grammar = text
             text = finish_sentence(text)
+            if config.ENABLE_NUMBER_FORMAT and not dev:
+                # After grammar: its digit guard keeps numbers as heard,
+                # and this picks the written form with fixed rules.
+                text = format_numbers(text)
+            if config.ENABLE_BULLETS and not dev:
+                listed = format_bullets(text)
+                if BULLET not in listed:
+                    # The grammar model can fold spoken points into one
+                    # sentence ("...three things: book the hall, send the
+                    # invites, and order the food", Local, QA 2026-10-11).
+                    # If the words as spoken were a list, keep the list.
+                    spoken = finish_sentence(pre_grammar)
+                    if config.ENABLE_NUMBER_FORMAT:
+                        spoken = format_numbers(spoken)
+                    spoken = format_bullets(spoken)
+                    if BULLET in spoken:
+                        listed = spoken
+                text = listed
         else:
             after_fillers = after_corrections = after_collapse = after_grammar = text
             grammar_secs = 0.0

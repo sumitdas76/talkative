@@ -91,7 +91,11 @@ def _is_restatement(prev, curr):
     while (suffix < len(a) - prefix and suffix < len(b) - prefix
            and a[len(a) - 1 - suffix] == b[len(b) - 1 - suffix]):
         suffix += 1
-    if suffix > 0 and prefix + suffix < min(len(a), len(b)):
+    # "<=" also covers a pure insertion in the middle ("What's your
+    # favorite thing about X? What's your LEAST favorite thing about X?"
+    # lost its first question, QA run 2026-10-11): repeating everything
+    # after an inserted word is the same shape as a swapped one.
+    if suffix > 0 and prefix + suffix <= min(len(a), len(b)):
         return False
     return True
 

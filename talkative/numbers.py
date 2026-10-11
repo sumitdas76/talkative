@@ -76,11 +76,44 @@ _KEEP_DIGIT_AFTER = {
 }
 # Prepositions that make "three thirty" a time.
 _TIME_BEFORE = {"at", "by", "till", "until", "around", "before", "after",
-                "from", "since", "about"}
+                "from", "since", "about", "to"}
+# A time also shows from what follows it ("three thirty on Friday",
+# "four fifteen tomorrow").
+_TIME_AFTER = {"on", "today", "tomorrow", "tonight", "this", "sharp",
+               "monday", "tuesday", "wednesday", "thursday", "friday",
+               "saturday", "sunday"}
 _YEAR_BEFORE = {"in", "since", "by", "year", "of", "until", "till", "from",
                 "before", "after"}
 
 _TOKEN = re.compile(r"[A-Za-z]+|\d+(?:[.,:]\d+)*|\s+|.", re.UNICODE)
+
+
+# Whisper writes a lone spoken "point one" as ".1" ("I cannot do .1",
+# seen live 2026-10-11), and the grammar pass then makes it "0.1". A real
+# decimal is spoken "zero point one" and comes out "0.1", so a bare ".N"
+# after a word is turned back into "point N" -- unless a unit or percent
+# follows, or a word that introduces a quantity comes before it.
+_BARE_POINT = re.compile(
+    r"(?<![\w.])(?P<prev>[A-Za-z]+,?\s+|(?<=[.!?:]\s)|^)\.(?P<n>\d{1,2})\b"
+    r"(?!\s*(?:%|(?:percent|per|times|x|seconds?|secs?|minutes?|mins?"
+    r"|hours?|hrs?|days?|weeks?|months?|years?|ms|mm|cm|km|kg|g|m|s|gb|mb|kb"
+    r"|tb|ghz|mhz|inch(?:es)?|feet|foot|miles?|litres?|liters?|points|stars?"
+    r"|lakhs?|crores?|million|billion|k)\b))",
+)
+_QUANTITY_BEFORE = {"by", "to", "of", "is", "was", "at", "about", "around",
+                    "minus", "plus", "equals", "version", "v", "from",
+                    "than", "only", "just", "under", "over", "approximately",
+                    "roughly", "nearly", "almost", "be", "are", "were"}
+
+
+def restore_spoken_point(text):
+    def fix(m):
+        prev = m.group("prev").strip(" ,").lower()
+        if prev in _QUANTITY_BEFORE:
+            return m.group(0)
+        word = "Point" if not prev else "point"
+        return f"{m.group('prev')}{word} {m.group('n')}"
+    return _BARE_POINT.sub(fix, text) if text and "." in text else text
 
 
 def _lower(tok):
@@ -93,7 +126,7 @@ def _is_word(tok):
 
 def _parse_cardinal(words):
     """Longest prefix of `words` (lowercase) that reads as one number.
-    Returns (value, count consumed, last scale word or None) or None."""
+    Returns (value, count consumed, largest scale word or None) or None."""
     total = current = 0
     used = 0
     last_kind = None  # unit | teen | tens | scale | and
@@ -133,7 +166,10 @@ def _parse_cardinal(words):
                 total += current * scale
                 current = 0
             last_kind = "scale"
-            scale_word = w
+            # The largest scale names the number ("one crore twenty lakh"
+            # is crores, not lakhs).
+            if scale_word is None or scale > _SCALES[scale_word]:
+                scale_word = w
         else:
             break
         used = i + 1
@@ -317,13 +353,20 @@ def _convert_words(w, i, out):
             is_ampm = _ampm_after(w, end2)
             if (1 <= value <= 12 and (oh and v2 < 10 or 10 <= v2 <= 59) and not sc2
                     and (prev_low in _TIME_BEFORE or is_ampm
-                         or _lower(after) in ("o'clock", "oclock"))):
+                         or _lower(after) in ("o'clock", "oclock")
+                         or _lower(after) in _TIME_AFTER)):
                 out.append(f"{value}:{v2:02d}")
                 return end2
             if (10 <= value <= 20 and 0 <= v2 <= 99 and not sc2 and not oh
                     and used2 == len(minute_words[:used2])
                     and (prev_low in _YEAR_BEFORE or prev in _MONTHS)):
                 out.append(f"{value}{v2:02d}")
+                return end2
+            if not scale_word:
+                # Two numbers side by side that aren't a time or a year:
+                # leave both as spoken. Converting only the second one
+                # gave "three 30".
+                out.extend(w.toks[i:end2])
                 return end2
         if not scale_word and value < 10:
             return None  # "one two three", "two three people": leave it
@@ -374,11 +417,30 @@ def _with_unit(w, end, nj, nxt, out):
     return None
 
 
+def _indian_group(n):
+    """2,37,500: the last three digits, then pairs."""
+    s = str(n)
+    if len(s) <= 3:
+        return s
+    head, tail = s[:-3], s[-3:]
+    pairs = []
+    while len(head) > 2:
+        pairs.insert(0, head[-2:])
+        head = head[:-2]
+    return ",".join([head] + pairs + [tail])
+
+
 def _digits_for(value, scale_word):
     if scale_word in _WORD_SCALES:
         base = value / _SCALES[scale_word]
         if base == int(base):
             return f"{int(base)} {scale_word}"
+        # "two lakh fifty thousand" -> "2.5 lakh" (an Indian writer's form;
+        # "250,000" is Western grouping nobody in India would type).
+        if scale_word in ("lakh", "lakhs", "crore", "crores"):
+            if round(base, 2) == base:
+                return f"{base:g} {scale_word}"
+            return _indian_group(value)
     return _group(value)
 
 

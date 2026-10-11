@@ -31,6 +31,8 @@ _KEYS = {
     "enable_self_correction": "ENABLE_SELF_CORRECTION",
     "enable_spoken_symbols": "ENABLE_SPOKEN_SYMBOLS",
     "enable_repeat_collapse": "ENABLE_REPEAT_COLLAPSE",
+    "enable_number_format": "ENABLE_NUMBER_FORMAT",
+    "enable_bullets": "ENABLE_BULLETS",
     "enable_grammar_engine": "ENABLE_GRAMMAR_ENGINE",
     "enable_history": "ENABLE_HISTORY",
     "grammar_model": "GRAMMAR_MODEL_DIR",
