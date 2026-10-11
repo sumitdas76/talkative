@@ -41,6 +41,23 @@ _MASKED_KEYS = {
 _mask_controller = keyboard.Controller()
 
 
+def _physically_down(key):
+    """Whether Windows says `key` is held right now. Key releases that
+    happen on the lock screen, the Ctrl+Alt+Del screen or while the PC
+    sleeps never reach the keyboard hook, so the app can believe a key is
+    still held long after it was let go. Unknown keys count as down (the
+    old behavior)."""
+    import ctypes
+
+    vk = getattr(getattr(key, "value", key), "vk", None)
+    if vk is None:
+        return True
+    try:
+        return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
+    except Exception:
+        return True
+
+
 def _debug_log(**stages):
     if not config.DEBUG_LOG:
         return
@@ -61,6 +78,7 @@ class TalkativeApp:
         # very next line reads settings.json out of it.
         settings.migrate_data_folder()
         settings.load_into_config()
+        settings.remove_old_examples()
         self.recorder = AudioRecorder(
             sample_rate=config.SAMPLE_RATE, device=config.INPUT_DEVICE
         )
@@ -364,6 +382,7 @@ class TalkativeApp:
                     and self._hotkey_pressed):
                 self._stop_recording(process=False)
             return
+        self._drop_stale_keys(key)
         self._hotkey_pressed.add(key)
         dev = bool(config.DEV_HOTKEY) and self._hotkey_pressed == set(config.DEV_HOTKEY)
         # Once per physical chord press (key-repeat re-fires on_press), and
@@ -449,6 +468,64 @@ class TalkativeApp:
         self._record_start_time = time.time()
         self.tray.set_recording()
         pill.show(lambda: self.recorder.level)
+
+    def _drop_stale_keys(self, key):
+        """Forget hotkey keys whose release the hook never saw (lock screen,
+        Ctrl+Alt+Del, sleep), and the hold-mode recording they kept open.
+        Without this, a lost release left _chord_active or _recording set
+        and every later press was ignored until a restart (user report
+        2026-10-11: "sometimes stops working after sleep"). `key` is the
+        one being pressed now; Windows hasn't marked it down yet."""
+        stale = {k for k in self._hotkey_pressed if k != key and not _physically_down(k)}
+        if not stale:
+            return
+        self._hotkey_pressed -= stale
+        self._chord_active = False
+        self._masked = False
+        held = self._hotkey_pressed | {key}
+        chord_held = set(config.HOTKEY) <= held or (
+            bool(config.DEV_HOTKEY) and set(config.DEV_HOTKEY) <= held)
+        if self._recording and not self._latched and not chord_held:
+            logging.warning("Dropping a recording whose hotkey release was lost")
+            self._stop_recording(process=False)
+
+    def _on_resume(self):
+        """The PC just woke from sleep or hibernation. Start clean: a
+        recording that was open when it slept is dropped, held-key state
+        is forgotten, PortAudio is restarted (the microphone it knew about
+        may be gone or renumbered -- Bluetooth headsets reconnect after
+        wake), and the keyboard hook is reinstalled, since Windows can
+        remove a low-level hook without telling the app."""
+        logging.warning("Resumed from sleep; resetting hotkey and audio state")
+        if self._recording:
+            self._stop_recording(process=False)
+        self._hotkey_pressed.clear()
+        self._chord_active = False
+        self._masked = False
+        self._latched = False
+        self.recorder.reset()
+        self._start_listener()
+
+    def _start_listener(self):
+        # pynput stops the listener for good when a callback raises, which
+        # silently ends dictation until a restart. Log and carry on.
+        def guarded(handler):
+            def call(key):
+                try:
+                    handler(key)
+                except Exception:
+                    logging.getLogger(__name__).exception("hotkey handler failed")
+            return call
+
+        old, self._listener = self._listener, keyboard.Listener(
+            on_press=guarded(self._on_press), on_release=guarded(self._on_release)
+        )
+        if old is not None:
+            try:
+                old.stop()
+            except Exception:
+                pass
+        self._listener.start()
 
     def _on_release(self, key):
         if key not in config.HOTKEY and key not in config.DEV_HOTKEY:
@@ -755,25 +832,23 @@ class TalkativeApp:
                 title="Sumit replied",
             )
         )
-        # pynput stops the listener for good when a callback raises, which
-        # silently ends dictation until a restart. Log and carry on.
-        def guarded(handler):
-            def call(key):
-                try:
-                    handler(key)
-                except Exception:
-                    logging.getLogger(__name__).exception("hotkey handler failed")
-            return call
-
-        self._listener = keyboard.Listener(
-            on_press=guarded(self._on_press), on_release=guarded(self._on_release)
-        )
-        self._listener.start()
+        self._start_listener()
         self.tray.run_detached()
 
+        # Sleep shows up as this loop's 0.2 s nap taking far longer by the
+        # wall clock. (A clock change can look the same; a needless reset
+        # is harmless.)
+        last = time.time()
         try:
             while self._running:
                 time.sleep(0.2)
+                now = time.time()
+                if abs(now - last) > config.RESUME_GAP_SECONDS:
+                    try:
+                        self._on_resume()
+                    except Exception:
+                        logging.getLogger(__name__).exception("resume reset failed")
+                last = now
         except KeyboardInterrupt:
             pass
 

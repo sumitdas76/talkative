@@ -44,6 +44,20 @@ class AudioRecorder:
             )
             self._stream.start()
 
+    def reset(self):
+        """Restart PortAudio so it re-reads the device list -- after sleep
+        the microphone it knew may have disappeared or been renumbered.
+        Only when no stream is open; failures are ignored (the next
+        start() reports a real problem itself)."""
+        with PA_LOCK:
+            if self._stream is not None:
+                return
+            try:
+                sd._terminate()
+                sd._initialize()
+            except Exception:
+                pass
+
     def stop(self):
         if self._stream is None:
             return np.array([], dtype="float32")

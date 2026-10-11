@@ -171,6 +171,9 @@ GRAMMAR_SOURCE = "auto"
 # last use), otherwise retries Cloud after each of these waits (seconds).
 CLOUD_RETRY_DELAYS = (2.0, 6.0)
 FALLBACK_IDLE_SECONDS = 300
+# The main loop naps 0.2 s; a nap this much longer means the PC slept, and
+# app._on_resume() resets the hotkey hook, key state and audio.
+RESUME_GAP_SECONDS = 10
 # Sent as the X-Shared-Secret header on every cloud request -- a soft
 # deterrent only (it ships inside a public EXE, so treat it as
 # extractable), not real auth. The real protection is the Worker's
@@ -222,6 +225,18 @@ REPEAT_SIMILARITY = 0.75
 # (Until 1.3.11 this shipped the developer's personal entries, so every new
 # install expanded "AI" to "artificial intelligence".)
 DICTIONARY = {}
+# Those pre-1.3.11 entries stayed in every settings.json that was saved
+# before then. settings.remove_old_examples() deletes them once (only pairs
+# still exactly as shipped), then sets this so a user who re-adds one on
+# purpose keeps it.
+OLD_EXAMPLE_ENTRIES = {
+    "asap": "as soon as possible",
+    "AI": "artificial intelligence",
+    "Captivate": "Adobe Captivate",
+    "PPT": "PowerPoint",
+    "Sumit": "Sumit Chatterjee",
+}
+OLD_EXAMPLES_REMOVED = False
 # Off by default: biasing Whisper toward short name-like terms makes it
 # mishear ordinary phrases as those terms (observed live: "Send it Monday"
 # transcribed as "Sumit Monday", which the dictionary then expanded to

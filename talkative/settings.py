@@ -58,6 +58,7 @@ _KEYS = {
     "feedback_last_check": "FEEDBACK_LAST_CHECK",
     "feedback_last_seen": "FEEDBACK_LAST_SEEN",
     "feedback_last_reply": "FEEDBACK_LAST_REPLY",
+    "old_examples_removed": "OLD_EXAMPLES_REMOVED",
 }
 
 # Keys handled outside the type-checked table.
@@ -175,6 +176,32 @@ def load_into_config(path=None):
         applied["input_device"] = data["input_device"]
 
     return applied
+
+
+def remove_old_examples(path=None):
+    """One-time removal of the example entries that shipped in the default
+    dictionary until 1.3.11 ("AI" -> "artificial intelligence" and four
+    more; config.OLD_EXAMPLE_ENTRIES). Saving Settings wrote them into
+    settings.json, so updating never removed them (user report
+    2026-10-11). Only pairs still exactly as shipped go; anything the user
+    added or edited stays. Runs after load_into_config()."""
+    if config.OLD_EXAMPLES_REMOVED:
+        return
+    kept = {spoken: typed for spoken, typed in config.DICTIONARY.items()
+            if config.OLD_EXAMPLE_ENTRIES.get(spoken) != typed}
+    config.OLD_EXAMPLES_REMOVED = True
+    values = {"old_examples_removed": True}
+    if kept != config.DICTIONARY:
+        config.DICTIONARY = kept
+        values["dictionary"] = kept
+    target = settings_path() if path is None else Path(path)
+    # A fresh install has no file yet and nothing to remove; don't create
+    # one just for the marker.
+    if target.exists():
+        try:
+            save(values, target)
+        except Exception:
+            pass
 
 
 def save(values, path=None):
