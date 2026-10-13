@@ -294,7 +294,15 @@ async function handleTranscribe(request, env, timing, ctx) {
   const sttModel = STT_MODELS.includes(requested) ? requested : STT_MODELS[0];
   timing.stt_model = sttModel;
   form.append("model", sttModel);
-  form.append("language", "en"); // matches the local model's small.en (English-only)
+  // X-Hinglish: 1 (2026-10-13, not yet sent by any released app): the
+  // speaker mixes Hindi into English. Groq isn't pinned to English, and a
+  // Roman-script Hinglish example in the prompt nudges it to write Hindi
+  // in English letters; anything still in Indian script is rewritten
+  // afterwards (romanizeHinglish). Without the header: English, as before.
+  const hinglish = request.headers.get("X-Hinglish") === "1";
+  if (!hinglish) {
+    form.append("language", "en"); // matches the local model's small.en (English-only)
+  }
   // verbose_json for per-segment no_speech_prob / avg_logprob, so segments
   // that are really silence can be dropped (see below).
   form.append("response_format", "verbose_json");
@@ -308,11 +316,14 @@ async function handleTranscribe(request, env, timing, ctx) {
     try {
       const raw = Uint8Array.from(atob(promptB64), (c) => c.charCodeAt(0));
       prompt = new TextDecoder().decode(raw).slice(0, 800).trim();
-      if (prompt) form.append("prompt", prompt);
     } catch (e) {
       // ignore
     }
   }
+  if (hinglish) {
+    prompt = (HINGLISH_STT_PROMPT + " " + prompt).slice(0, 800).trim();
+  }
+  if (prompt) form.append("prompt", prompt);
 
   // Groq first. Every user shares one free Groq key (~20 requests/minute),
   // so when it refuses (429), errors or can't be reached, fall back to
@@ -371,16 +382,79 @@ async function handleTranscribe(request, env, timing, ctx) {
   // Per-segment numbers go back in timing so the thresholds stay
   // measurable from the client.
   const segments = Array.isArray(result.segments) ? result.segments : null;
-  if (!segments) {
-    return { text: result.text || "", via: "groq" };
+  let text = result.text || "";
+  if (segments) {
+    const kept = [];
+    timing.segments = segments.map((s) => {
+      const silent = s.no_speech_prob > NO_SPEECH_PROB && s.avg_logprob < MIN_AVG_LOGPROB;
+      if (!silent) kept.push(s.text || "");
+      return [round2(s.no_speech_prob), round2(s.avg_logprob), silent ? 0 : 1];
+    });
+    text = kept.join("").trim();
   }
-  const kept = [];
-  timing.segments = segments.map((s) => {
-    const silent = s.no_speech_prob > NO_SPEECH_PROB && s.avg_logprob < MIN_AVG_LOGPROB;
-    if (!silent) kept.push(s.text || "");
-    return [round2(s.no_speech_prob), round2(s.avg_logprob), silent ? 0 : 1];
-  });
-  return { text: kept.join("").trim(), via: "groq" };
+  if (!hinglish) {
+    return { text, via: "groq" };
+  }
+  const out = { text, via: "groq", language: result.language || null, hinglish: false };
+  if (INDIAN_SCRIPT.test(text) && request.headers.get("X-Hinglish-Rewrite") !== "0") {
+    out.stt_text = text;
+    const t1 = Date.now();
+    out.text = await romanizeHinglish(env, text);
+    timing.romanize_ms = Date.now() - t1;
+    out.hinglish = true;
+  } else if (INDIAN_SCRIPT.test(text) || /hindi|urdu/i.test(result.language || "")) {
+    out.hinglish = true;
+  }
+  return out;
+}
+
+// Hinglish (see X-Hinglish in handleTranscribe). The STT prompt shows
+// Whisper the target style; the rewrite turns any Devanagari/Urdu script
+// it still produced into Roman letters, as Indians type Hindi in chat.
+const HINGLISH_STT_PROMPT =
+  "Haan, main kal office aaunga. Meeting 4 baje hai, report bhej dena please.";
+const INDIAN_SCRIPT = /[\u0900-\u097F\u0600-\u06FF]/;
+const ROMANIZE_SYSTEM = (
+  "You convert transcribed Hindi-English (Hinglish) speech into the way " +
+  "people in India type it in chat. Write Hindi and Urdu words in Roman " +
+  "(English) letters with common informal spellings (hai, nahi, kya, " +
+  "mujhe, kar raha hoon, theek hai). Write English words, even if they " +
+  "were transcribed in Hindi script, in normal English spelling (meeting, " +
+  "placement, experience). Write numbers as digits. Do not translate, do " +
+  "not add or remove words, keep the word order. Add light punctuation. " +
+  "Reply with only the converted text."
+);
+const ROMANIZE_SHOTS = [
+  ["मैं कल ऑफिस नहीं आ पाऊंगा, मीटिंग रिशेड्यूल कर दो",
+   "Main kal office nahi aa paunga, meeting reschedule kar do."],
+  ["सो फर्स्ट थिंग यू हैव टू अंडरस्टैंड इज़ कि प्लेसमेंट कितना है",
+   "So first thing you have to understand is ki placement kitna hai."],
+  ["रिपोर्ट पांच बजे तक भेज देना ओके", "Report 5 baje tak bhej dena, okay."],
+];
+
+async function romanizeHinglish(env, text) {
+  const messages = [{ role: "system", content: ROMANIZE_SYSTEM }];
+  for (const [a, b] of ROMANIZE_SHOTS) {
+    messages.push({ role: "user", content: a }, { role: "assistant", content: b });
+  }
+  messages.push({ role: "user", content: text });
+  try {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.GROQ_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: GROQ_GRAMMAR_MODEL, messages, temperature: 0,
+        reasoning_effort: "low", include_reasoning: false, max_tokens: 2048,
+      }),
+    });
+    if (r.ok) {
+      const out = (await r.json()).choices?.[0]?.message?.content;
+      if (out && !INDIAN_SCRIPT.test(out)) return plainText(out.trim());
+    }
+  } catch (e) {
+    // fall through: Indian-script text beats no text
+  }
+  return text;
 }
 
 // Workers AI speech-to-text, for when Groq can't serve. large-v3-turbo (the
