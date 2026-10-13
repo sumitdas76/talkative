@@ -36,6 +36,13 @@ import { DurableObject } from "cloudflare:workers";
 // automatic fallback -- see handleGrammar.
 
 const DAILY_QUOTA_PER_INSTALL = 300; // combined /transcribe + /grammar calls
+// Per network address (2026-10-13): install ids are client-chosen, so a
+// script minting fresh ids could use up the shared free Groq allowance and
+// make Cloud busy for everyone. 600 requests = ~300 dictations, about a
+// third of Groq's 1,000/day grammar cap. An office or a mobile carrier's
+// shared address (CGNAT, common in India) shares one count. Raises the bar
+// only -- rotating addresses still gets through.
+const DAILY_QUOTA_PER_IP = 600;
 
 // Groq's Llama chat models (llama-3.1-8b-instant etc.) are enterprise-only
 // as of 2026-09 -- a free-tier key gets 404 model_not_found for them. The
@@ -124,10 +131,31 @@ export class QuotaCounter extends DurableObject {
   }
 }
 
-async function checkAndIncrementQuota(env, installId) {
+async function checkAndIncrementQuota(env, name, limit) {
   const day = today(); // YYYY-MM-DD (UTC)
-  const stub = env.QUOTA_DO.get(env.QUOTA_DO.idFromName(installId));
-  return await stub.take(day, DAILY_QUOTA_PER_INSTALL);
+  const stub = env.QUOTA_DO.get(env.QUOTA_DO.idFromName(name));
+  return await stub.take(day, limit);
+}
+
+// The per-address quota's counter name: a one-way hash of the address (the
+// raw address is never stored -- PRIVACY.md), IPv6 cut to its /64 network
+// so one connection can't rotate through its own addresses.
+async function ipQuotaName(request) {
+  const ip = request.headers.get("CF-Connecting-IP");
+  if (!ip) return null;
+  const net = ip.includes(":") ? ipv6Network(ip) : ip;
+  const digest = await crypto.subtle.digest(
+    "SHA-256", new TextEncoder().encode("talkative-ip:" + net));
+  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return "ip:" + hex.slice(0, 32);
+}
+
+export function ipv6Network(ip) {
+  let [head, tail] = ip.split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail !== undefined && tail ? tail.split(":") : [];
+  const groups = tail === undefined ? h : [...h, ...Array(8 - h.length - t.length).fill("0"), ...t];
+  return groups.slice(0, 4).map((g) => parseInt(g || "0", 16).toString(16)).join(":");
 }
 
 // Free-limit log (2026-10-13): one Durable Object ("global") recording, per
@@ -138,7 +166,7 @@ async function checkAndIncrementQuota(env, installId) {
 // last reported, so normal dictations rarely touch it.
 //   hits:  { "<kind>": { n, first, last, detail } }  kind e.g.
 //          "groq whisper-large-v3-turbo RPD", "workers-ai neurons/day",
-//          "busy" (a user saw "Cloud is busy"), "install cap"
+//          "busy" (a user saw "Cloud is busy"), "install cap", "ip cap"
 //   peak:  { "<model> requests/day": { used, limit } }
 const LIMIT_DAYS_KEPT = 120;
 
@@ -238,17 +266,16 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function rememberCount(installId, count) {
+function rememberCount(name, count) {
   if (knownCounts.size > 10000) {
     knownCounts.clear();
   }
-  knownCounts.set(installId, { day: today(), count });
+  knownCounts.set(name, { day: today(), count });
 }
 
-function knownNearCap(installId) {
-  const k = knownCounts.get(installId);
-  return !!k && k.day === today() &&
-    k.count >= DAILY_QUOTA_PER_INSTALL - SPECULATE_MARGIN;
+function knownNearCap(name, limit) {
+  const k = knownCounts.get(name);
+  return !!k && k.day === today() && k.count >= limit - SPECULATE_MARGIN;
 }
 
 async function handleTranscribe(request, env, timing, ctx) {
@@ -493,11 +520,18 @@ export default {
     // cloud latency can be broken down from the client.
     const timing = { colo: request.cf?.colo };
     const tq = Date.now();
-    const quotaPromise = checkAndIncrementQuota(env, installId).then((q) => {
+    const ipName = await ipQuotaName(request);
+    const quotaPromise = Promise.all([
+      checkAndIncrementQuota(env, installId, DAILY_QUOTA_PER_INSTALL),
+      ipName ? checkAndIncrementQuota(env, ipName, DAILY_QUOTA_PER_IP)
+        : Promise.resolve({ ok: true, count: 0 }),
+    ]).then(([q, ipq]) => {
       timing.quota_ms = Date.now() - tq;
       timing.quota_count = q.count;
+      timing.ip_quota_count = ipq.count;
       rememberCount(installId, q.count);
-      return q;
+      if (ipName) rememberCount(ipName, ipq.count);
+      return { ok: q.ok && ipq.ok, cap: !q.ok ? "install cap" : !ipq.ok ? "ip cap" : null };
     });
 
     // Speculative mode: the quota check (~70ms from a warm isolate, ~650ms
@@ -515,7 +549,8 @@ export default {
     // over-cap install before that isolate learns its count. (Speculative
     // responses only carry quota_ms/quota_count if the check happened to
     // finish before the upstream call did.)
-    const speculative = !knownNearCap(installId);
+    const speculative = !knownNearCap(installId, DAILY_QUOTA_PER_INSTALL) &&
+      !(ipName && knownNearCap(ipName, DAILY_QUOTA_PER_IP));
     timing.speculative = speculative;
     try {
       let payload;
@@ -525,7 +560,7 @@ export default {
       } else {
         const quota = await quotaPromise;
         if (!quota.ok) {
-          noteHit(env, ctx, "install cap", null);
+          noteHit(env, ctx, quota.cap, null);
           return quotaExceeded();
         }
         payload = await handler(request, env, timing, ctx);

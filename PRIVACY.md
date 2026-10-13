@@ -38,12 +38,15 @@ forwards the audio and text to:
 
 - Groq, for speech-to-text and grammar cleanup.
   Privacy policy: https://groq.com/privacy-policy/
-- Cloudflare Workers AI, as a backup for grammar cleanup when Groq is
-  unavailable. Privacy policy: https://www.cloudflare.com/privacypolicy/
+- Cloudflare Workers AI, as a backup for speech-to-text and grammar
+  cleanup when Groq is unavailable.
+  Privacy policy: https://www.cloudflare.com/privacypolicy/
 
 Talkative's server does not store or log your audio or text. It keeps
-one thing: a count of how many requests each install ID made today,
-which resets every day. The services above process your data under
+two counts, both reset every day: how many requests each install ID
+made today, and how many came from each network address today. The
+address itself is not stored, only a one-way scrambled form of it
+(a hash) that the count is filed under. The services above process your data under
 their own policies, linked above.
 
 ### Local mode
