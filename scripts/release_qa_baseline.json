@@ -8,8 +8,9 @@
     "prose_guard": 48
   },
   "grammar": {
+    "_comment": "Local engine on its strict leash (2026-10-13): rejections are safe (the input is pasted unchanged); accepted outputs that change meaning are the harm.",
     "cases": 36,
-    "max_rejections": 0,
-    "max_meaning_flags": 1
+    "max_accepted_meaning_flags": 0,
+    "max_rejections": 6
   }
 }

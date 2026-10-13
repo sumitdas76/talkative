@@ -333,11 +333,12 @@ def check_corpora():
 def check_grammar():
     grammar_dir = ROOT / "tools" / "grammar_eval"
     code, out = run_py(["evaluate.py", "qwen25-1.5b"], grammar_dir, timeout=1800)
-    m = re.search(r"(\d+) cases \| guard rejections (\d+) \| meaning flags (\d+)", out)
+    m = re.search(r"(\d+) cases \| guard rejections (\d+) \| meaning flags (\d+) \| "
+                  r"accepted with a meaning flag (\d+)", out)
     if not m:
         record("D5", "Grammar guards vs baseline", "FAIL", "evaluation didn't finish: " + out[-300:])
         return
-    n, rej, flags = (int(x) for x in m.groups())
+    n, rej, flags, harm = (int(x) for x in m.groups())
     base = json.loads(BASELINE.read_text(encoding="utf-8"))["grammar"]
     # The baseline is for the committed hand-written cases only; a machine
     # with the private log_cases.json runs more and isn't comparable.
@@ -345,10 +346,13 @@ def check_grammar():
         record("D5", "Grammar guards vs baseline", "SKIP",
                f"ran {n} cases, baseline is for {base['cases']} (private log_cases.json present?)")
         return
-    ok = rej <= base["max_rejections"] and flags <= base["max_meaning_flags"]
+    # What reaches the user is what counts: a rejected output is replaced by
+    # the input (safe), so the gate is "no meaning-changing output accepted",
+    # plus a cap on rejections so the leash can't quietly stop cleaning up.
+    ok = harm <= base["max_accepted_meaning_flags"] and rej <= base["max_rejections"]
     record("D5", "Grammar guards vs baseline", "PASS" if ok else "FAIL",
-           f"{n} cases: rejections {rej} (max {base['max_rejections']}), "
-           f"meaning flags {flags} (max {base['max_meaning_flags']})")
+           f"{n} cases: accepted with a meaning flag {harm} (max {base['max_accepted_meaning_flags']}), "
+           f"rejections {rej} (max {base['max_rejections']}), raw meaning flags {flags}")
 
 
 def main():
