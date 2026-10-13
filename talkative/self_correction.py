@@ -135,6 +135,13 @@ def _kept_head(span, correction):
             if _bare(words[i].group()) == fixed[0]:
                 start = i
                 break
+        if start is None:
+            # "go out today, no sorry, by Friday": the new small word
+            # replaces whatever small words precede the replaced tail
+            # ("at the cafe" -> "in the park"), and none if there are none.
+            start = len(words) - (len(fixed) - 1)
+            while start > 1 and _bare(words[start - 1].group()) in _LEADING_WORDS:
+                start -= 1
     if start is None:
         start = len(words) - len(fixed)
     head = span[: span.find(core) + words[start].start()]
