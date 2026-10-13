@@ -117,6 +117,7 @@ class TalkativeApp:
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
             hotkey_label=friendly_key(config.HOTKEY),
+            on_input_device=self._set_input_device,
         )
         self._refresh_hotkey_label()
 
@@ -145,6 +146,13 @@ class TalkativeApp:
             undo_update=lambda: updater.undo_last_update(self.updater_controller()),
         )
         open_settings(on_applied=self._apply_settings, model_controller=controller)
+
+    def _set_input_device(self, index):
+        """Tray menu -> Microphone. Same effect as Settings -> Audio: saved,
+        and used from the next dictation."""
+        config.INPUT_DEVICE = index
+        self.recorder.device = index
+        settings.save({"input_device": index})
 
     def _apply_settings(self):
         sync_autostart()

@@ -6,6 +6,10 @@ import time
 import pystray
 from PIL import Image, ImageDraw
 
+from . import audio_devices, config
+
+_WM_RBUTTONUP = 0x0205
+
 MB_ICONERROR = 0x10
 MB_SYSTEMMODAL = 0x1000
 
@@ -74,7 +78,8 @@ def _make_icon_image(color):
 
 
 class TrayApp:
-    def __init__(self, on_quit, on_settings=None, hotkey_label="Right Ctrl"):
+    def __init__(self, on_quit, on_settings=None, hotkey_label="Right Ctrl",
+                 on_input_device=None):
         self._hotkey_label = hotkey_label
         self._mode_label = ""
         self._lock = threading.RLock()
@@ -84,11 +89,19 @@ class TrayApp:
 
         self._on_quit = on_quit
         self._on_settings = on_settings
+        self._on_input_device = on_input_device
         menu_items = []
         if on_settings is not None:
             menu_items.append(
                 pystray.MenuItem("Settings…", self._settings, default=True)
             )
+        # Hover to see the devices (2026-10-13, user request). The submenus
+        # are generated, and rebuilt on every right-click (_hook_right_click)
+        # so plugged/unplugged devices and the current choice are live.
+        if on_input_device is not None:
+            menu_items.append(pystray.MenuItem("Microphone", pystray.Menu(self._mic_items)))
+        menu_items.append(pystray.MenuItem("Headphones", pystray.Menu(self._output_items)))
+        menu_items.append(pystray.Menu.SEPARATOR)
         menu_items.append(pystray.MenuItem("Quit", self._quit))
         self.icon = pystray.Icon(
             "talkative",
@@ -96,6 +109,55 @@ class TrayApp:
             "Talkative (loading model...)",
             menu=pystray.Menu(*menu_items),
         )
+        self._hook_right_click()
+
+    def _hook_right_click(self):
+        """pystray's Windows backend builds the menu once and reuses it;
+        rebuild it just before it opens. Best effort: on another backend,
+        or if pystray's internals change, the menu is simply as of start."""
+        try:
+            handlers = self.icon._message_handlers
+            from pystray._util import win32
+            original = handlers[win32.WM_NOTIFY]
+        except Exception:
+            return
+
+        def on_notify(wparam, lparam):
+            if lparam == _WM_RBUTTONUP:
+                try:
+                    self.icon.update_menu()
+                except Exception:
+                    logging.getLogger(__name__).exception("tray menu refresh failed")
+            return original(wparam, lparam)
+
+        handlers[win32.WM_NOTIFY] = on_notify
+
+    def _mic_items(self):
+        def pick(index):
+            return lambda icon, item: self._on_input_device(index)
+
+        def chosen(index):
+            return lambda item: config.INPUT_DEVICE == index
+
+        yield pystray.MenuItem("System default", pick(None), checked=chosen(None), radio=True)
+        for index, name in audio_devices.inputs():
+            yield pystray.MenuItem(name, pick(index), checked=chosen(index), radio=True)
+
+    def _output_items(self):
+        devices = audio_devices.outputs()
+        if not devices:
+            yield pystray.MenuItem("No playback devices found", None, enabled=False)
+            return
+
+        def pick(device_id):
+            def go(icon, item):
+                if not audio_devices.set_default_output(device_id):
+                    self.notify("Couldn't switch the playback device.")
+            return go
+
+        for device_id, name, is_default in devices:
+            yield pystray.MenuItem(name, pick(device_id),
+                                   checked=lambda item, d=is_default: d, radio=True)
 
     def _settings(self):
         if self._on_settings is not None:
