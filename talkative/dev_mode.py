@@ -29,50 +29,58 @@ scoring a held-out third that was never used for tuning.
 
 import re
 
-# Shown by Settings -> Hotkeys -> "How to say code…".
-HELP_TEXT = """\
-Say it                          You get
-------------------------------  -------------------------------
-star                            *        (count star -> COUNT(*))
-equals / equals equals          =  ==    (triple equals ===)
-not equal to                    !=
-greater than / less than        >  <     (or equal to: >= <=)
-plus  minus  times  divided by  +  -  *  /
-plus equals / plus plus         +=  ++
-open bracket / close bracket    (  )     (or open/close paren,
-                                          left/right paren)
-open/close square bracket       [  ]
-open/close curly bracket        {  }     (or open/close curly, left/right curly)
-open/close angle bracket        <  >     (List<int>)
-exclamation mark / bang         !        (!user)
-question mark dot               ?.       double question mark -> ??
-spread / dot dot dot            ...
-quote hello world quote         'hello world' in SQL, "hello world" elsewhere
-                                (or: quote hello world unquote)
-comma  semicolon  colon         ,  ;  :
-dot  underscore  slash          .  _  /
-backslash  pipe  arrow          \\  |  =>
-and and / or or                 &&  ||
-dash m / dash dash force        -m  --force   (hyphen or minus work too)
-capital x                       X        (curl -X POST)
-my dash app                     my-app   (longer words join)
-at id (SQL)                     @id      at at version -> @@version
-hash temp / dollar env          #temp  $env
-tilde                           ~
-root at 10.0.0.5                root@10.0.0.5
-camel case user name            userName
-pascal case user service        UserService
-snake case max retries          max_retries
-constant case max retries       MAX_RETRIES
-
-Also understood as said: use state -> useState (React hooks),
-"add package microsoft dot entity framework core" ->
-Microsoft.EntityFrameworkCore, "migrations add initial create" ->
-InitialCreate, console dot write line -> Console.WriteLine.
-
-Numbers are typed as digits: "eight zero eight zero" -> 8080,
-"fifty thousand" -> 50000, "one point five" -> 1.5.
-SQL keywords are capitalized for you. Commands get no full stop."""
+# Shown by Settings -> Hotkeys -> "How to say code…" as a table (it used
+# to be one monospaced text block, 2026-10-13). Rows: (say, you get, note).
+HELP_SECTIONS = [
+    ("Operators", [
+        ("star", "*", "count star → COUNT(*)"),
+        ("equals / equals equals", "=   ==", "triple equals → ==="),
+        ("not equal to", "!=", ""),
+        ("greater than / less than", ">   <", "or equal to → >=  <="),
+        ("plus, minus, times, divided by", "+  -  *  /", ""),
+        ("plus equals / plus plus", "+=   ++", ""),
+        ("and and / or or", "&&   ||", ""),
+        ("exclamation mark / bang", "!", "!user"),
+        ("question mark dot", "?.", "double question mark → ??"),
+        ("arrow", "=>", ""),
+        ("spread / dot dot dot", "...", ""),
+    ]),
+    ("Brackets and quotes", [
+        ("open / close bracket", "(   )", "also: paren, left / right paren"),
+        ("open / close square bracket", "[   ]", ""),
+        ("open / close curly bracket", "{   }", "also: curly, left / right curly"),
+        ("open / close angle bracket", "<   >", "List<int>"),
+        ("quote hello world quote", "'hello world'", "double quotes outside SQL; "
+                                                     "also: … unquote"),
+    ]),
+    ("Symbols", [
+        ("comma, semicolon, colon", ",   ;   :", ""),
+        ("dot, underscore, slash", ".   _   /", ""),
+        ("backslash, pipe", "\\   |", ""),
+        ("dash m / dash dash force", "-m   --force", "hyphen or minus work too"),
+        ("capital x", "X", "curl -X POST"),
+        ("my dash app", "my-app", "longer words join"),
+        ("at id", "@id", "SQL; at at version → @@version"),
+        ("hash temp / dollar env", "#temp   $env", ""),
+        ("tilde", "~", ""),
+        ("root at 10.0.0.5", "root@10.0.0.5", ""),
+    ]),
+    ("Names and lines", [
+        ("camel case user name", "userName", ""),
+        ("pascal case user service", "UserService", ""),
+        ("snake case max retries", "max_retries", ""),
+        ("constant case max retries", "MAX_RETRIES", ""),
+        ("new line", "↵", "starts the next line of code"),
+    ]),
+]
+HELP_NOTES = [
+    "Numbers are typed as digits: “eight zero eight zero” → 8080, "
+    "“fifty thousand” → 50000, “one point five” → 1.5.",
+    "SQL keywords are capitalized for you. Commands get no full stop.",
+    "Names are understood as said: use state → useState, console dot write "
+    "line → Console.WriteLine, “add package microsoft dot entity framework "
+    "core” → Microsoft.EntityFrameworkCore.",
+]
 
 # ---------------------------------------------------------------------------
 # Speech-to-text bias prompt. Whisper-family models copy the prompt's

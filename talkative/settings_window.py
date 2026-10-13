@@ -655,15 +655,58 @@ class _SettingsWindow:
         ).pack(anchor="w", pady=(6, 0))
 
     def _show_dev_help(self):
+        """A table, not a text dump (2026-10-13): what to say in the
+        normal font, what gets typed in a code font in the accent colour,
+        notes in grey; sections in two columns so the window stays short."""
         win = tk.Toplevel(self.root)
         win.title("How to say code")
         app_icon.set_window_icon(win)
         win.transient(self.root)
         win.resizable(False, False)
-        ttk.Label(win, text=dev_mode.HELP_TEXT, justify="left",
-                  font=("Consolas", 9), padding=14).pack(anchor="w")
-        ttk.Button(win, text="Close", command=win.destroy).pack(
-            anchor="e", padx=14, pady=(0, 12))
+        body = ttk.Frame(win, padding=(18, 16, 18, 8))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="How to say code",
+                  font=("Segoe UI", 12, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(body, foreground="grey",
+                  text="Hold the code dictation key and say it like this.").grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(2, 10))
+
+        # One grid per side, so the "you get" column lines up across that
+        # side's sections.
+        cols = [ttk.Frame(body), ttk.Frame(body)]
+        cols[0].grid(row=2, column=0, sticky="nw", padx=(0, 32))
+        cols[1].grid(row=2, column=1, sticky="nw")
+        split = 2   # Operators + Brackets left, Symbols + Names right
+        rows_used = [0, 0]
+        for i, (title, rows) in enumerate(dev_mode.HELP_SECTIONS):
+            side = 0 if i < split else 1
+            col, r = cols[side], rows_used[side]
+            ttk.Label(col, text=title, font=("Segoe UI", 10, "bold")).grid(
+                row=r, column=0, columnspan=2, sticky="w", pady=(12 if r else 0, 4))
+            r += 1
+            for say, get, note in rows:
+                ttk.Label(col, text=say).grid(row=r, column=0, sticky="nw", padx=(0, 16))
+                cell = ttk.Frame(col)
+                cell.grid(row=r, column=1, sticky="nw")
+                ttk.Label(cell, text=get, font=("Consolas", 10),
+                          foreground=self._accent).pack(side="left")
+                if note:
+                    ttk.Label(cell, text="  " + note, foreground="grey",
+                              font=("Segoe UI", 8)).pack(side="left")
+                r += 1
+            rows_used[side] = r
+
+        notes = ttk.Frame(body)
+        notes.grid(row=3, column=0, columnspan=2, sticky="we", pady=(14, 4))
+        ttk.Label(notes, text="Good to know", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        for line in dev_mode.HELP_NOTES:
+            ttk.Label(notes, text="•  " + line, wraplength=760, justify="left",
+                      foreground="grey").pack(anchor="w", pady=(2, 0))
+        # Themed footer: the button straight on the Toplevel showed its
+        # unthemed (white) background as a strip.
+        footer = ttk.Frame(win, padding=(18, 4, 18, 14))
+        footer.pack(fill="x")
+        ttk.Button(footer, text="Close", command=win.destroy).pack(anchor="e")
 
     def _capture_hotkey(self, which="normal"):
         if self._capturing:
