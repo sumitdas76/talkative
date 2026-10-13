@@ -364,25 +364,29 @@ class _SettingsWindow:
         proc_box = ttk.LabelFrame(f, text="Processing", padding=10)
         proc_box.pack(fill="x", pady=(10, 0))
         self.var_processing = tk.StringVar(value=config.PROCESSING_MODE)
-        ttk.Radiobutton(
+        self.cloud_radio = ttk.Radiobutton(
             proc_box, text="Cloud — nothing to download, processed on a "
                     "remote server instead of this device.",
             variable=self.var_processing, value="cloud",
             command=self._processing_changed,
-        ).pack(anchor="w", pady=2)
-        ttk.Radiobutton(
+        )
+        self.cloud_radio.pack(anchor="w", pady=2)
+
+        # Belongs to Cloud, so it sits under it, indented, and only shows
+        # while Cloud is selected (2026-10-13, at the user's request).
+        self.var_grammar_local = tk.BooleanVar(value=(config.GRAMMAR_SOURCE == "local"))
+        self.grammar_local_check = ttk.Checkbutton(
+            proc_box, text="Clean up grammar on this device instead of the server\n"
+                    "(needs the local models below).",
+            variable=self.var_grammar_local,
+        )
+
+        self.local_radio = ttk.Radiobutton(
             proc_box, text="Local — fully offline, nothing leaves this device.",
             variable=self.var_processing, value="local",
             command=self._processing_changed,
-        ).pack(anchor="w", pady=2)
-
-        self.var_grammar_local = tk.BooleanVar(value=(config.GRAMMAR_SOURCE == "local"))
-        self.grammar_local_check = ttk.Checkbutton(
-            proc_box, text="With Cloud: clean up grammar on this device instead "
-                    "of the server (needs the local grammar model below).",
-            variable=self.var_grammar_local,
         )
-        self.grammar_local_check.pack(anchor="w", pady=(6, 2))
+        self.local_radio.pack(anchor="w", pady=2)
 
         self._local_op = None    # None | "downloading"
         self._local_error = []   # messages appended by the worker, shown by the poll
@@ -396,28 +400,15 @@ class _SettingsWindow:
         )
         self.local_download_btn.pack(anchor="w", pady=(4, 0))
 
-        url_row = ttk.Frame(proc_box)
-        url_row.pack(fill="x", pady=(10, 0))
-        ttk.Label(url_row, text="Cloud endpoint:").pack(side="left")
-        # Always readonly, regardless of Cloud/Local selection -- shown for
-        # transparency (where Cloud-mode data actually goes), not meant to
-        # be edited from here. It used to be a plain editable Entry; a
-        # mistyped value here broke every Cloud dictation with a raw,
-        # unhelpful urllib exception in a popup (confirmed 2026-09-20) and
-        # gave no hint the fix was to come back here. "readonly" (not
-        # "disabled") so the value can still be selected/copied. No save()
-        # round-trip needed any more -- there's no longer a way to change
-        # it through this control.
-        self.cloud_url_entry = ttk.Entry(url_row, width=44)
-        self.cloud_url_entry.insert(0, config.CLOUD_ENDPOINT_URL)
-        self.cloud_url_entry.configure(state="readonly")
-        self.cloud_url_entry.pack(side="left", fill="x", expand=True, padx=(6, 0))
         self._processing_changed()
         self._render_local_download()
 
     def _processing_changed(self):
-        state = "normal" if self.var_processing.get() == "cloud" else "disabled"
-        self.grammar_local_check.configure(state=state)
+        if self.var_processing.get() == "cloud":
+            self.grammar_local_check.pack(anchor="w", padx=(24, 0), pady=(0, 4),
+                                          after=self.cloud_radio)
+        else:
+            self.grammar_local_check.pack_forget()
 
     def _download_local_models(self):
         self._local_op = "downloading"
@@ -451,8 +442,9 @@ class _SettingsWindow:
             self.local_bar.pack_forget()
             if installed:
                 self.local_status.config(
-                    text="Downloaded — select Local above, or check the local "
-                         "grammar box above, to use them."
+                    text="Local models downloaded." if self.var_processing.get() == "local"
+                    else "Local models downloaded — select Local, or tick the box "
+                         "under Cloud, to use them."
                 )
                 self.local_download_btn.config(state="disabled", text="Downloaded")
             else:
@@ -604,7 +596,7 @@ class _SettingsWindow:
     def _tab_hotkeys(self, f):
         # Two keys, two sections: which key you hold picks the kind of
         # dictation, every time -- no mode to switch or turn off.
-        normal = ttk.LabelFrame(f, text="Dictation", padding=10)
+        normal = ttk.LabelFrame(f, text="Regular dictation", padding=10)
         normal.pack(fill="x")
         row = ttk.Frame(normal)
         row.pack(anchor="w")
