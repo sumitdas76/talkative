@@ -2,15 +2,15 @@ name = "talkative-cloud"
 main = "worker.js"
 compatibility_date = "2024-09-23"
 
-# Run the Worker next to Groq rather than at the colo nearest the user.
-# Smart Placement (mode = "smart", 2026-09-25) never took effect -- still
-# cf-placement: local-SIN on 2026-10-13, too little traffic for its
-# analysis -- while the Worker<->Groq hop cost ~370 ms of a ~490 ms grammar
-# call. Groq answers from Dallas (x-groq-region: dls, behind Google Cloud),
-# so pin the Worker to the data center nearest GCP us-south1 (Dallas) with
-# an explicit placement hint (Cloudflare, January 2026).
-[placement]
-region = "gcp:us-south1"
+# No [placement] (2026-10-13): the Worker runs at the colo nearest the
+# user. Measured both alternatives from India: Smart Placement (from
+# 2026-09-25) never took effect (cf-placement stayed local-SIN, too little
+# traffic for its analysis), and a placement hint next to Groq (region =
+# "gcp:us-south1", Dallas) made a dictation 1.34 s -> 2.08 s -- the audio
+# then crosses the Pacific before the Worker starts, and Groq answers from
+# several US regions (msp, dls, yul), not one. Don't re-add either without
+# measuring end to end from India (scratchpad placement_bench pattern:
+# warm() + transcribe + grammar, 6 real clips).
 
 [ai]
 binding = "AI"
