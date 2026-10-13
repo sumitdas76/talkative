@@ -105,6 +105,7 @@ class TalkativeApp:
         self._chord_active = False  # chord already handled for this press-hold, ignore OS key-repeat
         self._dev_dictation = False  # current recording is developer English (DEV_HOTKEY)
         self._latched = False  # toggle mode: recording stays on after a tap, until the next one
+        self._lost_release_checks = 0  # see _check_lost_release
         self._recording_id = 0  # bumped per recording, so a stale auto-stop timer can't stop a later one
         self._stop_lock = threading.Lock()
         self._mode_lock = threading.Lock()  # transcriber swaps vs. a finishing background load
@@ -494,6 +495,39 @@ class TalkativeApp:
             logging.warning("Dropping a recording whose hotkey release was lost")
             self._stop_recording(process=False)
 
+    def _check_lost_release(self):
+        """Called from the main loop every 0.2 s. A hold-mode recording whose
+        hotkey Windows says is no longer physically held means the release
+        was lost -- Ctrl+Alt+Del, the lock screen and UAC prompts swallow it
+        -- and the pill would keep recording until the next press (user
+        report 2026-10-13, the first sleep/lock test of _drop_stale_keys,
+        which only runs on that next press). After LOST_RELEASE_CHECKS
+        checks in a row, drop the recording: the audio ran on into that
+        screen, and pasting it into whatever has focus afterwards would be
+        worse than losing it."""
+        if not self._recording or self._latched:
+            self._lost_release_checks = 0
+            return
+        try:
+            held = {k for k in list(self._hotkey_pressed) if _physically_down(k)}
+        except Exception:
+            return
+        chord_held = set(config.HOTKEY) <= held or (
+            bool(config.DEV_HOTKEY) and set(config.DEV_HOTKEY) <= held)
+        if chord_held:
+            self._lost_release_checks = 0
+            return
+        self._lost_release_checks += 1
+        if self._lost_release_checks < config.LOST_RELEASE_CHECKS:
+            return
+        self._lost_release_checks = 0
+        logging.warning("Hotkey no longer held but its release was never seen; "
+                        "dropping the recording")
+        self._hotkey_pressed -= {k for k in list(self._hotkey_pressed) if k not in held}
+        self._chord_active = False
+        self._masked = False
+        self._stop_recording(process=False)
+
     def _on_resume(self):
         """The PC just woke from sleep or hibernation. Start clean: a
         recording that was open when it slept is dropped, held-key state
@@ -876,6 +910,10 @@ class TalkativeApp:
                     except Exception:
                         logging.getLogger(__name__).exception("resume reset failed")
                 last = now
+                try:
+                    self._check_lost_release()
+                except Exception:
+                    logging.getLogger(__name__).exception("lost-release check failed")
         except KeyboardInterrupt:
             pass
 

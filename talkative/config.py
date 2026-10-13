@@ -185,6 +185,11 @@ FALLBACK_IDLE_SECONDS = 300
 # The main loop naps 0.2 s; a nap this much longer means the PC slept, and
 # app._on_resume() resets the hotkey hook, key state and audio.
 RESUME_GAP_SECONDS = 10
+# Main-loop checks (0.2 s apart) a hold-mode recording may run with its
+# hotkey physically up before app._check_lost_release drops it as a lost
+# release (Ctrl+Alt+Del, lock screen). 3 = 0.6 s: well past the hook's own
+# release event, which arrives within milliseconds.
+LOST_RELEASE_CHECKS = 3
 # Sent as the X-Shared-Secret header on every cloud request -- a soft
 # deterrent only (it ships inside a public EXE, so treat it as
 # extractable), not real auth. The real protection is the Worker's
