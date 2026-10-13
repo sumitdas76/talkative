@@ -24,9 +24,21 @@ class_name = "QuotaCounter"
 tag = "v1"
 new_sqlite_classes = ["QuotaCounter"]
 
-# Set both secrets once, per environment, before deploying:
+# Free-limit log (worker.js's LimitLog, 2026-10-13): one object recording
+# per day which provider limits refused us. Read via GET /limits with the
+# ADMIN_KEY secret (tools/cloud_limits.py).
+[[durable_objects.bindings]]
+name = "LIMIT_DO"
+class_name = "LimitLog"
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["LimitLog"]
+
+# Set these secrets once, per environment, before deploying:
 #   wrangler secret put SHARED_SECRET
 #   wrangler secret put GROQ_API_KEY
+#   wrangler secret put ADMIN_KEY      (reads GET /limits; not in the app)
 # Never commit either secret value itself. GROQ_API_KEY is a free-tier key
 # from https://console.groq.com (no card required) -- /transcribe calls
 # Groq's hosted whisper-large-v3-turbo with it instead of Workers AI (see

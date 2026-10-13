@@ -130,6 +130,94 @@ async function checkAndIncrementQuota(env, installId) {
   return await stub.take(day, DAILY_QUOTA_PER_INSTALL);
 }
 
+// Free-limit log (2026-10-13): one Durable Object ("global") recording, per
+// UTC day, every time a provider's free limit refused us and how close the
+// day came to Groq's daily caps. Read with GET /limits + X-Admin-Key
+// (tools/cloud_limits.py). Written only off the response path (waitUntil):
+// on a limit hit, and when a day's peak usage rises past what this isolate
+// last reported, so normal dictations rarely touch it.
+//   hits:  { "<kind>": { n, first, last, detail } }  kind e.g.
+//          "groq whisper-large-v3-turbo RPD", "workers-ai neurons/day",
+//          "busy" (a user saw "Cloud is busy"), "install cap"
+//   peak:  { "<model> requests/day": { used, limit } }
+const LIMIT_DAYS_KEPT = 120;
+
+export class LimitLog extends DurableObject {
+  async hit(day, kind, detail) {
+    const rec = (await this.ctx.storage.get(day)) || { hits: {}, peak: {} };
+    const now = new Date().toISOString().slice(11, 19);
+    const h = rec.hits[kind] || { n: 0, first: now };
+    h.n += 1;
+    h.last = now;
+    if (detail) h.detail = String(detail).slice(0, 200);
+    rec.hits[kind] = h;
+    await this.save(day, rec);
+  }
+
+  async peak(day, name, used, limit) {
+    const rec = (await this.ctx.storage.get(day)) || { hits: {}, peak: {} };
+    const p = rec.peak[name];
+    if (p && p.used >= used) return;
+    rec.peak[name] = { used, limit };
+    await this.save(day, rec);
+  }
+
+  async save(day, rec) {
+    await this.ctx.storage.put(day, rec);
+    const days = [...(await this.ctx.storage.list()).keys()].sort();
+    if (days.length > LIMIT_DAYS_KEPT) {
+      await this.ctx.storage.delete(days.slice(0, days.length - LIMIT_DAYS_KEPT));
+    }
+  }
+
+  async report() {
+    return Object.fromEntries(await this.ctx.storage.list());
+  }
+}
+
+function limitLog(env) {
+  return env.LIMIT_DO.get(env.LIMIT_DO.idFromName("global"));
+}
+
+// Record a limit hit without delaying the response or ever failing it.
+function noteHit(env, ctx, kind, detail) {
+  ctx.waitUntil(limitLog(env).hit(today(), kind, detail).catch(() => {}));
+}
+
+// Groq's 429 says which limit refused: "...on requests per day (RPD):
+// Limit 2000, Used 2000, Requested 1..." -> "RPD", "Limit 2000, Used 2000".
+// The organization id in the same message is not kept.
+export function groqLimitKind(model, body) {
+  const m = /\(([A-Z]{2,4})\):\s*(Limit \d+, Used \d+)/.exec(body || "");
+  return m ? [`groq ${model} ${m[1]}`, m[2]] : [`groq ${model} 429`, ""];
+}
+
+// Workers AI's own daily free allowance running out (error 4006: "you have
+// used up your daily free allocation of 10,000 neurons") vs any other error.
+export function workersAiKind(err) {
+  return /4006|daily free allocation|neurons/i.test(String(err))
+    ? "workers-ai neurons/day" : null;
+}
+
+// Highest requests/day usage this isolate has already reported, per day+model.
+const reportedPeak = new Map();
+
+// Groq's response headers carry the daily request allowance:
+// x-ratelimit-limit-requests / x-ratelimit-remaining-requests (RPD).
+function notePeak(env, ctx, model, resp) {
+  const limit = Number(resp.headers.get("x-ratelimit-limit-requests"));
+  const left = Number(resp.headers.get("x-ratelimit-remaining-requests"));
+  if (!limit || Number.isNaN(left)) return;
+  const used = limit - left;
+  const key = `${today()} ${model}`;
+  if ((reportedPeak.get(key) ?? -1) >= used) return;
+  if (reportedPeak.size > 100) reportedPeak.clear();
+  reportedPeak.set(key, used);
+  ctx.waitUntil(
+    limitLog(env).peak(today(), `${model} requests/day`, used, limit).catch(() => {})
+  );
+}
+
 // Handlers return a plain payload object (the fetch handler adds timing
 // and builds the Response, since with speculative quota checks the quota
 // result may arrive after the handler finishes), or BUSY for an upstream
@@ -158,7 +246,7 @@ function knownNearCap(installId) {
     k.count >= DAILY_QUOTA_PER_INSTALL - SPECULATE_MARGIN;
 }
 
-async function handleTranscribe(request, env, timing) {
+async function handleTranscribe(request, env, timing, ctx) {
   const bytes = new Uint8Array(await request.arrayBuffer());
   if (bytes.length === 0) {
     return { text: "" };
@@ -209,7 +297,11 @@ async function handleTranscribe(request, env, timing) {
         headers: { Authorization: `Bearer ${env.GROQ_API_KEY}` },
         body: form,
       });
-      if (groqResp.status === 429 || groqResp.status >= 500) {
+      if (groqResp.status === 429) {
+        const [kind, detail] = groqLimitKind(sttModel, await groqResp.text());
+        noteHit(env, ctx, kind, detail);
+        groqProblem = kind;
+      } else if (groqResp.status >= 500) {
         groqProblem = `groq ${groqResp.status}`;
       } else if (!groqResp.ok) {
         throw new Error(`Groq transcription failed: ${groqResp.status} ${await groqResp.text()}`);
@@ -224,13 +316,19 @@ async function handleTranscribe(request, env, timing) {
     try {
       const fb = await workersAiTranscribe(env, bytes, prompt);
       timing.upstream_ms = Date.now() - t0;
-      if (fb.turbo_error) timing.turbo_error = fb.turbo_error;
+      if (fb.turbo_error) {
+        timing.turbo_error = fb.turbo_error;
+        const kind = workersAiKind(fb.turbo_error);
+        if (kind) noteHit(env, ctx, kind, "stt fallback");
+      }
       return { text: fb.text, via: fb.via };
     } catch (e) {
       timing.fallback_error = String(e);
+      noteHit(env, ctx, workersAiKind(e) || "workers-ai stt error", String(e));
       return BUSY; // same shape as our per-install quota: the client shows "Cloud is busy"
     }
   }
+  notePeak(env, ctx, sttModel, groqResp);
   const result = await groqResp.json();
   timing.upstream_ms = Date.now() - t0;
   // Whisper invents text for audio with no speech in it ("Thank you.",
@@ -277,7 +375,7 @@ const NO_SPEECH_PROB = 0.6;
 const MIN_AVG_LOGPROB = -1.0;
 const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 
-async function handleGrammar(request, env, timing) {
+async function handleGrammar(request, env, timing, ctx) {
   const { text } = await request.json();
   if (!text) {
     return { text: "" };
@@ -321,6 +419,7 @@ async function handleGrammar(request, env, timing) {
       }
     );
     if (groqResp.ok) {
+      notePeak(env, ctx, GROQ_GRAMMAR_MODEL, groqResp);
       const result = await groqResp.json();
       const out = result.choices?.[0]?.message?.content;
       if (out) {
@@ -332,16 +431,27 @@ async function handleGrammar(request, env, timing) {
       }
       groqError = "empty completion";
     } else {
-      groqError = `${groqResp.status} ${(await groqResp.text()).slice(0, 300)}`;
+      const body = await groqResp.text();
+      groqError = `${groqResp.status} ${body.slice(0, 300)}`;
+      if (groqResp.status === 429) {
+        const [kind, detail] = groqLimitKind(GROQ_GRAMMAR_MODEL, body);
+        noteHit(env, ctx, kind, detail);
+      }
     }
   } catch (err) {
     groqError = String(err).slice(0, 300);
   }
 
-  const result = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
-    messages,
-    temperature: 0,
-  });
+  let result;
+  try {
+    result = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
+      messages,
+      temperature: 0,
+    });
+  } catch (e) {
+    noteHit(env, ctx, workersAiKind(e) || "workers-ai grammar error", String(e));
+    throw e;
+  }
   return {
     text: result.response || text,
     via: "workers-ai",
@@ -351,6 +461,14 @@ async function handleGrammar(request, env, timing) {
 
 export default {
   async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/limits") {
+      // Not the shared secret: that one ships in the public EXE.
+      if (!env.ADMIN_KEY || request.headers.get("X-Admin-Key") !== env.ADMIN_KEY) {
+        return unauthorized();
+      }
+      return Response.json(await limitLog(env).report());
+    }
     if (request.method !== "POST") {
       return new Response("Not found", { status: 404 });
     }
@@ -361,7 +479,6 @@ export default {
     if (!installId) {
       return new Response("Missing X-Install-Id", { status: 400 });
     }
-    const url = new URL(request.url);
     const handler = { "/transcribe": handleTranscribe, "/grammar": handleGrammar }[url.pathname];
     if (!handler) {
       return new Response("Not found", { status: 404 });
@@ -399,15 +516,17 @@ export default {
       let payload;
       if (speculative) {
         ctx.waitUntil(quotaPromise);
-        payload = await handler(request, env, timing);
+        payload = await handler(request, env, timing, ctx);
       } else {
         const quota = await quotaPromise;
         if (!quota.ok) {
+          noteHit(env, ctx, "install cap", null);
           return quotaExceeded();
         }
-        payload = await handler(request, env, timing);
+        payload = await handler(request, env, timing, ctx);
       }
       if (payload === BUSY) {
+        noteHit(env, ctx, "busy", url.pathname);
         return quotaExceeded();
       }
       return Response.json({ ...payload, timing });
