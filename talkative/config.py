@@ -175,6 +175,11 @@ GRAMMAR_SOURCE = "auto"
 # model when it's downloaded (kept loaded FALLBACK_IDLE_SECONDS after its
 # last use), otherwise retries Cloud after each of these waits (seconds).
 CLOUD_RETRY_DELAYS = (2.0, 6.0)
+# Seconds an open Cloud connection may sit idle before cloud_client opens a
+# new one instead of reusing it (2026-10-13). Below the point where
+# Cloudflare drops idle connections (measured, see cloud_client._take); a
+# stale one costs a failed attempt plus a retry, slower than a new one.
+CLOUD_CONN_MAX_IDLE = 50.0
 FALLBACK_IDLE_SECONDS = 300
 # The main loop naps 0.2 s; a nap this much longer means the PC slept, and
 # app._on_resume() resets the hotkey hook, key state and audio.

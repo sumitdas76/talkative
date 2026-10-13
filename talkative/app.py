@@ -464,6 +464,9 @@ class TalkativeApp:
             show_error_popup(f"Could not start recording:\n{exc}")
             return
 
+        if self._cloud_active():
+            # Open the Cloud connection while the user speaks, not after.
+            threading.Thread(target=cloud_client.warm, daemon=True).start()
         self._recording = True
         self._latched = False
         self._recording_id += 1

@@ -10,15 +10,19 @@ inside a public EXE (see worker.js's module docstring for the full
 reasoning); the quota plus Workers AI's own free-tier daily cap are what
 actually bound cost/abuse.
 
-Same house networking style as updater.py/feedback.py: stdlib
-urllib.request only, explicit timeouts, and the same graceful-degradation
-contract each function's local counterpart already has.
+Stdlib only, explicit timeouts, and the same graceful-degradation
+contract each function's local counterpart already has. Unlike
+updater.py/feedback.py, requests reuse open HTTPS connections (see _post).
 """
 
 import base64
+import http.client
 import io
 import json
+import threading
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import wave
 
@@ -41,6 +45,115 @@ def _headers(content_type):
         "X-Shared-Secret": config.CLOUD_SHARED_SECRET,
         "X-Install-Id": feedback.install_id(),
     }
+
+
+# Reused HTTPS connections (2026-10-13). urllib opens a new connection --
+# TCP + TLS handshake -- for every request, and Cloudflare often serves
+# India from Singapore/Tokyo/Hong Kong rather than Mumbai (all evening on
+# 2026-10-11, and mornings too), where each handshake costs ~0.2 s or more:
+# measured 386 ms per request on a new connection vs 173 ms reused (SIN).
+# A dictation makes two requests, and warm() opens one while the user is
+# still speaking. Idle connections are pooled (not one shared one) so two
+# overlapping dictations never wait on each other.
+_pool = []
+_pool_lock = threading.Lock()
+_POOL_MAX = 2
+_RETRYABLE = (http.client.RemoteDisconnected, http.client.BadStatusLine,
+              http.client.CannotSendRequest, ConnectionResetError,
+              ConnectionAbortedError, BrokenPipeError)
+
+
+def _target():
+    """(host, port, base path) for direct connections, or None to go
+    through urllib: a non-HTTPS endpoint, or a system proxy -- urllib
+    honours Windows' proxy settings, http.client doesn't."""
+    u = urllib.parse.urlsplit(config.CLOUD_ENDPOINT_URL)
+    if u.scheme != "https" or not u.hostname:
+        return None
+    try:
+        if urllib.request.getproxies().get("https"):
+            return None
+    except Exception:
+        return None
+    return u.hostname, u.port or 443, u.path.rstrip("/")
+
+
+def _take(host, port, timeout):
+    """An idle pooled connection to host:port that hasn't sat longer than
+    CLOUD_CONN_MAX_IDLE, or a new (not yet connected) one. Returns
+    (conn, reused)."""
+    now = time.monotonic()
+    with _pool_lock:
+        while _pool:
+            conn, last = _pool.pop()
+            if (conn.host, conn.port) == (host, port) and now - last < config.CLOUD_CONN_MAX_IDLE:
+                conn.timeout = timeout
+                if conn.sock is not None:
+                    conn.sock.settimeout(timeout)
+                return conn, conn.sock is not None
+            conn.close()
+    return http.client.HTTPSConnection(host, port, timeout=timeout), False
+
+
+def _give_back(conn):
+    with _pool_lock:
+        if len(_pool) < _POOL_MAX:
+            _pool.append((conn, time.monotonic()))
+            return
+    conn.close()
+
+
+def warm():
+    """Open a connection ahead of the next request (called when the hotkey
+    goes down in Cloud mode), so the handshake happens while the user
+    speaks. Never raises."""
+    try:
+        target = _target()
+        if target is None:
+            return
+        host, port, _ = target
+        conn, reused = _take(host, port, 10)
+        if not reused:
+            conn.connect()
+        _give_back(conn)
+    except Exception:
+        pass
+
+
+def _post(route, body, headers, timeout):
+    """POST to the Worker -> (status, response bytes). Raises on network
+    failure. A reused connection the server has quietly closed fails on
+    first use; that one is retried once on a new connection."""
+    target = _target()
+    if target is None:
+        url = config.CLOUD_ENDPOINT_URL.rstrip("/") + route
+        req = urllib.request.Request(url, data=body, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read()
+    host, port, base = target
+    for attempt in (0, 1):
+        conn, reused = _take(host, port, timeout) if attempt == 0 else (
+            http.client.HTTPSConnection(host, port, timeout=timeout), False)
+        try:
+            conn.request("POST", base + route, body=body, headers=headers)
+            resp = conn.getresponse()
+            data = resp.read()
+        except _RETRYABLE:
+            conn.close()
+            if reused:
+                continue
+            raise
+        except Exception:
+            conn.close()
+            raise
+        if resp.will_close:
+            conn.close()
+        else:
+            _give_back(conn)
+        return resp.status, data
 
 
 def _trim_trailing_silence(audio, sample_rate, threshold=0.01,
@@ -131,7 +244,6 @@ def transcribe(audio, sample_rate, initial_prompt=None):
         return ""
     audio = _trim_trailing_silence(audio, sample_rate)
     body = _wav_bytes(audio, sample_rate)
-    url = config.CLOUD_ENDPOINT_URL.rstrip("/") + "/transcribe"
     headers = _headers("audio/wav")
     if initial_prompt:
         # The bias prompt (sentence style + personal-dictionary vocabulary,
@@ -141,14 +253,12 @@ def transcribe(audio, sample_rate, initial_prompt=None):
         # and silently dropped, so Cloud mode never got any biasing.
         headers["X-Prompt-B64"] = base64.b64encode(
             initial_prompt[:800].encode("utf-8")).decode("ascii")
-    req = urllib.request.Request(url, data=body, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            result = json.loads(r.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        if exc.code == 429:
-            raise RuntimeError(CLOUD_BUSY_MESSAGE) from None
-        raise
+    status, data = _post("/transcribe", body, headers, timeout=30)
+    if status == 429:
+        raise RuntimeError(CLOUD_BUSY_MESSAGE)
+    if status != 200:
+        raise RuntimeError(f"Cloud transcription failed: HTTP {status}")
+    result = json.loads(data.decode("utf-8"))
     return str(result.get("text", "")).strip()
 
 
@@ -160,11 +270,11 @@ def grammar_apply(text):
     if not text:
         return text
     try:
-        url = config.CLOUD_ENDPOINT_URL.rstrip("/") + "/grammar"
         body = json.dumps({"text": text}).encode("utf-8")
-        req = urllib.request.Request(url, data=body, headers=_headers("application/json"))
-        with urllib.request.urlopen(req, timeout=20) as r:
-            result = json.loads(r.read().decode("utf-8"))
+        status, data = _post("/grammar", body, _headers("application/json"), timeout=20)
+        if status != 200:
+            return text
+        result = json.loads(data.decode("utf-8"))
         out = str(result.get("text", "")).strip()
     except Exception:
         return text
