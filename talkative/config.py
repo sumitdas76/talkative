@@ -176,9 +176,10 @@ GRAMMAR_SOURCE = "auto"
 # last use), otherwise retries Cloud after each of these waits (seconds).
 CLOUD_RETRY_DELAYS = (2.0, 6.0)
 # Seconds an open Cloud connection may sit idle before cloud_client opens a
-# new one instead of reusing it (2026-10-13). Below the point where
-# Cloudflare drops idle connections (measured, see cloud_client._take); a
-# stale one costs a failed attempt plus a retry, slower than a new one.
+# new one instead of reusing it (2026-10-13). Cloudflare kept idle
+# connections open for 180 s+ (measured), but home routers and mobile
+# networks may silently drop them sooner, and a request sent on a dropped
+# one hangs until its timeout instead of failing fast -- so stay short.
 CLOUD_CONN_MAX_IDLE = 50.0
 FALLBACK_IDLE_SECONDS = 300
 # The main loop naps 0.2 s; a nap this much longer means the PC slept, and
