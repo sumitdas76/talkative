@@ -251,6 +251,17 @@ def format_numbers(text):
             if done is not None:
                 i = done
                 continue
+            # Left as words (e.g. it starts the sentence): keep the whole
+            # amount as words, or its tail gets converted on its own --
+            # "Two lakh fifty thousand." came out "Two lakh 50,000."
+            # (found writing the 1.3.14 changelog).
+            words, ends = _span(w, i)
+            if len(words) > 1 and any(x in _SCALES for x in words):
+                parsed = _parse_cardinal(words)
+                if parsed is not None and parsed[1] == len(words):
+                    out.extend(toks[i:ends[-1]])
+                    i = ends[-1]
+                    continue
         if tok.isdigit():
             done = _small_digit_to_word(w, i, out)
             if done is not None:
