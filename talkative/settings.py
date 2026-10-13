@@ -15,6 +15,8 @@ path themselves, so a future rename only needs to change it here.
 
 import json
 import os
+import threading
+import time
 from pathlib import Path
 
 from pynput import keyboard
@@ -206,21 +208,48 @@ def remove_old_examples(path=None):
             pass
 
 
+# One save at a time: each one reads, merges and rewrites the whole file,
+# so two threads saving together could each drop the other's change.
+_save_lock = threading.Lock()
+
+
+def _write_atomic(path, text):
+    """Replace `path` with `text` so a crash or power cut mid-save leaves
+    either the old file or the new one, never a truncated one (which
+    would silently reset hotkeys and the dictionary to defaults). Windows
+    can briefly refuse the swap while antivirus or the search indexer has
+    the file open, so retry a few times before giving up."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    for attempt in range(5):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.1 * (attempt + 1))
+
+
 def save(values, path=None):
     """Merge the given known keys into the settings file (creating it if
     needed). Unknown keys are ignored."""
     path = settings_path() if path is None else Path(path)
-    try:
-        current = json.loads(path.read_text(encoding="utf-8-sig"))
-        if not isinstance(current, dict):
+    with _save_lock:
+        try:
+            current = json.loads(path.read_text(encoding="utf-8-sig"))
+            if not isinstance(current, dict):
+                current = {}
+        except Exception:
             current = {}
-    except Exception:
-        current = {}
 
-    for key, value in values.items():
-        if key in _KEYS or key in _SPECIAL_KEYS:
-            current[key] = value
+        for key, value in values.items():
+            if key in _KEYS or key in _SPECIAL_KEYS:
+                current[key] = value
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(current, indent=2, ensure_ascii=False), encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_atomic(path, json.dumps(current, indent=2, ensure_ascii=False))
     return current
