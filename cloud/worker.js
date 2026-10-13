@@ -181,7 +181,8 @@ function limitLog(env) {
 
 // Record a limit hit without delaying the response or ever failing it.
 function noteHit(env, ctx, kind, detail) {
-  ctx.waitUntil(limitLog(env).hit(today(), kind, detail).catch(() => {}));
+  ctx.waitUntil(limitLog(env).hit(today(), kind, detail)
+    .catch((e) => console.error("limit log hit failed", String(e))));
 }
 
 // Groq's 429 says which limit refused: "...on requests per day (RPD):
@@ -204,17 +205,21 @@ const reportedPeak = new Map();
 
 // Groq's response headers carry the daily request allowance:
 // x-ratelimit-limit-requests / x-ratelimit-remaining-requests (RPD).
-function notePeak(env, ctx, model, resp) {
-  const limit = Number(resp.headers.get("x-ratelimit-limit-requests"));
-  const left = Number(resp.headers.get("x-ratelimit-remaining-requests"));
-  if (!limit || Number.isNaN(left)) return;
+function notePeak(env, ctx, model, resp, timing) {
+  const limitH = resp.headers.get("x-ratelimit-limit-requests");
+  const leftH = resp.headers.get("x-ratelimit-remaining-requests");
+  timing.groq_requests_left = leftH === null ? "none" : `${leftH}/${limitH}`;
+  const limit = Number(limitH);
+  const left = Number(leftH);
+  if (!limit || leftH === null || Number.isNaN(left)) return;
   const used = limit - left;
   const key = `${today()} ${model}`;
   if ((reportedPeak.get(key) ?? -1) >= used) return;
   if (reportedPeak.size > 100) reportedPeak.clear();
   reportedPeak.set(key, used);
   ctx.waitUntil(
-    limitLog(env).peak(today(), `${model} requests/day`, used, limit).catch(() => {})
+    limitLog(env).peak(today(), `${model} requests/day`, used, limit)
+      .catch((e) => console.error("limit log peak failed", String(e)))
   );
 }
 
@@ -328,7 +333,7 @@ async function handleTranscribe(request, env, timing, ctx) {
       return BUSY; // same shape as our per-install quota: the client shows "Cloud is busy"
     }
   }
-  notePeak(env, ctx, sttModel, groqResp);
+  notePeak(env, ctx, sttModel, groqResp, timing);
   const result = await groqResp.json();
   timing.upstream_ms = Date.now() - t0;
   // Whisper invents text for audio with no speech in it ("Thank you.",
@@ -419,7 +424,7 @@ async function handleGrammar(request, env, timing, ctx) {
       }
     );
     if (groqResp.ok) {
-      notePeak(env, ctx, GROQ_GRAMMAR_MODEL, groqResp);
+      notePeak(env, ctx, GROQ_GRAMMAR_MODEL, groqResp, timing);
       const result = await groqResp.json();
       const out = result.choices?.[0]?.message?.content;
       if (out) {
