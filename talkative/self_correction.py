@@ -97,6 +97,50 @@ def _recapitalize(text):
     return _FIRST_LETTER.sub(lambda m: m.group(1) + m.group(2).upper(), text)
 
 
+# Small words a partial correction typically opens with ("..., sorry, I mean
+# on Tuesday", "Scratch that, the sixth."). The correction replaces the span
+# from the last place that word occurs.
+_LEADING_WORDS = {
+    "a", "an", "the", "this", "that", "these", "those",
+    "my", "your", "his", "her", "its", "our", "their",
+    "on", "in", "at", "to", "for", "from", "with", "by", "of", "into",
+    "onto", "about", "until", "before", "after", "around",
+}
+_SPAN_WORD = re.compile(r"\S+")
+
+
+def _bare(word):
+    return word.strip(",.;:!?\"'()").lower()
+
+
+def _kept_head(span, correction):
+    """The part of the retracted span the correction does NOT replace.
+
+    A correction that starts like the span did ("Send it to John, no wait,
+    send it to Mary") is a full restatement: nothing is kept. Otherwise it
+    only replaces the end ("Let's meet on Monday, sorry, I mean Tuesday" ->
+    "Let's meet on Tuesday"): from the last occurrence of the correction's
+    leading small word, else the same number of words as the correction.
+    """
+    core = span.strip().rstrip(",.;:!? ")
+    words = list(_SPAN_WORD.finditer(core))
+    fixed = [_bare(w) for w in correction.split() if _bare(w)]
+    if not words or not fixed or len(fixed) >= len(words):
+        return ""
+    if _bare(words[0].group()) == fixed[0]:
+        return ""
+    start = None
+    if fixed[0] in _LEADING_WORDS:
+        for i in range(len(words) - 1, 0, -1):
+            if _bare(words[i].group()) == fixed[0]:
+                start = i
+                break
+    if start is None:
+        start = len(words) - len(fixed)
+    head = span[: span.find(core) + words[start].start()]
+    return head.rstrip().rstrip(",;:") + " "
+
+
 def apply_self_corrections(text, triggers=None):
     if not text:
         return text
@@ -156,7 +200,7 @@ def apply_self_corrections(text, triggers=None):
             continue
 
         changed = True
-        kept_prefix = preceding[:cut].rstrip()
+        kept_prefix = (preceding[:cut] + _kept_head(preceding[cut:], correction)).rstrip()
         remainder = result[match.end() :].lstrip()
 
         if kept_prefix and remainder:
