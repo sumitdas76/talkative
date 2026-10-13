@@ -441,7 +441,7 @@ class _SettingsWindow:
             model_manager.is_downloaded(config.MODEL_SIZE)
             and grammar_engine.is_installed()
         )
-        if self._local_op == "downloading":
+        if self._local_op == "downloading" or grammar_engine.is_downloading():
             self.local_status.config(text="Downloading… this can take a few minutes.")
             self.local_bar.pack(anchor="w", pady=(0, 4), before=self.local_download_btn)
             self.local_bar.start(12)
@@ -919,6 +919,8 @@ class _SettingsWindow:
     def _grammar_tile_state(self):
         if self._grammar_op is not None:
             return self._grammar_op
+        if grammar_engine.is_downloading():
+            return "download"   # started elsewhere (Local setup's background stage)
         return "installed" if grammar_engine.is_installed() else "none"
 
     def _render_grammar_tile(self):

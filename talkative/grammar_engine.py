@@ -93,6 +93,10 @@ _STOPWORDS = frozenset({
 
 _lock = threading.Lock()
 _download_lock = threading.Lock()
+# True while download() is fetching, whoever started it -- lets Settings
+# show a background download (Local setup's second stage) as in progress
+# instead of offering Download again (backlog, 2026-09-27).
+_downloading = False
 _generator = None
 _tokenizer = None
 # Output tokens per second on this PC -- measured at load, then updated
@@ -124,9 +128,18 @@ def download():
 
     # One download at a time: Settings' Download button and the background
     # download from Local setup may overlap.
+    global _downloading
     with _download_lock:
         if not is_installed():
-            snapshot_download(repo_id=config.GRAMMAR_HF_REPO, local_dir=str(engine_dir()))
+            _downloading = True
+            try:
+                snapshot_download(repo_id=config.GRAMMAR_HF_REPO, local_dir=str(engine_dir()))
+            finally:
+                _downloading = False
+
+
+def is_downloading():
+    return _downloading
 
 
 def download_in_background():
