@@ -294,12 +294,17 @@ async function handleTranscribe(request, env, timing, ctx) {
   const sttModel = STT_MODELS.includes(requested) ? requested : STT_MODELS[0];
   timing.stt_model = sttModel;
   form.append("model", sttModel);
-  // X-Hinglish: 1 (2026-10-13, not yet sent by any released app): the
-  // speaker mixes Hindi into English. Groq isn't pinned to English, and a
-  // Roman-script Hinglish example in the prompt nudges it to write Hindi
-  // in English letters; anything still in Indian script is rewritten
-  // afterwards (romanizeHinglish). Without the header: English, as before.
-  const hinglish = request.headers.get("X-Hinglish") === "1";
+  // X-Hindi (2026-10-13, not yet sent by any released app): the speaker
+  // mixes Hindi into English, and Groq isn't pinned to English.
+  //   roman      Hindi typed in English letters ("kal meeting hai"). A
+  //              Roman-script example in the prompt nudges Whisper that
+  //              way; anything still in Indian script is rewritten.
+  //   translate  Hindi parts translated into English. No Roman prompt, so
+  //              Hindi comes back in its own script and is easy to spot.
+  // See rewriteHindi. Without the header: English, as before.
+  const hindiMode = ["roman", "translate"].includes(request.headers.get("X-Hindi"))
+    ? request.headers.get("X-Hindi") : null;
+  const hinglish = hindiMode !== null;
   if (!hinglish) {
     form.append("language", "en"); // matches the local model's small.en (English-only)
   }
@@ -320,7 +325,7 @@ async function handleTranscribe(request, env, timing, ctx) {
       // ignore
     }
   }
-  if (hinglish) {
+  if (hindiMode === "roman") {
     prompt = (HINGLISH_STT_PROMPT + " " + prompt).slice(0, 800).trim();
   }
   if (prompt) form.append("prompt", prompt);
@@ -395,20 +400,24 @@ async function handleTranscribe(request, env, timing, ctx) {
   if (!hinglish) {
     return { text, via: "groq" };
   }
-  const out = { text, via: "groq", language: result.language || null, hinglish: false };
-  if (INDIAN_SCRIPT.test(text) && request.headers.get("X-Hinglish-Rewrite") !== "0") {
+  // hindi: true tells the client this dictation held Hindi (it then skips
+  // the English grammar pass -- the rewrite already produced final text).
+  const out = { text, via: "groq", language: result.language || null, hindi: false };
+  const detected = INDIAN_SCRIPT.test(text) ||
+    (hindiMode === "translate" && /hindi|urdu/i.test(result.language || ""));
+  if (detected && text && request.headers.get("X-Hindi-Rewrite") !== "0") {
     out.stt_text = text;
     const t1 = Date.now();
-    out.text = await romanizeHinglish(env, text);
-    timing.romanize_ms = Date.now() - t1;
-    out.hinglish = true;
-  } else if (INDIAN_SCRIPT.test(text) || /hindi|urdu/i.test(result.language || "")) {
-    out.hinglish = true;
+    out.text = await rewriteHindi(env, text, hindiMode);
+    timing.rewrite_ms = Date.now() - t1;
+    out.hindi = true;
+  } else if (detected) {
+    out.hindi = true;
   }
   return out;
 }
 
-// Hinglish (see X-Hinglish in handleTranscribe). The STT prompt shows
+// Hindi modes (see X-Hindi in handleTranscribe). The STT prompt shows
 // Whisper the target style; the rewrite turns any Devanagari/Urdu script
 // it still produced into Roman letters, as Indians type Hindi in chat.
 const HINGLISH_STT_PROMPT =
@@ -424,6 +433,22 @@ const ROMANIZE_SYSTEM = (
   "not add or remove words, keep the word order. Add light punctuation. " +
   "Reply with only the converted text."
 );
+const TRANSLATE_SYSTEM = (
+  "You turn transcribed speech that mixes Hindi (or Urdu) and English into " +
+  "natural English, as the speaker would have typed it in English. " +
+  "Translate the Hindi parts, keep the English parts as spoken, keep the " +
+  "speaker's meaning, tone, and person (I/you/we), and keep names and " +
+  "numbers (numbers as digits). Do not summarize, do not add anything, do " +
+  "not answer questions in the text. Add punctuation. Reply with only the " +
+  "English text."
+);
+const TRANSLATE_SHOTS = [
+  ["मैं कल ऑफिस नहीं आ पाऊंगा, मीटिंग रिशेड्यूल कर दो",
+   "I won't be able to come to the office tomorrow, please reschedule the meeting."],
+  ["सो फर्स्ट थिंग यू हैव टू अंडरस्टैंड इज़ कि प्लेसमेंट कितना है",
+   "So the first thing you have to understand is how good the placements are."],
+  ["रिपोर्ट पांच बजे तक भेज देना ओके", "Send the report by 5, okay?"],
+];
 const ROMANIZE_SHOTS = [
   ["मैं कल ऑफिस नहीं आ पाऊंगा, मीटिंग रिशेड्यूल कर दो",
    "Main kal office nahi aa paunga, meeting reschedule kar do."],
@@ -432,9 +457,10 @@ const ROMANIZE_SHOTS = [
   ["रिपोर्ट पांच बजे तक भेज देना ओके", "Report 5 baje tak bhej dena, okay."],
 ];
 
-async function romanizeHinglish(env, text) {
-  const messages = [{ role: "system", content: ROMANIZE_SYSTEM }];
-  for (const [a, b] of ROMANIZE_SHOTS) {
+async function rewriteHindi(env, text, mode) {
+  const translate = mode === "translate";
+  const messages = [{ role: "system", content: translate ? TRANSLATE_SYSTEM : ROMANIZE_SYSTEM }];
+  for (const [a, b] of translate ? TRANSLATE_SHOTS : ROMANIZE_SHOTS) {
     messages.push({ role: "user", content: a }, { role: "assistant", content: b });
   }
   messages.push({ role: "user", content: text });
