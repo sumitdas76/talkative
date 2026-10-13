@@ -305,8 +305,16 @@ async function handleTranscribe(request, env, timing, ctx) {
   const hindiMode = ["roman", "translate"].includes(request.headers.get("X-Hindi"))
     ? request.headers.get("X-Hindi") : null;
   const hinglish = hindiMode !== null;
+  // X-Hindi-Lang: hi pins Whisper to Hindi (being measured, 2026-10-13):
+  // left to auto-detect, mixed speech was labelled English and then
+  // translated or dropped; pinned to Hindi it writes everything, English
+  // words included, in Devanagari, and rewriteHindi converts.
+  const hindiLang = hinglish && request.headers.get("X-Hindi-Lang") === "hi";
+  timing.hindi_lang = hinglish ? (hindiLang ? "hi" : "auto") : undefined;
   if (!hinglish) {
     form.append("language", "en"); // matches the local model's small.en (English-only)
+  } else if (hindiLang) {
+    form.append("language", "hi");
   }
   // verbose_json for per-segment no_speech_prob / avg_logprob, so segments
   // that are really silence can be dropped (see below).
@@ -325,7 +333,7 @@ async function handleTranscribe(request, env, timing, ctx) {
       // ignore
     }
   }
-  if (hindiMode === "roman") {
+  if (hindiMode === "roman" && !hindiLang) {
     prompt = (HINGLISH_STT_PROMPT + " " + prompt).slice(0, 800).trim();
   }
   if (prompt) form.append("prompt", prompt);
@@ -403,9 +411,14 @@ async function handleTranscribe(request, env, timing, ctx) {
   // hindi: true tells the client this dictation held Hindi (it then skips
   // the English grammar pass -- the rewrite already produced final text).
   const out = { text, via: "groq", language: result.language || null, hindi: false };
-  const detected = INDIAN_SCRIPT.test(text) ||
+  const roman = romanHindiWords(text);
+  timing.roman_hindi_words = roman;
+  const detected = INDIAN_SCRIPT.test(text) || roman >= 2 ||
     (hindiMode === "translate" && /hindi|urdu/i.test(result.language || ""));
-  if (detected && text && request.headers.get("X-Hindi-Rewrite") !== "0") {
+  // Roman mode needs no rewrite for text already in Roman letters; translate
+  // mode translates Hindi in either script.
+  const rewrite = INDIAN_SCRIPT.test(text) || (hindiMode === "translate" && detected);
+  if (rewrite && text && request.headers.get("X-Hindi-Rewrite") !== "0") {
     out.stt_text = text;
     const t1 = Date.now();
     out.text = await rewriteHindi(env, text, hindiMode);
@@ -423,6 +436,19 @@ async function handleTranscribe(request, env, timing, ctx) {
 const HINGLISH_STT_PROMPT =
   "Haan, main kal office aaunga. Meeting 4 baje hai, report bhej dena please.";
 const INDIAN_SCRIPT = /[\u0900-\u097F\u0600-\u06FF]/;
+// Common Hindi words as typed in English letters; none is an English word.
+// Two or more in a dictation = it holds Hindi written in Roman script.
+const ROMAN_HINDI = new Set((
+  "hai hain nahi nahin kya kyun kyunki toh ki ke ka ko mein mera meri " +
+  "mujhe aap aapka aapko apna apne humko tum tumko uske iske usko isko " +
+  "woh wala wali wale karna karo kar raha rahi rahe hoga hogi gaya gayi " +
+  "tha thi chahiye lekin aur bhi kuch abhi phir pehle pahle agar " +
+  "matlab accha acha theek thik jayenge milega lena dena bahut zyada kaise " +
+  "kaun kahan kab haan wahan yahan karte karta hota hoti"
+).split(" "));
+function romanHindiWords(text) {
+  return (text.toLowerCase().match(/[a-z]+/g) || []).filter((w) => ROMAN_HINDI.has(w)).length;
+}
 const ROMANIZE_SYSTEM = (
   "You convert transcribed Hindi-English (Hinglish) speech into the way " +
   "people in India type it in chat. Write Hindi and Urdu words in Roman " +
