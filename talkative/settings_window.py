@@ -334,6 +334,9 @@ class _SettingsWindow:
                         bordercolor=border, lightcolor=accent, darkcolor=accent)
         self._accent, self._accent_fg = accent, accent_fg
         self._bg, self._fg, self._field = bg, fg, field
+        # Secondary text that must stay readable on this theme's background
+        # (plain "grey" is faint on dark and nearly invisible on light).
+        self._muted = "#b4b4b4" if self._effective_theme() == "dark" else "#555555"
         # feedback_text is a raw tk.Text (not ttk), so it needs its colors
         # reapplied by hand on every theme switch, not just at creation.
         if hasattr(self, "feedback_text"):
@@ -667,7 +670,7 @@ class _SettingsWindow:
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="How to say code",
                   font=("Segoe UI", 12, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(body, foreground="grey",
+        ttk.Label(body, foreground=self._muted,
                   text="Hold the code dictation key and say it like this.").grid(
             row=1, column=0, columnspan=2, sticky="w", pady=(2, 10))
 
@@ -691,8 +694,8 @@ class _SettingsWindow:
                 ttk.Label(cell, text=get, font=("Consolas", 10),
                           foreground=self._accent).pack(side="left")
                 if note:
-                    ttk.Label(cell, text="  " + note, foreground="grey",
-                              font=("Segoe UI", 8)).pack(side="left")
+                    ttk.Label(cell, text="  " + note, foreground=self._muted,
+                              font=("Segoe UI", 9)).pack(side="left")
                 r += 1
             rows_used[side] = r
 
@@ -700,8 +703,8 @@ class _SettingsWindow:
         notes.grid(row=3, column=0, columnspan=2, sticky="we", pady=(14, 4))
         ttk.Label(notes, text="Good to know", font=("Segoe UI", 10, "bold")).pack(anchor="w")
         for line in dev_mode.HELP_NOTES:
-            ttk.Label(notes, text="•  " + line, wraplength=760, justify="left",
-                      foreground="grey").pack(anchor="w", pady=(2, 0))
+            ttk.Label(notes, text="•  " + line, wraplength=820,
+                      justify="left").pack(anchor="w", pady=(3, 0))
         # Themed footer: the button straight on the Toplevel showed its
         # unthemed (white) background as a strip.
         footer = ttk.Frame(win, padding=(18, 4, 18, 14))
