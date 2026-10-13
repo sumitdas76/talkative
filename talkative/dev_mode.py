@@ -362,6 +362,11 @@ _PROSE_SECOND = {
     "itself", "crashed", "crashes", "crashing", "failed", "fails", "failing",
     "broke", "hangs", "hung", "says", "said", "gave", "gives", "stopped",
 }
+# "<tool> and <tool> need/are ..." is a sentence about two tools; a short
+# "yarn and axios" stays "yarn add axios" (misheard add). "add" too: the
+# prose-safe prefix fix may already have turned "git and" into "git add".
+_AND_PROSE = re.compile(r"\b(need|needs|are|is|both|work|works|were|have|has|"
+                        r"should|will|can|aren't|don't|doesn't)\b", re.IGNORECASE)
 _ENGLISH_VERB = re.compile(r"\b(is|are|was|were|keeps|kept|seems|going to|has been|have been)\b",
                            re.IGNORECASE)
 # Keywords that also start everyday sentences ("let me know", "export the
@@ -489,6 +494,10 @@ def _classify(text):
             len(words) >= 6 and _ENGLISH_VERB.search(text) and not _CODE_SIGNAL.search(text)
             and not re.search(r"\b(dot|slash|colon|at)\b|[./:@]\S", text))):
         return False                                  # git is complaining about ...
+    if (first in _CLI_TOOLS and second in ("and", "add") and len(words) >= 5
+            and _AND_PROSE.search(text) and not _CODE_SIGNAL.search(text)
+            and not re.search(r"\b(dot|slash|colon|dash)\b|[./:@-]\S", text)):
+        return False                                  # npm and node need an update
     if first in _ENGLISHY_KEYWORDS:
         # Arithmetic counts as code-like too: "let c equal to 5 plus 2"
         # (the user's own dictation, 2026-09-27) -- "let me know" has none.
@@ -1238,7 +1247,7 @@ def code_line(raw):
         return _sql_finish(out)
     out = _powershell(out)
     # C#'s Console is a class, not the JS console object.
-    out = re.sub(r"^console\.(WriteLine|ReadLine|Write|ReadKey)", r"Console.", out)
+    out = re.sub(r"^console\.(WriteLine|ReadLine|Write|ReadKey)\b", r"Console.\1", out)
     # C#'s Console is a class, not the JS console object.
     out = re.sub(r"^console\.(WriteLine|ReadLine|Write|ReadKey)\b", r"Console.\1", out)
     # TypeScript type aliases: "or" is a union there (not Python's or).
