@@ -337,6 +337,10 @@ class _SettingsWindow:
         # Secondary text that must stay readable on this theme's background
         # (plain "grey" is faint on dark and nearly invisible on light).
         self._muted = "#b4b4b4" if self._effective_theme() == "dark" else "#555555"
+        # Hint text everywhere in Settings uses this style (was a fixed
+        # "grey"), so it is readable on both themes and follows a live
+        # Light/Dark switch.
+        style.configure("Muted.TLabel", foreground=self._muted)
         # feedback_text is a raw tk.Text (not ttk), so it needs its colors
         # reapplied by hand on every theme switch, not just at creation.
         if hasattr(self, "feedback_text"):
@@ -526,7 +530,7 @@ class _SettingsWindow:
         example_box.pack(fill="x", pady=(8, 0))
         ttk.Label(example_box, text="You said:").pack(anchor="w")
         ttk.Label(example_box, text=_EXAMPLE_SPOKEN, wraplength=480,
-                  foreground="grey").pack(anchor="w", pady=(0, 6))
+                  style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
         ttk.Label(example_box, text="Appears on screen:").pack(anchor="w")
         self.example_label = ttk.Label(example_box, text="", wraplength=480)
         self.example_label.pack(anchor="w")
@@ -540,7 +544,7 @@ class _SettingsWindow:
             variable=self.var_history,
         ).pack(anchor="w")
         ttk.Label(
-            history_box, foreground="grey",
+            history_box, style="Muted.TLabel",
             text="Saved only on this device. Nothing is sent anywhere.",
         ).pack(anchor="w", pady=(2, 8))
         ttk.Button(
@@ -608,9 +612,9 @@ class _SettingsWindow:
         )
         self.hotkey_btn.pack(side="left")
         ttk.Label(row, text="  Click to change, then hold the key(s) you want.",
-                  foreground="grey").pack(side="left")
+                  style="Muted.TLabel").pack(side="left")
         ttk.Label(
-            normal, wraplength=500, foreground="grey",
+            normal, wraplength=500, style="Muted.TLabel",
             text="For emails, messages and anything in sentences.",
         ).pack(anchor="w", pady=(6, 0))
 
@@ -625,9 +629,9 @@ class _SettingsWindow:
         )
         self.dev_hotkey_btn.pack(side="left")
         ttk.Label(dev_row, text="  Click to change, then hold the key(s) you want.",
-                  foreground="grey").pack(side="left")
+                  style="Muted.TLabel").pack(side="left")
         ttk.Label(
-            code, wraplength=500, foreground="grey",
+            code, wraplength=500, style="Muted.TLabel",
             text="For SQL, terminal commands and code: “select star from users "
                  "where id equals five” types SELECT * FROM users WHERE id = 5.",
         ).pack(anchor="w", pady=(6, 0))
@@ -652,7 +656,7 @@ class _SettingsWindow:
             text="Tap to start, tap again to stop and insert",
         ).pack(anchor="w", pady=(4, 0))
         ttk.Label(
-            style_box, wraplength=500, foreground="grey",
+            style_box, wraplength=500, style="Muted.TLabel",
             text="Holding still works in tap mode. Listening stops by itself "
                  f"after {config.TOGGLE_MAX_SECONDS // 60} minutes.",
         ).pack(anchor="w", pady=(6, 0))
@@ -670,7 +674,7 @@ class _SettingsWindow:
         body.pack(fill="both", expand=True)
         ttk.Label(body, text="How to say code",
                   font=("Segoe UI", 12, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(body, foreground=self._muted,
+        ttk.Label(body, style="Muted.TLabel",
                   text="Hold the code dictation key and say it like this.").grid(
             row=1, column=0, columnspan=2, sticky="w", pady=(2, 10))
 
@@ -694,7 +698,7 @@ class _SettingsWindow:
                 ttk.Label(cell, text=get, font=("Consolas", 10),
                           foreground=self._accent).pack(side="left")
                 if note:
-                    ttk.Label(cell, text="  " + note, foreground=self._muted,
+                    ttk.Label(cell, text="  " + note, style="Muted.TLabel",
                               font=("Segoe UI", 9)).pack(side="left")
                 r += 1
             rows_used[side] = r
@@ -775,7 +779,7 @@ class _SettingsWindow:
             self.audio_combo.current(0)
         self.audio_combo.pack(anchor="w", pady=6)
         ttk.Label(
-            f, wraplength=520, foreground="grey",
+            f, wraplength=520, style="Muted.TLabel",
             text="If dictation hears nothing, the wrong microphone is "
                  "selected. Takes effect from the next dictation.",
         ).pack(anchor="w")
@@ -799,7 +803,7 @@ class _SettingsWindow:
         ttk.Checkbutton(box2, text="Press Enter after inserting the text",
                         variable=self.var_enter).pack(anchor="w", pady=2)
         ttk.Label(
-            f, wraplength=520, foreground="grey",
+            f, wraplength=520, style="Muted.TLabel",
             text="\nUndo: press Ctrl+Z in the target application — each "
                  "dictation is inserted as a single edit.",
         ).pack(anchor="w")
@@ -828,10 +832,10 @@ class _SettingsWindow:
             )
             pad = 0 if n_tiles == 1 else ((0, 6) if col == 0 else (6, 0))
             box.grid(row=0, column=col, sticky="nsew", padx=pad)
-            latency = ttk.Label(box, text=info["latency"], foreground="grey",
+            latency = ttk.Label(box, text=info["latency"], style="Muted.TLabel",
                                  wraplength=220)
             latency.pack(anchor="w")
-            version_label = ttk.Label(box, text="", foreground="grey")
+            version_label = ttk.Label(box, text="", style="Muted.TLabel")
             version_label.pack(anchor="w")
             status = ttk.Label(box, text="")
             status.pack(anchor="w")
@@ -852,9 +856,9 @@ class _SettingsWindow:
 
         self._build_grammar_section(f)
 
-        self.storage_label = ttk.Label(f, foreground="grey", text="")
+        self.storage_label = ttk.Label(f, style="Muted.TLabel", text="")
         self.storage_label.pack(anchor="w", pady=(4, 0))
-        self.update_label = ttk.Label(f, foreground="grey", text="")
+        self.update_label = ttk.Label(f, style="Muted.TLabel", text="")
         self.update_label.pack(anchor="w")
         self.undo_btn = ttk.Button(
             f, text="Undo last update", command=self._undo_update
@@ -868,7 +872,7 @@ class _SettingsWindow:
         ttk.Label(
             box,
             text="Fix grammar and punctuation",
-            foreground="grey", wraplength=500,
+            style="Muted.TLabel", wraplength=500,
         ).pack(anchor="w")
         status = ttk.Label(box, text="")
         status.pack(anchor="w")
@@ -1203,7 +1207,7 @@ class _SettingsWindow:
         box = ttk.LabelFrame(f, text="Feedback", padding=10)
         box.pack(fill="x", pady=(10, 0))
         ttk.Label(
-            box, wraplength=500, foreground="grey",
+            box, wraplength=500, style="Muted.TLabel",
             text="Send a message straight to Sumit. A reply, if there is "
                  "one, will show up here.",
         ).pack(anchor="w")
@@ -1220,7 +1224,7 @@ class _SettingsWindow:
             row, text="Send", command=self._send_feedback
         )
         self.feedback_send_btn.pack(side="left")
-        self.feedback_status = ttk.Label(row, text="", foreground="grey")
+        self.feedback_status = ttk.Label(row, text="", style="Muted.TLabel")
         self.feedback_status.pack(side="left", padx=8)
 
         if config.FEEDBACK_LAST_REPLY:
