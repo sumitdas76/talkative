@@ -549,7 +549,10 @@ export default {
     // over-cap install before that isolate learns its count. (Speculative
     // responses only carry quota_ms/quota_count if the check happened to
     // finish before the upstream call did.)
-    const speculative = !knownNearCap(installId, DAILY_QUOTA_PER_INSTALL) &&
+    // X-Quota-Sync: 1 waits for the quota checks so the response carries
+    // quota_count / ip_quota_count (tests; only slows the caller down).
+    const speculative = request.headers.get("X-Quota-Sync") !== "1" &&
+      !knownNearCap(installId, DAILY_QUOTA_PER_INSTALL) &&
       !(ipName && knownNearCap(ipName, DAILY_QUOTA_PER_IP));
     timing.speculative = speculative;
     try {
