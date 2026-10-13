@@ -1192,7 +1192,7 @@ class _SettingsWindow:
             box, wraplength=500,
             text="By default, Talkative processes your dictation via Cloud: "
                  "your audio is sent to a remote server for transcription "
-                 "and cleanup, then discarded — not stored. Switch to "
+                 "and cleanup, then discarded, not stored. Switch to "
                  "Local in the General tab and it runs fully offline "
                  "instead, with nothing ever leaving this PC. Dictation "
                  "history, if you turn it on in the Dictation tab, is "
