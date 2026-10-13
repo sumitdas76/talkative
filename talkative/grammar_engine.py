@@ -102,6 +102,9 @@ _tokenizer = None
 # Output tokens per second on this PC -- measured at load, then updated
 # from real dictations (see apply()). None until measured.
 _speed = None
+# Fixed seconds every generation costs regardless of length (reading the
+# input, starting up). Measured at load with _speed; 0 until then.
+_overhead = 0.0
 device = "cpu"
 # Why the last apply() skipped the pass (for debug.log), or None.
 last_skip = None
@@ -174,7 +177,7 @@ def load():
     """Load the engine if installed. Idempotent, thread-safe, never raises.
     Returns True when the engine is ready. Call from a background thread at
     startup -- loading takes a moment and must not delay dictation."""
-    global _generator, _tokenizer, _speed, device
+    global _generator, _tokenizer, _speed, _overhead, device
     with _lock:
         if _generator is not None:
             return True
@@ -198,11 +201,12 @@ def load():
                 generator = ctranslate2.Generator(str(engine_dir()), device=dev,
                                                   compute_type=compute, **extra)
                 _generate(generator, tokenizer, "so the meeting is on friday")  # fills the cache
-                n, secs, _ = _generate(generator, tokenizer, "i think we should ship it on monday")
+                n1, s1, _ = _generate(generator, tokenizer, "i think we should ship it on monday")
+                n2, s2, _ = _generate(generator, tokenizer, _LONG_WARMUP)
             except Exception:
                 continue
             _generator, _tokenizer, device = generator, tokenizer, dev
-            _speed = n / secs if secs > 0 and n else None
+            _speed, _overhead = _fit_speed(n1, s1, n2, s2)
             return True
         return False
 
@@ -274,13 +278,33 @@ def _generate(generator, tokenizer, text):
     return len(ids), secs, tokenizer.decode(ids, skip_special_tokens=True).strip()
 
 
+# Speed at load (2026-10-13): timing one short warm-up made the fixed
+# per-call cost look like slowness, and the old prediction then added its
+# own allowance for it -- predictions ran 1.5-2x the real time on this PC,
+# so slower PCs skipped cleanup they had time for. Two warm-ups of
+# different lengths separate the per-token speed from the fixed cost.
+_LONG_WARMUP = ("so the client called this morning and said they want the dashboard "
+                "changes before the demo which means we need to finish the charts "
+                "and the export feature by thursday")
+
+
+def _fit_speed(n1, s1, n2, s2):
+    """(tokens per second, fixed seconds per call) from two timed runs;
+    falls back to the long run alone if the timings don't separate."""
+    if n2 > n1 and s2 > s1:
+        rate = (n2 - n1) / (s2 - s1)
+        overhead = max(0.0, s1 - n1 / rate)
+        return rate, overhead
+    return (n2 / s2 if n2 and s2 > 0 else None), 0.0
+
+
 def predicted_seconds(text):
     """How long a pass over `text` should take on this PC, from its
     measured speed; None before the engine has measured itself. Output is
     about as long as the input, so input tokens are a fair estimate."""
     if not _speed or _tokenizer is None:
         return None
-    return (len(_tokenizer.encode(text).tokens) * 1.15 + 8) / _speed
+    return _overhead + (len(_tokenizer.encode(text).tokens) * 1.15 + 2) / _speed
 
 
 def _digits_ok(inp, out):
@@ -586,7 +610,8 @@ def apply(text):
             if n and secs > 0:
                 # Follow the machine's real speed (thermal throttling,
                 # battery saver, other load) rather than one warm-up.
-                _speed = n / secs if _speed is None else 0.7 * _speed + 0.3 * (n / secs)
+                rate = n / max(secs - _overhead, secs * 0.25)
+                _speed = rate if _speed is None else 0.7 * _speed + 0.3 * rate
     except Exception:
         return text
 
