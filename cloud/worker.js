@@ -296,21 +296,24 @@ async function handleTranscribe(request, env, timing, ctx) {
   form.append("model", sttModel);
   // X-Hindi (2026-10-13, not yet sent by any released app): the speaker
   // mixes Hindi into English, and Groq isn't pinned to English.
-  //   roman      Hindi typed in English letters ("kal meeting hai"). A
-  //              Roman-script example in the prompt nudges Whisper that
-  //              way; anything still in Indian script is rewritten.
-  //   translate  Hindi parts translated into English. No Roman prompt, so
-  //              Hindi comes back in its own script and is easy to spot.
-  // See rewriteHindi. Without the header: English, as before.
+  //   roman      Hindi typed in English letters ("kal meeting hai").
+  //   translate  Hindi parts translated into English.
+  // Two passes (measured 2026-10-13 on 20 Hinglish YouTube clips + 10
+  // English recordings): pass 1 auto-detects with a Roman Hinglish example
+  // prompt; plain English ends there, exactly as before. If it holds Hindi
+  // (Indian script, Roman Hindi grammar words, or Groq says Hindi), pass 2
+  // pins Whisper to Hindi -- faithful for mixed speech (auto-detect often
+  // translated or dropped the Hindi), but garbage for plain English (WER
+  // 24% -> 77-95%), hence only after detection -- and rewriteHindi turns
+  // its Devanagari into Roman Hinglish or English. Without the header:
+  // English, as before.
   const hindiMode = ["roman", "translate"].includes(request.headers.get("X-Hindi"))
     ? request.headers.get("X-Hindi") : null;
   const hinglish = hindiMode !== null;
-  // X-Hindi-Lang: hi pins Whisper to Hindi (being measured, 2026-10-13):
-  // left to auto-detect, mixed speech was labelled English and then
-  // translated or dropped; pinned to Hindi it writes everything, English
-  // words included, in Devanagari, and rewriteHindi converts.
-  const hindiLang = hinglish && request.headers.get("X-Hindi-Lang") === "hi";
-  timing.hindi_lang = hinglish ? (hindiLang ? "hi" : "auto") : undefined;
+  // X-Hindi-Lang (tests only): "hi" = pass 2 alone, "auto" = pass 1 alone.
+  const langTest = hinglish ? request.headers.get("X-Hindi-Lang") : null;
+  const hindiLang = langTest === "hi";
+  const twoPass = hinglish && langTest !== "hi" && langTest !== "auto";
   if (!hinglish) {
     form.append("language", "en"); // matches the local model's small.en (English-only)
   } else if (hindiLang) {
@@ -333,7 +336,7 @@ async function handleTranscribe(request, env, timing, ctx) {
       // ignore
     }
   }
-  if (hindiMode === "roman" && !hindiLang) {
+  if (hinglish && !hindiLang) {
     prompt = (HINGLISH_STT_PROMPT + " " + prompt).slice(0, 800).trim();
   }
   if (prompt) form.append("prompt", prompt);
@@ -394,17 +397,7 @@ async function handleTranscribe(request, env, timing, ctx) {
   // (no_speech_threshold 0.6 + log_prob_threshold -1.0); do the same here.
   // Per-segment numbers go back in timing so the thresholds stay
   // measurable from the client.
-  const segments = Array.isArray(result.segments) ? result.segments : null;
-  let text = result.text || "";
-  if (segments) {
-    const kept = [];
-    timing.segments = segments.map((s) => {
-      const silent = s.no_speech_prob > NO_SPEECH_PROB && s.avg_logprob < MIN_AVG_LOGPROB;
-      if (!silent) kept.push(s.text || "");
-      return [round2(s.no_speech_prob), round2(s.avg_logprob), silent ? 0 : 1];
-    });
-    text = kept.join("").trim();
-  }
+  let text = speechText(result, timing);
   if (!hinglish) {
     return { text, via: "groq" };
   }
@@ -414,7 +407,38 @@ async function handleTranscribe(request, env, timing, ctx) {
   const roman = romanHindiWords(text);
   timing.roman_hindi_words = roman;
   const detected = INDIAN_SCRIPT.test(text) || roman >= 2 ||
-    (hindiMode === "translate" && /hindi|urdu/i.test(result.language || ""));
+    /hindi|urdu/i.test(result.language || "");
+  if (detected && twoPass && text) {
+    // Pass 2, pinned to Hindi. No prompt: the client's (English sentence
+    // style, dictionary words) pulls Whisper back towards English.
+    const t2 = Date.now();
+    try {
+      const f2 = new FormData();
+      f2.append("file", new Blob([bytes], { type: "audio/wav" }), "audio.wav");
+      f2.append("model", sttModel);
+      f2.append("language", "hi");
+      f2.append("response_format", "verbose_json");
+      const r2 = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.GROQ_API_KEY}` },
+        body: f2,
+      });
+      if (r2.ok) {
+        const hi = speechText(await r2.json(), {});
+        if (hi) {
+          out.pass1_text = text;
+          text = hi;
+        }
+      } else if (r2.status === 429) {
+        const [kind, detail] = groqLimitKind(sttModel, await r2.text());
+        noteHit(env, ctx, kind, detail);
+      }
+    } catch (e) {
+      // keep pass 1
+    }
+    timing.pass2_ms = Date.now() - t2;
+    out.text = text;
+  }
   // Roman mode needs no rewrite for text already in Roman letters; translate
   // mode translates Hindi in either script.
   const rewrite = INDIAN_SCRIPT.test(text) || (hindiMode === "translate" && detected);
@@ -430,6 +454,20 @@ async function handleTranscribe(request, env, timing, ctx) {
   return out;
 }
 
+// Whisper's text minus segments that are really silence (see the comment
+// above its call in handleTranscribe); per-segment numbers into timing.
+function speechText(result, timing) {
+  const segments = Array.isArray(result.segments) ? result.segments : null;
+  if (!segments) return result.text || "";
+  const kept = [];
+  timing.segments = segments.map((s) => {
+    const silent = s.no_speech_prob > NO_SPEECH_PROB && s.avg_logprob < MIN_AVG_LOGPROB;
+    if (!silent) kept.push(s.text || "");
+    return [round2(s.no_speech_prob), round2(s.avg_logprob), silent ? 0 : 1];
+  });
+  return kept.join("").trim();
+}
+
 // Hindi modes (see X-Hindi in handleTranscribe). The STT prompt shows
 // Whisper the target style; the rewrite turns any Devanagari/Urdu script
 // it still produced into Roman letters, as Indians type Hindi in chat.
@@ -438,41 +476,59 @@ const HINGLISH_STT_PROMPT =
 const INDIAN_SCRIPT = /[\u0900-\u097F\u0600-\u06FF]/;
 // Common Hindi words as typed in English letters; none is an English word.
 // Two or more in a dictation = it holds Hindi written in Roman script.
+// Hinglish keeps Hindi's grammar and slots English content words into it
+// ("mujhe kal airport drop kar dena"), so these are Hindi's grammar words:
+// postpositions, pronouns, helper verbs, and the verbs that carry an
+// English word (kar dena, kiya, liya, hua).
 const ROMAN_HINDI = new Set((
   "hai hain nahi nahin kya kyun kyunki toh ki ke ka ko mein mera meri " +
   "mujhe aap aapka aapko apna apne humko tum tumko uske iske usko isko " +
   "woh wala wali wale karna karo kar raha rahi rahe hoga hogi gaya gayi " +
   "tha thi chahiye lekin aur bhi kuch abhi phir pehle pahle agar " +
   "matlab accha acha theek thik jayenge milega lena dena bahut zyada kaise " +
-  "kaun kahan kab haan wahan yahan karte karta hota hoti"
+  "kaun kahan kab haan wahan yahan karte karta hota hoti kiya kiye diya " +
+  "diye liya liye hua hui hue hona karke karunga karenge karega jaana " +
+  "aana sirf isliye kyonki waise vaise wahi yahi unka unke inka " +
+  "humara hamara tumhara aapne maine humne usne kisi koi kaun"
 ).split(" "));
 function romanHindiWords(text) {
   return (text.toLowerCase().match(/[a-z]+/g) || []).filter((w) => ROMAN_HINDI.has(w)).length;
 }
 const ROMANIZE_SYSTEM = (
   "You convert transcribed Hindi-English (Hinglish) speech into the way " +
-  "people in India type it in chat. Write Hindi and Urdu words in Roman " +
-  "(English) letters with common informal spellings (hai, nahi, kya, " +
-  "mujhe, kar raha hoon, theek hai). Write English words, even if they " +
-  "were transcribed in Hindi script, in normal English spelling (meeting, " +
-  "placement, experience). Write numbers as digits. Do not translate, do " +
-  "not add or remove words, keep the word order. Add light punctuation. " +
-  "Reply with only the converted text."
+  "people in India type it in chat. In Hinglish, Hindi supplies the " +
+  "grammar (postpositions like ko, ka, ki, mein, se; helper verbs like " +
+  "hai, tha, raha, hoga; verbs like kar dena, kiya, liya) and English " +
+  "supplies most content words (nouns, verbs, adjectives). Write the " +
+  "Hindi and Urdu words in Roman (English) letters with common informal " +
+  "spellings (hai, nahi, kya, mujhe, kar raha hoon, theek hai). Write " +
+  "every English word in normal English spelling, even when it was " +
+  "transcribed in Hindi script (एडमिशन -> admission, प्लेसमेंट -> " +
+  "placement). Write numbers as digits. Do not translate, do not add or " +
+  "remove words, keep the word order. Add light punctuation. Reply with " +
+  "only the converted text."
 );
 const TRANSLATE_SYSTEM = (
-  "You turn transcribed speech that mixes Hindi (or Urdu) and English into " +
-  "natural English, as the speaker would have typed it in English. " +
-  "Translate the Hindi parts, keep the English parts as spoken, keep the " +
-  "speaker's meaning, tone, and person (I/you/we), and keep names and " +
-  "numbers (numbers as digits). Do not summarize, do not add anything, do " +
-  "not answer questions in the text. Add punctuation. Reply with only the " +
-  "English text."
+  "You turn transcribed speech that mixes Hindi (or Urdu) and English " +
+  "(Hinglish) into natural English, as the speaker would have typed it in " +
+  "English. Hinglish sentences are built on Hindi grammar with English " +
+  "content words slotted in, so rebuild each sentence in English word " +
+  "order around the English words the speaker already used, and keep those " +
+  "words (\"kal airport drop kar dena\" -> \"Drop me at the airport " +
+  "tomorrow.\"). Translate the Hindi parts; keep the English parts as " +
+  "spoken, including Indian English such as prepone, revert, or passing " +
+  "out. Keep the speaker's meaning, tone, and person (I/you/we), and keep " +
+  "names and numbers (numbers as digits). Do not summarize, do not add " +
+  "anything, do not answer questions in the text. Add punctuation. Reply " +
+  "with only the English text."
 );
 const TRANSLATE_SHOTS = [
   ["मैं कल ऑफिस नहीं आ पाऊंगा, मीटिंग रिशेड्यूल कर दो",
    "I won't be able to come to the office tomorrow, please reschedule the meeting."],
   ["सो फर्स्ट थिंग यू हैव टू अंडरस्टैंड इज़ कि प्लेसमेंट कितना है",
    "So the first thing you have to understand is how good the placements are."],
+  ["mujhe kal airport drop kar dena, flight subah 6 baje hai",
+   "Drop me at the airport tomorrow, the flight is at 6 in the morning."],
   ["रिपोर्ट पांच बजे तक भेज देना ओके", "Send the report by 5, okay?"],
 ];
 const ROMANIZE_SHOTS = [
@@ -481,6 +537,8 @@ const ROMANIZE_SHOTS = [
   ["सो फर्स्ट थिंग यू हैव टू अंडरस्टैंड इज़ कि प्लेसमेंट कितना है",
    "So first thing you have to understand is ki placement kitna hai."],
   ["रिपोर्ट पांच बजे तक भेज देना ओके", "Report 5 baje tak bhej dena, okay."],
+  ["मैंने डिसाइड किया कि टॉप टेन कॉलेज में एडमिशन मिलेगा तो जाऊंगा",
+   "Maine decide kiya ki top 10 college mein admission milega to jaunga."],
 ];
 
 async function rewriteHindi(env, text, mode) {
