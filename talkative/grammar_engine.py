@@ -25,35 +25,34 @@ worse than no cleanup at all):
 
 import re
 import threading
+from collections import Counter
 
 from . import config, hardware, model_manager
 
 _SYSTEM = (
-    "You clean up dictated text. Fix grammar and punctuation. Remove word "
-    "repetitions, false starts, and spoken self-corrections (keep only what "
-    "the speaker corrected themselves to). Most sentences are already "
-    "clear and should only get grammar and punctuation fixes -- leave the "
-    "speaker's own words, idioms, and phrasing alone even if a plainer or "
-    "more formal version occurs to you. Only reword a sentence when it is "
-    "genuinely garbled or hard to follow (missing words, tangled syntax), "
-    "and even then stay as close to the speaker's own words as you "
-    "reasonably can. Never add information or invent claims the speaker "
-    "didn't make, never change names or numbers, and never drop something "
-    "the speaker actually said. Keep every number exactly as the speaker "
-    "said it: number words stay words and digits stay digits. Reply with "
-    "only the cleaned text."
+    "You clean up dictated text. Fix grammar, punctuation, and "
+    "capitalization only. Remove word repetitions, false starts, and spoken "
+    "self-corrections (keep only what the speaker corrected themselves to). "
+    "Do not reword anything: keep every word the speaker said, in their "
+    "order, and never swap a word for a synonym or a different word, even "
+    "if the sentence sounds odd or a plainer version occurs to you. Never "
+    "drop a phrase, never add information, never change names or numbers. "
+    "Keep every number exactly as the speaker said it: number words stay "
+    "words and digits stay digits. Reply with only the cleaned text."
 )
-# The number sentence (2026-09-27): Cloud turned "three thirty" into "3:30"
-# and "two point one" into "2.1", and the local model turned "three
-# thirty" into "3:00 PM" -- each then failed the digit guard, so the whole
-# dictation lost its cleanup. Keep in sync with cloud/worker.js's SYSTEM.
+# Local only (2026-10-13): the July 2026 looser prompt ("reword a sentence
+# when it is genuinely garbled") made the 1.5B model change meaning on real
+# speech ("things move in a box" -> "stay in a box", "Painting, he tells
+# us, is..." lost "he tells us"), so Local is back on a strict leash, with
+# matching strict guards (validate(strict=True)). Cloud keeps the looser
+# prompt in cloud/worker.js's SYSTEM -- they deliberately differ now.
+# The number sentence (2026-09-27): the local model turned "three thirty"
+# into "3:00 PM", which then failed the digit guard.
 
 # Few-shot pairs demonstrating the leash; auditioned July 2026 against the
 # debug.log corpus (they materially improve instruction-following in
-# sub-1B models). The last pair demonstrates rewording a garbled/unclear
-# sentence (added 2026-07-20, at the user's request, alongside loosening
-# the retention guards below to match -- deliberately accepts more risk of
-# the model guessing wrong than the original strict leash did).
+# sub-1B models). The "honestly" pair (2026-10-13, replacing the July
+# "reword a garbled sentence" example) shows informal phrasing kept as said.
 _SHOTS = [
     ("the report the report needs to go out before the meeting starts",
      "The report needs to go out before the meeting starts."),
@@ -63,10 +62,8 @@ _SHOTS = [
      "time there was a mistake in the numbers and the client noticed it",
      "We should also check the numbers again before we send it, because last "
      "time there was a mistake in the numbers and the client noticed it."),
-    ("there's this issue where when the user clicks the button nothing "
-     "happens sometimes it's kind of random",
-     "There's an issue where clicking the button sometimes does nothing; "
-     "it seems random."),
+    ("honestly it's fine it's all good we can just push it to next week you know",
+     "Honestly, it's fine, it's all good. We can just push it to next week, you know."),
     # Numbers stay as said (2026-09-27): the 1.5B model ignored the
     # instruction alone and kept writing "three thirty" as "3:00 PM".
     ("the call is at four fifteen and the budget is two point five million",
@@ -277,13 +274,23 @@ def _digits_ok(inp, out):
     return sorted(_DIGIT_RUN.findall(inp)) == sorted(_DIGIT_RUN.findall(out))
 
 
-def _retention_ok(inp, out):
+def _retention_ok(inp, out, strict=False):
     src = _WORD.findall(inp.lower())
     if not src:
         return True
     dst = set(_WORD.findall(out.lower()))
-    kept = sum(1 for w in src if w in dst) / len(src)
-    if kept < config.GRAMMAR_MIN_RETENTION:
+    if strict:
+        # Strict (Local): count each occurrence, so "I'm okay, I'm fine."
+        # -> "I'm okay." loses an "I'm" instead of hiding behind the other.
+        left = Counter(_WORD.findall(out.lower()))
+        kept = 0
+        for w in src:
+            if left[w]:
+                left[w] -= 1
+                kept += 1
+        if kept / len(src) < config.GRAMMAR_LOCAL_MIN_RETENTION:
+            return False
+    elif sum(1 for w in src if w in dst) / len(src) < config.GRAMMAR_MIN_RETENTION:
         return False
     # Additionally, no whole input sentence may vanish. The rule stages
     # upstream already removed retractions and repeats, so the engine
@@ -324,6 +331,33 @@ def _retention_ok(inp, out):
         if sum(1 for w in content if w in dst) / len(content) < config.GRAMMAR_MIN_SENTENCE_RETENTION:
             return False
     return True
+
+
+def _same_words_ok(inp, out):
+    """Strict (Local) only: the output's content words must be the input's,
+    give or take an ending ("add" -> "adds"): none new, none lost. Catches a
+    swapped word or a dropped phrase the retention ratios can't see in a
+    long sentence ("things move in a box" -> "things stay in a box",
+    "Painting, he tells us, is..." -> "Painting is...", both 2026-10-11)."""
+    a = {w.replace("'", "") for w in _WORD.findall(inp.lower())}
+    b = {w.replace("'", "") for w in _WORD.findall(out.lower())}
+
+    def covered(words, other):
+        stems = {w[:4] for w in other if len(w) >= 4}
+        return all(w in other or w in _STOPWORDS or w.isdigit()
+                   or (len(w) >= 4 and w[:4] in stems) for w in words)
+
+    return covered(b, a) and covered(a, b)
+
+
+_DOTTED = re.compile(r"\w+(?:\.\w+)+")
+
+
+def _dotted_ok(inp, out):
+    """A dotted name ("gmail.com", "settings.py", "2.3.1") must survive
+    unbroken -- the strict local prompt made the model write "gmail.com."
+    as "gmail. com." (2026-10-13), which every word-based guard accepts."""
+    return all(d in out for d in _DOTTED.findall(inp))
 
 
 def _length_ok(inp, out):
@@ -496,15 +530,19 @@ def _ending_ok(inp, out):
     return last not in _STOPWORDS and last in src[-12:]
 
 
-def validate(inp, out):
-    """Run all eleven deterministic guards against an (input, output) pair.
+def validate(inp, out, strict=False):
+    """Run all twelve deterministic guards (thirteen with `strict`, the local
+    engine's tighter leash: same words, higher retention) against an (input, output) pair.
     True only if `out` is safe to use in place of `inp`. Shared by the local
     engine's apply() below and cloud_client.grammar_apply() (same leash
     applied to a remote model's output -- see grammar_engine.py's module
     docstring for why the guards exist)."""
     if not out:
         return False
-    return (_digits_ok(inp, out) and _retention_ok(inp, out)
+    if strict and not _same_words_ok(inp, out):
+        return False
+    return (_digits_ok(inp, out) and _dotted_ok(inp, out)
+            and _retention_ok(inp, out, strict)
             and _length_ok(inp, out) and _second_person_ok(inp, out)
             and _question_ok(inp, out) and _no_invented_second_person(inp, out)
             and _negation_ok(inp, out) and _ending_ok(inp, out)
@@ -543,6 +581,6 @@ def apply(text):
     # unprompted; keep only the answer.
     out = re.sub(r"^<think>.*?</think>\s*", "", out, flags=re.DOTALL).strip()
 
-    if not validate(text, out):
+    if not validate(text, out, strict=True):
         return text
     return out

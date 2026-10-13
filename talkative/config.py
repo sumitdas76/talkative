@@ -134,6 +134,11 @@ GRAMMAR_MIN_RETENTION = 0.4
 # AI"). 0.5 caught that and rejected none of 130+ good local outputs or
 # 119 good Cloud outputs in the 2026-09-27 evaluation.
 GRAMMAR_MIN_SENTENCE_RETENTION = 0.5
+# The local engine's stricter leash (2026-10-13): the July loosening above
+# let the 1.5B model change meaning on real speech, so Local counts each
+# word occurrence against this instead of GRAMMAR_MIN_RETENTION, and also
+# must not add or drop a content word (grammar_engine.validate(strict=True)).
+GRAMMAR_LOCAL_MIN_RETENTION = 0.7
 # Local grammar on slow hardware: the engine measures its own speed on this
 # PC and skips the pass for a dictation it predicts would take longer than
 # this, pasting the rules-cleaned text instead of making the user wait
