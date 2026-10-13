@@ -221,11 +221,13 @@ def check_hotkey_rules():
 
 
 def check_text_rules():
-    """D17: number formatting and spoken bullets, fixed cases."""
-    for script in ("numbers_test.py", "bullets_test.py"):
+    """D17: number formatting and spoken bullets; D20: spoken corrections
+    replace only the corrected words."""
+    for check_id, script in (("D17", "numbers_test.py"), ("D17", "bullets_test.py"),
+                             ("D20", "self_correction_test.py")):
         code, out = run_py([script], ROOT / "tools", timeout=60)
         last = out.strip().splitlines()[-1] if out.strip() else "no output"
-        record("D17", f"Text rules: {script[:-8]}", "PASS" if code == 0 else "FAIL", last)
+        record(check_id, f"Text rules: {script[:-8]}", "PASS" if code == 0 else "FAIL", last)
 
 
 def check_pipeline():
@@ -367,6 +369,7 @@ def main():
         record("W2", "Tray icon checks", "SKIP", "--no-gui")
         record("D12", "Overlapping pastes keep the clipboard", "SKIP", "--no-gui")
         record("D16", "Clipboard formats survive a dictation", "SKIP", "--no-gui")
+        record("W4", "Tray device submenus", "SKIP", "--no-gui")
         record("F6", "First-run switch to Cloud mid-download", "SKIP", "--no-gui")
     else:
         check_fresh_launch(exe)
@@ -377,12 +380,19 @@ def main():
     _script_check("D13", "Cloud busy/offline: Local fallback or retry, never lost", "cloud_busy_test.py", 300)
     _script_check("P4", "Leftover temp copies removed, a copy in use never touched", "temp_cleanup_test.py", 60)
     check_audio_race()
+    _script_check("D21", "Lost hotkey release dropped, wake-up reset", "lost_release_test.py", 60)
+    _script_check("D22", "Cloud connections reused, stale one retried, proxy falls back",
+                  "cloud_conn_test.py", 120)
+    _script_check("D23", "'new line' in code dictation; tool sentences stay prose", "code_newline_test.py", 60)
+    _script_check("W5", "settings.json saved atomically, one save at a time", "settings_save_test.py", 60)
+    _script_check("W6", "Models tab shows a background grammar download", "grammar_tile_test.py", 60)
     check_hotkey_rules()
     check_pipeline()
     check_text_rules()
     if not a.no_gui:
         check_layout()
         check_tray()
+        _script_check("W4", "Tray Microphone/Headphones submenus list devices", "tray_devices_test.py", 60)
         _script_check("D12", "Overlapping pastes keep the user's clipboard", "clipboard_race_test.py", 90)
         _script_check("D16", "Clipboard image/files/rich text survive; dictation kept out of history",
                       "clipboard_formats_test.py", 60)

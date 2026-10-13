@@ -2,6 +2,58 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [1.3.14] - 2026-10-13
+
+### New
+
+- Spoken numbers are typed as digits where that's what you'd write
+  ("the meeting is at three thirty" types "3:30", "we need two lakh
+  fifty thousand" types "we need 2.5 lakh"), and left as words where
+  words read better.
+- Spoken lists become bullet points: say "first..., second..., third..."
+  or "point one..., point two..." and each item lands on its own line.
+- Code dictation: say "new line" to start the next line of code.
+- Right-click the tray icon to pick your microphone, or to switch the
+  headphones or speakers Windows plays sound through.
+
+### Fixed
+
+- Spoken corrections only replace what you corrected. "Let's meet on
+  Monday, sorry, I mean Tuesday" now types "Let's meet on Tuesday."
+  instead of just "Tuesday."
+- Talkative keeps working after the PC sleeps, locks, or you press
+  Ctrl+Alt+Del. Before, the hotkey could stop responding until a restart,
+  or keep listening after you let go.
+- Your clipboard is left exactly as it was after a dictation, including
+  a copied picture or file, and dictations no longer fill up your
+  clipboard history (Win+V).
+- Local mode no longer rewords what you said. It fixes grammar,
+  punctuation and capitals only, so it can't turn "move" into "stay".
+- Cleanup no longer swaps a word for its opposite ("prepone" into
+  "postpone") or drops a "yes", "please", "thanks" or "I think".
+- "point one" is typed as "point 1", not "0.1".
+- Old example entries in the personal dictionary (such as "AI" becoming
+  "artificial intelligence") are removed if you never changed them.
+- Your settings can no longer be lost if the PC crashes or loses power
+  while they're being saved.
+- In code dictation, "npm and node need an update" is typed as a
+  sentence, not as a command.
+- The Models tab shows when the grammar model is still downloading in
+  the background, instead of offering to download it again.
+
+### Changed
+
+- Cloud dictation is faster, about 0.2 seconds per dictation and more
+  on slower connections, by reusing the connection to the server.
+- On slower PCs, Local cleanup is skipped less often: Talkative now
+  estimates how long cleanup will take much more accurately.
+- Settings: clearer layout. Cloud's on-device grammar option sits under
+  Cloud, the server address line is gone, the Hotkeys tab says "Regular
+  dictation" and "Code dictation", the "How to say code" guide is now an
+  easy-to-read table, and hint text is readable in light and dark mode.
+- To keep the free Cloud service available for everyone, each network
+  address can make up to 600 Cloud requests a day (about 300 dictations).
+
 ## [1.3.13] - 2026-10-04
 
 ### Fixed
