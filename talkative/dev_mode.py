@@ -1340,9 +1340,29 @@ def strip_backticks(text):
     return re.sub(r"`([^`\n]+)`", r"\1", text)
 
 
+# Spoken line break inside a code dictation (2026-10-13): "let c equal to
+# 5 plus 2 new line print c" -> two lines. Not before an opening bracket,
+# so C#'s "new line open bracket" (new Line()) stays code. Each line is
+# converted on its own (so each starts clean: Whisper capitalizes "Print"
+# after a period), except SQL, which is one statement over several lines
+# and needs its context ("where" is only a keyword after a SELECT): it is
+# converted whole, with a placeholder where each break was said.
+_NEW_LINE = re.compile(
+    r"(?i)[,.]?\s*\b(?:new ?line|next line)\b[,.]?"
+    r"(?!\s*(?:(?:open|left)\s+(?:round\s+)?(?:bracket|paren|parenthesis)\b|\())\s*")
+_BREAK = "\ue000"
+
+
 def process(raw):
     """Developer-English entry point. Returns (text, is_code): code lines
     are final; prose still goes through the normal cleanup in app.py."""
     if is_code_line(raw):
-        return code_line(raw), True
+        if not _NEW_LINE.search(raw):
+            return code_line(raw), True
+        if is_sql(raw):
+            out = code_line(_NEW_LINE.sub(f" {_BREAK} ", raw).strip())
+            lines = [ln.strip() for ln in out.split(_BREAK)]
+        else:
+            lines = [code_line(part) for part in _NEW_LINE.split(raw) if part.strip()]
+        return "\n".join(ln for ln in lines if ln), True
     return prose_symbols(raw), False
