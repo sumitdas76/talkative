@@ -295,9 +295,10 @@ async function handleTranscribe(request, env, timing, ctx) {
   timing.stt_model = sttModel;
   form.append("model", sttModel);
   form.append("language", "en"); // matches the local model's small.en (English-only)
-  // verbose_json for per-segment no_speech_prob / avg_logprob, so segments
-  // that are really silence can be dropped (see below).
-  form.append("response_format", "verbose_json");
+  // Plain json: verbose_json's per-segment no_speech_prob fed a silence
+  // filter that never fired -- Groq reported 0 on all 146 segments
+  // measured (2026-10-11); the client's own speech check does that job.
+  form.append("response_format", "json");
   // Optional bias prompt from the client (sentence style + personal
   // dictionary vocabulary, or developer mode's literal-symbol style),
   // base64 UTF-8 in X-Prompt-B64. Clients before 2026-09-25 never sent
@@ -361,26 +362,10 @@ async function handleTranscribe(request, env, timing, ctx) {
     }
   }
   notePeak(env, ctx, sttModel, groqResp, timing);
+  timing.groq_region = groqResp.headers.get("x-groq-region");
   const result = await groqResp.json();
   timing.upstream_ms = Date.now() - t0;
-  // Whisper invents text for audio with no speech in it ("Thank you.",
-  // and with a prompt, prompt-flavored text like "dot com" or "So, I'll
-  // show you how to do it."). faster-whisper -- what Local mode uses --
-  // drops such segments with exactly this rule by default
-  // (no_speech_threshold 0.6 + log_prob_threshold -1.0); do the same here.
-  // Per-segment numbers go back in timing so the thresholds stay
-  // measurable from the client.
-  const segments = Array.isArray(result.segments) ? result.segments : null;
-  if (!segments) {
-    return { text: result.text || "", via: "groq" };
-  }
-  const kept = [];
-  timing.segments = segments.map((s) => {
-    const silent = s.no_speech_prob > NO_SPEECH_PROB && s.avg_logprob < MIN_AVG_LOGPROB;
-    if (!silent) kept.push(s.text || "");
-    return [round2(s.no_speech_prob), round2(s.avg_logprob), silent ? 0 : 1];
-  });
-  return { text: kept.join("").trim(), via: "groq" };
+  return { text: (result.text || "").trim(), via: "groq" };
 }
 
 // Workers AI speech-to-text, for when Groq can't serve. large-v3-turbo (the
@@ -403,9 +388,6 @@ async function workersAiTranscribe(env, bytes, prompt) {
   }
 }
 
-const NO_SPEECH_PROB = 0.6;
-const MIN_AVG_LOGPROB = -1.0;
-const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 
 async function handleGrammar(request, env, timing, ctx) {
   const { text } = await request.json();
@@ -452,6 +434,7 @@ async function handleGrammar(request, env, timing, ctx) {
     );
     if (groqResp.ok) {
       notePeak(env, ctx, GROQ_GRAMMAR_MODEL, groqResp, timing);
+      timing.groq_region = groqResp.headers.get("x-groq-region");
       const result = await groqResp.json();
       const out = result.choices?.[0]?.message?.content;
       if (out) {

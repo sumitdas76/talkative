@@ -2,11 +2,15 @@ name = "talkative-cloud"
 main = "worker.js"
 compatibility_date = "2024-09-23"
 
-# Run the Worker near its backends (Groq's API, the quota Durable Objects) rather
-# than at the colo nearest the user: measured 2026-09-25 from Mumbai (BOM),
-# the Worker<->Groq hop cost ~300ms per call vs ~67ms of actual model time.
+# Run the Worker next to Groq rather than at the colo nearest the user.
+# Smart Placement (mode = "smart", 2026-09-25) never took effect -- still
+# cf-placement: local-SIN on 2026-10-13, too little traffic for its
+# analysis -- while the Worker<->Groq hop cost ~370 ms of a ~490 ms grammar
+# call. Groq answers from Dallas (x-groq-region: dls, behind Google Cloud),
+# so pin the Worker to the data center nearest GCP us-south1 (Dallas) with
+# an explicit placement hint (Cloudflare, January 2026).
 [placement]
-mode = "smart"
+region = "gcp:us-south1"
 
 [ai]
 binding = "AI"
