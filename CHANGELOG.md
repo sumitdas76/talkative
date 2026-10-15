@@ -2,6 +2,16 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [1.3.15] - 2026-10-15
+
+### Fixed
+
+- A hotkey with Alt in it (such as Ctrl+Alt) no longer opens the menu of
+  the app you're typing in. If you let go of Ctrl a moment before Alt,
+  Windows treated Alt as pressed on its own, and apps like Notepad
+  highlighted their menu bar. The same fix applies to hotkeys with the
+  Windows key, which could open the Start menu.
+
 ## [1.3.14] - 2026-10-13
 
 ### New

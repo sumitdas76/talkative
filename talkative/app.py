@@ -114,6 +114,7 @@ class TalkativeApp:
         self._fallback_lock = threading.Lock()
         self._cloud_down = threading.local()  # .value: this dictation's Cloud transcription failed
         self._masked = False  # mask key already sent for the chord currently held
+        self._chord_engaged = False  # full chord was down since all its keys were last up
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
             hotkey_label=friendly_key(config.HOTKEY),
@@ -399,8 +400,18 @@ class TalkativeApp:
         # Once per physical chord press (key-repeat re-fires on_press), and
         # only for the complete chord -- the Windows key pressed on its
         # own must still open Start.
-        if (not self._masked and self._hotkey_pressed & _MASKED_KEYS
-                and (dev or self._hotkey_pressed == set(config.HOTKEY))):
+        complete = dev or self._hotkey_pressed == set(config.HOTKEY)
+        if complete:
+            self._chord_engaged = True
+        # A Win/Alt key still held after the rest of the chord was let go
+        # auto-repeats, and each repeat counts as a fresh press -- so the
+        # one mask sent when the chord completed no longer covers its
+        # release, and Notepad's menu lit up (user report 2026-10-15,
+        # Ctrl+Alt released Ctrl-first). Mask every such repeat too.
+        lingering = (self._chord_engaged and not complete
+                     and key in _MASKED_KEYS)
+        if lingering or (not self._masked and complete
+                         and self._hotkey_pressed & _MASKED_KEYS):
             self._masked = True
             try:
                 _mask_controller.press(_MASK_KEY)
@@ -496,6 +507,7 @@ class TalkativeApp:
         self._hotkey_pressed -= stale
         self._chord_active = False
         self._masked = False
+        self._chord_engaged = False
         held = self._hotkey_pressed | {key}
         chord_held = set(config.HOTKEY) <= held or (
             bool(config.DEV_HOTKEY) and set(config.DEV_HOTKEY) <= held)
@@ -534,6 +546,7 @@ class TalkativeApp:
         self._hotkey_pressed -= {k for k in list(self._hotkey_pressed) if k not in held}
         self._chord_active = False
         self._masked = False
+        self._chord_engaged = False
         self._stop_recording(process=False)
 
     def _on_resume(self):
@@ -549,6 +562,7 @@ class TalkativeApp:
         self._hotkey_pressed.clear()
         self._chord_active = False
         self._masked = False
+        self._chord_engaged = False
         self._latched = False
         self.recorder.reset()
         self._start_listener()
@@ -579,6 +593,8 @@ class TalkativeApp:
             return
         self._hotkey_pressed.discard(key)
         self._masked = False
+        if not self._hotkey_pressed:
+            self._chord_engaged = False
         if self._latched:
             # Only re-arm once every hotkey key is up, so the second key of
             # a two-key tap being released (or still held) can't count as
