@@ -22,7 +22,7 @@ the app waiting for an answer.
 
 import threading
 
-from . import app_icon, config, grammar_engine, model_manager, overlay_thread, settings
+from . import app_icon, config, grammar_engine, hardware, model_manager, overlay_thread, settings
 
 _opened = False
 _lock = threading.Lock()
@@ -111,6 +111,8 @@ def _build(overlay, on_choice):
             "16 GB of RAM, works on 8 GB. No internet is needed after "
             "the downloads.",
         ])
+        ttk.Label(local_box, wraplength=460, text=hardware.local_fit()).pack(
+            anchor="w", pady=(8, 0))
 
         status = ttk.Label(root, padding=(18, 4, 18, 0), foreground="grey", wraplength=480)
         status.pack(anchor="w")

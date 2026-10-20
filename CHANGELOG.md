@@ -2,6 +2,23 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [Unreleased]
+
+### Fixed
+
+- Cloud mode no longer cuts off the end of what you said when your
+  microphone is quiet. Talkative trims the silence after you stop
+  speaking, and with a quiet microphone it could mistake your last words
+  for silence, so only part of the sentence got typed.
+- Code dictation: "api dot github dot com" is typed as `api.github.com`,
+  not `api .github.com`.
+
+### New
+
+- Press Esc while dictating to cancel without typing anything.
+- The first-run screen says in plain words how well Local mode suits
+  your PC.
+
 ## [1.3.15] - 2026-10-15
 
 ### Fixed

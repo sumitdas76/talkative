@@ -3,6 +3,7 @@ import logging
 import threading
 import time
 
+import numpy as np
 from pynput import keyboard
 
 from . import cloud_client, cloud_notice, config, dev_mode, error_toast, feedback, grammar_engine, history, model_manager, onboarding, pill, settings, temp_cleanup, try_it_now, updater
@@ -72,6 +73,41 @@ def _debug_log(**stages):
                 f.write(f"  {name}: {value!r}\n")
     except Exception:
         pass
+
+
+def _audio_summary(audio, sample_rate, reason):
+    """One debug.log line about the recording itself: length, speech level
+    (90th-percentile 30 ms RMS) and what stopped it. Added 2026-10-20 for
+    dictations typed only partly -- the text alone couldn't tell a short
+    recording from audio lost later."""
+    try:
+        frame = int(sample_rate * 0.03)
+        n = audio.size // frame
+        level = 0.0
+        if n:
+            rms = np.sqrt(np.mean(audio[:n * frame].reshape(n, frame) ** 2, axis=1))
+            level = float(np.percentile(rms, 90))
+        return f"{audio.size / sample_rate:.1f}s, level {level:.3f}, stopped by {reason}"
+    except Exception:
+        return f"stopped by {reason}"
+
+
+def _debug_save_audio(audio):
+    """With the debug log on, keep this dictation's audio (newest
+    DEBUG_AUDIO_KEEP only) and return the file name for debug.log."""
+    if not config.DEBUG_LOG or not config.DEBUG_AUDIO_KEEP or not getattr(audio, "size", 0):
+        return ""
+    try:
+        folder = settings.settings_dir() / "debug_audio"
+        folder.mkdir(parents=True, exist_ok=True)
+        name = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".wav"
+        (folder / name).write_bytes(cloud_client._wav_bytes(audio, config.SAMPLE_RATE))
+        for old in sorted(folder.glob("*.wav"))[:-config.DEBUG_AUDIO_KEEP]:
+            old.unlink(missing_ok=True)
+        return name
+    except Exception:
+        logging.getLogger(__name__).exception("could not save debug audio")
+        return ""
 
 
 class TalkativeApp:
@@ -386,6 +422,12 @@ class TalkativeApp:
         if getattr(key, "vk", None) == _MASK_KEY.vk:
             return  # our own mask keystroke, see _MASK_KEY
         if key not in config.HOTKEY and key not in config.DEV_HOTKEY:
+            # Esc throws the current dictation away, nothing typed (backlog
+            # 2026-10-03, mainly for tap mode, where the stop tap always
+            # types). Esc still reaches the focused app too.
+            if key == keyboard.Key.esc and self._recording:
+                self._stop_recording(process=False)
+                return
             # Toggle mode: another key pressed while the hotkey is still
             # down means the hotkey was part of a shortcut (Right Ctrl+C),
             # not a tap -- drop the recording that press started instead
@@ -426,7 +468,7 @@ class TalkativeApp:
                 return
             if self._hotkey_pressed == set(config.HOTKEY) or dev:
                 self._chord_active = True
-                self._stop_recording()
+                self._stop_recording(reason="stop tap")
             return
         if self._recording:
             # The developer chord may contain the normal one (default: Right
@@ -619,17 +661,19 @@ class TalkativeApp:
             timer.start()
             return
 
-        self._stop_recording()
+        still = ", ".join(friendly_key(k) for k in self._hotkey_pressed)
+        self._stop_recording(reason=f"releasing {friendly_key(key)}"
+                             + (f" ({still} still held)" if still else ""))
 
     def _auto_stop(self, rec_id):
         if self._recording_id != rec_id:
             return
-        if self._stop_recording():
+        if self._stop_recording(reason="time limit"):
             self.tray.notify(
                 f"Stopped listening after {config.TOGGLE_MAX_SECONDS // 60} minutes."
             )
 
-    def _stop_recording(self, process=True):
+    def _stop_recording(self, process=True, reason="?"):
         """Stop the current recording and, unless process=False, send it
         down the pipeline. Returns False if nothing was recording. Locked:
         toggle mode's auto-stop timer can race a key press."""
@@ -650,16 +694,18 @@ class TalkativeApp:
             seq = self._next_seq
             self._next_seq += 1
         threading.Thread(
-            target=self._process_audio, args=(audio, self._dev_dictation, seq), daemon=True
+            target=self._process_audio, daemon=True,
+            args=(audio, self._dev_dictation, seq,
+                  _audio_summary(audio, config.SAMPLE_RATE, reason)),
         ).start()
         return True
 
-    def _process_audio(self, audio, dev=False, seq=None):
+    def _process_audio(self, audio, dev=False, seq=None, info=""):
         with self._order:
             self._jobs += 1
         self._job_seq.value = seq
         try:
-            self._process_audio_inner(audio, dev)
+            self._process_audio_inner(audio, dev, info)
         finally:
             with self._order:
                 self._jobs -= 1
@@ -680,7 +726,7 @@ class TalkativeApp:
         with self._order:
             self._order.wait_for(lambda: self._turn >= seq, timeout=30)
 
-    def _process_audio_inner(self, audio, dev=False):
+    def _process_audio_inner(self, audio, dev=False, info=""):
         # Developer English swaps the sentence-style bias prompt for one
         # that keeps spoken symbols as literal words (see dev_mode.py).
         base_prompt = dev_mode.STT_PROMPT if dev else config.PUNCTUATION_PROMPT
@@ -707,6 +753,15 @@ class TalkativeApp:
             show_error_popup(f"Transcription failed:\n{exc}")
             return
         transcribe_secs = time.time() - t0
+        saved = _debug_save_audio(audio)
+        if saved:
+            info = f"{info}, {saved}" if info else saved
+        last_trim = getattr(cloud_client, "last_trim", None)
+        trim = getattr(last_trim, "secs", 0.0) if self._cloud_active() else 0.0
+        if last_trim is not None:
+            last_trim.secs = 0.0
+        if info and trim:
+            info += f", {trim:.1f}s silence trimmed"
 
         raw = text
         if dev:
@@ -716,7 +771,7 @@ class TalkativeApp:
                 # filler/correction/repeat rules, no grammar model, no
                 # sentence period, and no personal dictionary (an expansion
                 # like "AI" -> "artificial intelligence" would corrupt code).
-                _debug_log(raw=raw, final=text,
+                _debug_log(audio=info, raw=raw, final=text,
                            timing=f"transcribe {transcribe_secs:.1f}s [developer: code]")
                 self._insert_final(text)
                 return
@@ -782,6 +837,7 @@ class TalkativeApp:
 
         text = apply_dictionary(text)
         _debug_log(
+            audio=info,
             raw=raw,
             fillers=after_fillers,
             corrections=after_corrections,

@@ -81,3 +81,26 @@ def cuda_devices():
 def summary():
     return {"physical_cores": physical_cores(), "logical_cores": os.cpu_count(),
             "ram_gb": ram_gb(), "cuda_devices": cuda_devices()}
+
+
+def local_fit(ram=None, cores=None):
+    """One plain sentence for the first-run screen on how Local mode suits
+    this PC (backlog "Step 2", 2026-09-27): no specs, no Recommended badge
+    on the privacy choice -- the user decides. Thresholds from what Local
+    measured on 2026-10-04: ~2.3 GB of memory at peak; ~1.3 s speech + 1.7 s
+    cleanup per short dictation on a 6-core Ryzen. Windows reports an
+    "8 GB" PC as about 7.7 GB, so the cut-offs sit just below each size.
+    An NVIDIA card isn't mentioned: that path has never run on a real
+    GPU, and the CUDA libraries may be missing (backlog nvidia-untested)."""
+    ram = ram_gb() if ram is None else ram
+    cores = physical_cores() if cores is None else cores
+    if ram and ram < 7:
+        return ("On this PC: memory is tight for Local (it needs about 2.3 GB), "
+                "so other apps may slow down while Talkative runs.")
+    if cores <= 2:
+        return ("On this PC: Local works, but each dictation will take a few "
+                "seconds longer than on a newer processor.")
+    if ram and ram < 15:
+        return ("On this PC: a good fit. With other apps open, Local's 2.3 GB "
+                "of memory may be noticeable.")
+    return "On this PC: a good fit."

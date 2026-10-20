@@ -658,7 +658,8 @@ class _SettingsWindow:
         ttk.Label(
             style_box, wraplength=500, style="Muted.TLabel",
             text="Holding still works in tap mode. Listening stops by itself "
-                 f"after {config.TOGGLE_MAX_SECONDS // 60} minutes.",
+                 f"after {config.TOGGLE_MAX_SECONDS // 60} minutes. Press Esc "
+                 "to cancel a dictation without typing it.",
         ).pack(anchor="w", pady=(6, 0))
 
     def _show_dev_help(self):

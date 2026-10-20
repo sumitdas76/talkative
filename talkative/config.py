@@ -346,6 +346,11 @@ FEEDBACK_LAST_REPLY = ""
 # which would contradict the About tab's privacy statement. Developers
 # opt in per machine via the debug_log settings key.
 DEBUG_LOG = False
+# With DEBUG_LOG on, also keep the audio of this many most recent
+# dictations as WAV files in %LOCALAPPDATA%\Talkative\debug_audio, named
+# in debug.log, so a misheard dictation ("Can you" typed as "Can I",
+# 2026-10-04 and 2026-10-20) can be replayed and tested. 0 = none.
+DEBUG_AUDIO_KEEP = 30
 
 # ---------------------------------------------------------------------------
 # Startup

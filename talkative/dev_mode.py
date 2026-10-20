@@ -886,8 +886,9 @@ def _resolve(tokens, sql, powershell, cli=False):
                 t[k] = "\x0d."                       # -o ./publish
             elif (nxt and nxt.lower() in _DOTFILES and prev is not None
                   and (_is_word(prev) or _is_marker(prev, "\x0d"))
-                  and not (_is_word(prev) and prev.lower() in ("process", "meta"))):
-                t[k] = "\x0d."                       # .env .venv (not process.env)
+                  and not (_is_word(prev) and prev.lower() in ("process", "meta"))
+                  and not (k + 2 < len(t) and t[k + 2] == "\x05.")):
+                t[k] = "\x0d."                       # .env .venv (not process.env, api.github.com)
             elif prev is None:
                 t[k] = "\x0d."
     return t

@@ -156,9 +156,28 @@ def _post(route, body, headers, timeout):
         return resp.status, data
 
 
-def _trim_trailing_silence(audio, sample_rate, threshold=0.01,
-                            frame_ms=30, pad_ms=300, min_keep_secs=0.3):
-    """Drop trailing near-silence from `audio` before sending it to Cloud.
+# Seconds of trailing silence the last transcribe() on this thread cut off,
+# for debug.log (app._process_audio_inner).
+last_trim = threading.local()
+
+
+def _speech_end(audio, sample_rate):
+    """Sample index where the last speech in `audio` ends (Silero VAD,
+    which already pads each segment by 400 ms), 0 when there is no speech,
+    or None when VAD itself failed."""
+    if audio is None or audio.size == 0:
+        return 0
+    try:
+        from faster_whisper.vad import get_speech_timestamps
+        ts = get_speech_timestamps(audio, sampling_rate=sample_rate)
+    except Exception:
+        return None
+    return ts[-1]["end"] if ts else 0
+
+
+def _trim_trailing_silence(audio, sample_rate, speech_end=None, pad_ms=200,
+                           min_keep_secs=0.3):
+    """Drop trailing silence from `audio` before sending it to Cloud.
 
     Groq's hosted whisper-large-v3-turbo (like Whisper-family models
     generally) reliably hallucinates a stock closing phrase -- "Thank
@@ -168,32 +187,21 @@ def _trim_trailing_silence(audio, sample_rate, threshold=0.01,
     Local mode; Cloud had no equivalent, so it's done here instead,
     client-side, before the audio ever leaves this device.
 
-    Deliberately conservative: a coarse energy check, not real VAD, and it
-    leaves `audio` completely unchanged whenever the signal is ambiguous
-    (barely any audio, no clear loud region, or trimming would leave next
-    to nothing) rather than risk cutting real trailing speech -- e.g. a
-    dictation that genuinely ends "...thank you." must not be shortened.
+    Cuts after the last speech Silero VAD finds, plus `pad_ms`. Until
+    1.3.16 this was a fixed loudness threshold (RMS 0.01), which cut real
+    speech whenever the microphone was quiet: on the 59 human recordings
+    at a tenth of the volume, 39 lost words at the end, up to 4.8 s of
+    speech (user report 2026-10-15/20: sentences typed only 60-70%).
+    VAD doesn't care about volume. Leaves `audio` unchanged when VAD
+    fails or trimming would leave next to nothing.
     """
     if audio is None or audio.size == 0:
         return audio
-    frame = max(1, int(sample_rate * frame_ms / 1000))
-    n_frames = audio.size // frame
-    if n_frames < 2:
+    if speech_end is None:
+        speech_end = _speech_end(audio, sample_rate)
+    if not speech_end:
         return audio
-
-    last_loud = -1
-    for i in range(n_frames):
-        chunk = audio[i * frame:(i + 1) * frame]
-        rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
-        if rms >= threshold:
-            last_loud = i
-
-    if last_loud == -1 or last_loud >= n_frames - 1:
-        # All silence, or already ends on a loud frame -- nothing to trim.
-        return audio
-
-    pad = int(sample_rate * pad_ms / 1000)
-    cutoff = min(audio.size, (last_loud + 1) * frame + pad)
+    cutoff = min(audio.size, speech_end + int(sample_rate * pad_ms / 1000))
     if cutoff < sample_rate * min_keep_secs:
         return audio
     return audio[:cutoff]
@@ -213,13 +221,7 @@ def _has_speech(audio, sample_rate):
     "Yes." and speech at 3% volume), ~5 ms per call. Only gates -- speech
     audio is sent unchanged. Any VAD failure sends the audio as before.
     """
-    if audio is None or audio.size == 0:
-        return False
-    try:
-        from faster_whisper.vad import get_speech_timestamps
-        return bool(get_speech_timestamps(audio, sampling_rate=sample_rate))
-    except Exception:
-        return True
+    return _speech_end(audio, sample_rate) != 0
 
 
 def _wav_bytes(audio, sample_rate):
@@ -240,9 +242,12 @@ def transcribe(audio, sample_rate, initial_prompt=None):
     """Same contract as Transcriber.transcribe(): returns the transcript
     string, raises on failure (the app.py call site already handles that
     the same way it handles a local transcription failure)."""
-    if not _has_speech(audio, sample_rate):
+    end = _speech_end(audio, sample_rate)
+    if end == 0:
         return ""
-    audio = _trim_trailing_silence(audio, sample_rate)
+    trimmed = _trim_trailing_silence(audio, sample_rate, speech_end=end)
+    last_trim.secs = (audio.size - trimmed.size) / sample_rate
+    audio = trimmed
     body = _wav_bytes(audio, sample_rate)
     headers = _headers("audio/wav")
     if initial_prompt:

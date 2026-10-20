@@ -389,6 +389,7 @@ def main():
                   "cloud_conn_test.py", 120)
     _script_check("D23", "'new line' in code dictation; tool sentences stay prose", "code_newline_test.py", 60)
     _script_check("D24", "Win/Alt left held after the chord: every repeat masked", "alt_mask_test.py", 60)
+    _script_check("D25", "Cloud silence trim never cuts quiet speech", "cloud_trim_test.py", 180)
     _script_check("W5", "settings.json saved atomically, one save at a time", "settings_save_test.py", 60)
     _script_check("W6", "Models tab shows a background grammar download", "grammar_tile_test.py", 60)
     check_hotkey_rules()
