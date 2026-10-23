@@ -31,6 +31,9 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   19%).
 - Lists spoken with letters ("a, never lie; b, always sleep; c, ...")
   are typed as bullet points, like "first, second, third" already were.
+- "You know" used as a filler ("it was, you know, fine"; "You know,
+  ...") is removed in Cleaned up mode. "Do you know", "as you know" and
+  "you know what I mean" stay.
 - Press Esc while dictating to cancel without typing anything.
 - The first-run screen says in plain words how well Local mode suits
   your PC.

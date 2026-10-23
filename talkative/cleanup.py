@@ -29,8 +29,37 @@ def _recapitalize(text):
     return _FIRST_LETTER.sub(lambda m: m.group(1) + m.group(2).upper(), text)
 
 
+# "you know" as a filler: set off by commas, or opening a sentence with
+# one after it ("You know, ..."). Kept everywhere else, where it's content:
+# "do you know", "you know what I mean", "as you know", "if you know the
+# answer" (user report 2026-10-23: "things like, you know, a." kept it).
+_YOU_KNOW_RULES = [
+    # "I was, you know, tired" -> "I was tired". Before a list marker the
+    # comma stays, so bullets.py still sees the list start: "things like,
+    # you know, a. ..." -> "things like, a. ..."
+    (re.compile(r",\s*you know\s*,\s*", re.IGNORECASE),
+     lambda m: ", " if re.match(
+         r"(?:[a-h][.),]?|first|firstly|point|number|step)\s",
+         m.string[m.end():], re.IGNORECASE) else " "),
+    # "Fine, you know." -> "Fine."
+    (re.compile(r",\s*you know\s*(?=[.!?]|$)", re.IGNORECASE), ""),
+    # "You know, it works." -> "It works." (sentence start only)
+    (re.compile(r"(^|[.!?]\s+)you know\s*,\s*", re.IGNORECASE), r"\1"),
+]
+
+
+def _remove_you_know(text):
+    for pattern, repl in _YOU_KNOW_RULES:
+        text = pattern.sub(repl, text)
+    return _WHITESPACE_RUN.sub(" ", text).strip()
+
+
 def remove_fillers(text, fillers=None):
     fillers = config.FILLER_WORDS if fillers is None else fillers
+    if text and config.REMOVE_YOU_KNOW:
+        stripped = _remove_you_know(text)
+        if stripped != text:
+            text = _recapitalize(stripped)
     if not text or not fillers:
         return text
 

@@ -114,6 +114,10 @@ CLEANUP_MODE = "cleaned_up"
 # Filler words stripped in cleaned_up mode, whole words only. "like" and
 # "you know" are deliberately excluded -- too often real dictated content.
 FILLER_WORDS = ["um", "uh", "uhm", "erm"]
+# "you know" is removed only where it's plainly a filler: between commas,
+# or opening a sentence with a comma after it (cleanup._remove_you_know).
+# "Do you know", "you know what I mean", "as you know" stay.
+REMOVE_YOU_KNOW = True
 
 # Grammar engine (invisible stage 2 of cleaned_up mode; see
 # grammar_engine.py). Off means rules-only even when the model is
