@@ -44,7 +44,6 @@ import threading
 import time
 import urllib.request
 from datetime import date, timedelta
-from pathlib import Path
 
 from . import __version__, app_icon, config, model_manager, overlay_thread
 

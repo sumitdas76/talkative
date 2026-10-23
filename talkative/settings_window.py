@@ -1002,7 +1002,6 @@ class _SettingsWindow:
             return
         tile["state"] = state
 
-        box = tile["box"]
         bar, status = tile["bar"], tile["status"]
         action, delete = tile["action"], tile["delete"]
         action.pack_forget()

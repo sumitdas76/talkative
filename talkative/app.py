@@ -907,7 +907,7 @@ class TalkativeApp:
         try:
             text = cloud_client.transcribe(audio, config.SAMPLE_RATE,
                                            initial_prompt=prompt, indian_english=indian)
-            if (indian and text and cloud_client.last_stt.via != "azure"
+            if (indian and text and getattr(cloud_client.last_stt, "via", "") != "azure"
                     and time.time() - self._azure_notice > 600):
                 self._azure_notice = time.time()
                 self.tray.notify("Indian English is busy right now, so US English "

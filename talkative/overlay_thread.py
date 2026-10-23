@@ -73,7 +73,7 @@ def _apply_base_theme(root):
         else:
             bg, fg, field, raised = "#f0f0f0", "#1a1a1a", "#ffffff", "#dcdcdc"
             border, hover = "#b0b0b0", "#cccccc"
-        accent, accent_fg = "#4682b4", "#ffffff"  # steel blue, matches the tray icon
+        accent = "#4682b4"  # steel blue, matches the tray icon
 
         root.configure(bg=bg)
         style.configure(".", background=bg, foreground=fg,
