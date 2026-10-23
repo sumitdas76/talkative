@@ -349,10 +349,67 @@ function knownNearCap(name, limit) {
   return !!k && k.day === today() && k.count >= limit - SPECULATE_MARGIN;
 }
 
+// "Indian English" (2026-10-23): Microsoft Azure Speech, en-IN, with the
+// maintainer's own Azure resource (secrets AZURE_SPEECH_KEY and
+// AZURE_SPEECH_REGION; free F0 tier: 5 audio hours a month, one request at
+// a time). Chosen per dictation by the client (X-Stt-Provider: azure).
+// Measured on 59 real recordings: 12.8% word errors vs Groq's 14.6%,
+// Indian English 18.9% -> 12.8%. Any Azure problem -- busy (429, one at a
+// time), month's hours used up, network -- falls through to the normal
+// Groq path below, so the dictation still gets typed.
+// Returns both Azure forms: "text" (Display, punctuated, but with a full
+// stop at every pause) and "itn" (same words, no punctuation); the client
+// tries grammar cleanup on "itn" first (talkative/app.py).
+const AZURE_LANGUAGES = ["en-IN", "en-US", "en-GB"];
+
+async function azureTranscribe(request, env, bytes, timing, ctx) {
+  if (!env.AZURE_SPEECH_KEY || !env.AZURE_SPEECH_REGION) return null;
+  const requested = request.headers.get("X-Stt-Language");
+  const language = AZURE_LANGUAGES.includes(requested) ? requested : "en-IN";
+  const t0 = Date.now();
+  try {
+    const url = `https://${env.AZURE_SPEECH_REGION}.stt.speech.microsoft.com/speech/` +
+      `recognition/conversation/cognitiveservices/v1?language=${language}` +
+      "&format=detailed&profanity=raw";
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": env.AZURE_SPEECH_KEY,
+        "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+        Accept: "application/json",
+      },
+      body: bytes,
+    });
+    timing.azure_ms = Date.now() - t0;
+    if (!resp.ok) {
+      timing.azure_problem = `azure ${resp.status}`;
+      console.error("azure transcription", resp.status, (await resp.text()).slice(0, 200));
+      noteHit(env, ctx, `azure ${resp.status}`, null);
+      return null;
+    }
+    const r = await resp.json();
+    if (r.RecognitionStatus === "Success" && r.NBest?.length) {
+      return { text: r.NBest[0].Display.trim(), itn: r.NBest[0].ITN.trim(), via: "azure" };
+    }
+    if (["NoMatch", "InitialSilenceTimeout", "BabbleTimeout"].includes(r.RecognitionStatus)) {
+      return { text: "", itn: "", via: "azure" };
+    }
+    timing.azure_problem = `azure ${r.RecognitionStatus}`;
+    return null;
+  } catch (e) {
+    timing.azure_problem = `azure unreachable: ${e}`;
+    return null;
+  }
+}
+
 async function handleTranscribe(request, env, timing, ctx) {
   const bytes = new Uint8Array(await request.arrayBuffer());
   if (bytes.length === 0) {
     return { text: "" };
+  }
+  if (request.headers.get("X-Stt-Provider") === "azure") {
+    const az = await azureTranscribe(request, env, bytes, timing, ctx);
+    if (az) return az;
   }
   const form = new FormData();
   form.append("file", new Blob([bytes], { type: "audio/wav" }), "audio.wav");

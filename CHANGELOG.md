@@ -4,6 +4,11 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
 ## [Unreleased]
 
+### Removed
+
+- The "Clean up grammar on this device instead of the server" option
+  under Cloud.
+
 ### Fixed
 
 - Cloud mode no longer cuts off the end of what you said when your
@@ -24,11 +29,14 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 - When you correct a name Talkative typed ("Kuber Netties" to
   "Kubernetes"), it offers to remember the fix: Settings > Auto Text
   lists it with Add and Dismiss. Nothing is added unless you click Add.
-- Cloud mode can use your own free Azure Speech key for speech-to-text
-  instead of Talkative Cloud (Settings > General > Processing). Audio
-  then goes straight from your PC to Microsoft. In tests it made fewer
-  mistakes on Indian-accented English (13% of words wrong instead of
-  19%).
+- Cloud mode has a choice of accent under Settings > General > Processing:
+  US English (as before) or Indian English, which uses Microsoft Azure's
+  Indian English recognizer. In tests it got fewer words wrong on
+  Indian-accented speech (13% instead of 19%). When it's busy, US English
+  takes over for that dictation.
+- Let go of the hotkey mid-sentence and press it again within a few
+  seconds: Talkative carries on the same sentence instead of starting a
+  new one with a capital letter.
 - Lists spoken with letters ("a, never lie; b, always sleep; c, ...")
   are typed as bullet points, like "first, second, third" already were.
 - "You know" used as a filler ("it was, you know, fine"; "You know,

@@ -37,6 +37,11 @@ CONTEXT_LOCAL = True
 CONTEXT_CLOUD = False
 CONTEXT_MAX_CHARS = 400
 
+# Pressing the hotkey again within this many seconds of the last paste, in
+# the same window, carries on that sentence: its full stop is taken back
+# and the new text starts in lowercase (continuation.py). 0 = off.
+CONTINUE_SECONDS = 4.0
+
 # Presses shorter than this are treated as accidental taps and discarded.
 MIN_RECORDING_SECONDS = 0.3
 
@@ -176,15 +181,14 @@ STT_BEAM_SIZE = 5
 # ---------------------------------------------------------------------------
 PROCESSING_MODE = "cloud"
 CLOUD_ENDPOINT_URL = "https://talkative-cloud.sumitdas76.workers.dev"
-# Cloud mode's speech-to-text: "talkative" (Talkative Cloud: Groq Whisper
-# via the Worker) or "azure" (the user's own Azure Speech key, called
-# straight from this PC -- azure_stt.py). Azure failing (free hours used up,
-# bad key, offline) falls back to Talkative Cloud for that dictation.
-SPEECH_SERVICE = "talkative"
-AZURE_REGION = ""
-AZURE_LANGUAGE = "en-US"
-# The key, encrypted with Windows DPAPI (azure_stt.save_key); never plain.
-AZURE_KEY_PROTECTED = ""
+# Cloud mode's speech-to-text, shown in Settings as the accent:
+# "us_english" -- Groq's Whisper (Talkative Cloud, as always), or
+# "indian_english" -- Microsoft Azure Speech en-IN on the maintainer's own
+# free Azure resource, called by the Worker (cloud/worker.js
+# azureTranscribe; 2026-10-23). Azure busy or its free hours used up: the
+# Worker falls back to Groq for that dictation. Developer English always
+# uses Groq (its literal-symbol prompt needs Whisper).
+SPEECH_SERVICE = "us_english"
 # Cloud busy or unreachable: app._cloud_transcribe() uses the Local voice
 # model when it's downloaded (kept loaded FALLBACK_IDLE_SECONDS after its
 # last use), otherwise retries Cloud after each of these waits (seconds).

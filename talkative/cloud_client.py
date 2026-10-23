@@ -19,6 +19,7 @@ import base64
 import http.client
 import io
 import json
+import re
 import threading
 import time
 import urllib.error
@@ -159,6 +160,75 @@ def _post(route, body, headers, timeout):
 # Seconds of trailing silence the last transcribe() on this thread cut off,
 # for debug.log (app._process_audio_inner).
 last_trim = threading.local()
+# The last transcribe() on this thread: .via (which recognizer answered:
+# "groq", "azure", "workers-ai-...") and .itn (Azure's unpunctuated words,
+# "" otherwise) -- app._process_audio_inner tries grammar on .itn first.
+last_stt = threading.local()
+
+# Azure's free tier takes at most 60 s per request.
+_AZURE_PIECE_SECONDS = 55
+
+# A one-word "sentence" made by a pause, not by the speaker: Azure ends a
+# sentence at every pause ("...reading the previous. Words. Now if...",
+# 2026-10-23). These are the one-word sentences people do say.
+_ONE_WORD_SENTENCES = {
+    "yes", "no", "okay", "ok", "thanks", "sure", "right", "next", "hi", "hello",
+    "hey", "sorry", "please", "great", "good", "fine", "done", "exactly",
+    "really", "wow", "bye", "correct", "absolutely", "agreed", "noted", "cheers",
+    "perfect", "nice", "true", "anyway", "so", "well", "now", "also", "again",
+    "finally", "firstly", "secondly", "thirdly", "lastly",
+}
+
+
+def _join_pause_fragments(text):
+    """Join a one-word sentence Azure split off at a pause onto the one
+    before it: "...the previous. Words. Now..." -> "...the previous words.
+    Now...". Only after a full stop, and never a word people say on its
+    own ("Thanks." "Okay.")."""
+    parts = re.split(r"(?<=\.)\s+", text)
+    out = []
+    for part in parts:
+        word = part.rstrip(".!?")
+        if (out and out[-1].endswith(".") and re.fullmatch(r"[A-Za-z']+", word)
+                and word.lower() not in _ONE_WORD_SENTENCES and word != "I"):
+            keep = word if word.isupper() and len(word) > 1 else word[0].lower() + word[1:]
+            out[-1] = out[-1][:-1] + " " + keep + part[len(word):]
+        else:
+            out.append(part)
+    return " ".join(out)
+
+
+def _pieces(audio, sample_rate, max_seconds):
+    """`audio` cut into pieces no longer than `max_seconds`, in the middle
+    of a pause between words where possible (Silero VAD, 300 ms minimum
+    silence), hard cuts only through speech with no pause at all."""
+    limit = max_seconds * sample_rate
+    if audio.size <= limit:
+        return [audio]
+    try:
+        from faster_whisper.vad import VadOptions, get_speech_timestamps
+        segments = get_speech_timestamps(
+            audio, VadOptions(min_silence_duration_ms=300, speech_pad_ms=0),
+            sampling_rate=sample_rate)
+    except Exception:
+        segments = []
+    cuts, piece_start, prev_end = [], 0, None
+    for seg in segments:
+        if seg["end"] - piece_start > limit and prev_end is not None and prev_end > piece_start:
+            cut = (prev_end + seg["start"]) // 2
+            cuts.append(cut)
+            piece_start = cut
+        prev_end = seg["end"]
+    out, prev = [], 0
+    for cut in cuts + [audio.size]:
+        piece = audio[prev:cut]
+        while piece.size > limit:
+            out.append(piece[:limit])
+            piece = piece[limit:]
+        if piece.size:
+            out.append(piece)
+        prev = cut
+    return out
 
 
 def _speech_end(audio, sample_rate):
@@ -238,18 +308,44 @@ def _wav_bytes(audio, sample_rate):
     return buf.getvalue()
 
 
-def transcribe(audio, sample_rate, initial_prompt=None):
+def transcribe(audio, sample_rate, initial_prompt=None, indian_english=False):
     """Same contract as Transcriber.transcribe(): returns the transcript
     string, raises on failure (the app.py call site already handles that
-    the same way it handles a local transcription failure)."""
+    the same way it handles a local transcription failure).
+    `indian_english` asks the Worker for Azure en-IN (config.SPEECH_SERVICE);
+    the Worker falls back to Groq on its own if Azure can't serve."""
+    last_stt.via, last_stt.itn = "", ""
     end = _speech_end(audio, sample_rate)
     if end == 0:
         return ""
     trimmed = _trim_trailing_silence(audio, sample_rate, speech_end=end)
     last_trim.secs = (audio.size - trimmed.size) / sample_rate
     audio = trimmed
+    if indian_english:
+        texts, itns, vias = [], [], []
+        for piece in _pieces(audio, sample_rate, _AZURE_PIECE_SECONDS):
+            result = _transcribe_once(piece, sample_rate, initial_prompt, azure=True)
+            vias.append(result.get("via", ""))
+            texts.append(str(result.get("text", "")).strip())
+            itns.append(str(result.get("itn", "")).strip())
+        last_stt.via = "azure" if all(v == "azure" for v in vias) else ",".join(vias)
+        text = " ".join(t for t in texts if t)
+        if last_stt.via == "azure":
+            last_stt.itn = " ".join(t for t in itns if t)
+            text = _join_pause_fragments(text)
+        return text
+    result = _transcribe_once(audio, sample_rate, initial_prompt)
+    last_stt.via = result.get("via", "")
+    return str(result.get("text", "")).strip()
+
+
+def _transcribe_once(audio, sample_rate, initial_prompt, azure=False):
+    """One /transcribe request -> the Worker's JSON. Raises on failure."""
     body = _wav_bytes(audio, sample_rate)
     headers = _headers("audio/wav")
+    if azure:
+        headers["X-Stt-Provider"] = "azure"
+        headers["X-Stt-Language"] = "en-IN"
     if initial_prompt:
         # The bias prompt (sentence style + personal-dictionary vocabulary,
         # or developer mode's literal-symbol style) reaches Groq's `prompt`
@@ -266,8 +362,7 @@ def transcribe(audio, sample_rate, initial_prompt=None):
         raise RuntimeError(CLOUD_BUSY_MESSAGE)
     if status != 200:
         raise RuntimeError(f"Cloud transcription failed: HTTP {status}")
-    result = json.loads(data.decode("utf-8"))
-    return str(result.get("text", "")).strip()
+    return json.loads(data.decode("utf-8"))
 
 
 def grammar_apply(text):

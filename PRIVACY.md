@@ -44,6 +44,10 @@ forwards the audio and text to:
 
 - Groq, for speech-to-text and grammar cleanup.
   Privacy policy: https://groq.com/privacy-policy/
+- Microsoft Azure Speech (Central India), for speech-to-text when you
+  choose "Indian English" under Cloud in Settings. Microsoft says audio
+  for this kind of recognition is processed in memory and not stored.
+  Privacy: https://learn.microsoft.com/azure/ai-foundry/responsible-ai/speech-service/speech-to-text/data-privacy-security
 - Cloudflare Workers AI, as a backup for speech-to-text and grammar
   cleanup when Groq is unavailable.
   Privacy policy: https://www.cloudflare.com/privacypolicy/
@@ -55,19 +59,6 @@ made today, and how many came from each network address today. The
 address itself is not stored, only a one-way scrambled form of it
 (a hash) that the count is filed under. The services above process your data under
 their own policies, linked above.
-
-### Your own Azure Speech key (optional)
-
-In Cloud mode you can choose, in Settings > General > Processing, to
-have speech-to-text done by Microsoft Azure with your own Azure Speech
-key. Then each dictation's audio goes straight from your PC to
-Microsoft (the region you entered), not to Talkative's server, under
-your own Azure account and Microsoft's terms
-(https://learn.microsoft.com/azure/ai-foundry/responsible-ai/speech-service/speech-to-text/data-privacy-security).
-Grammar cleanup still goes to Talkative's server as described above. If
-Azure fails, that dictation goes to Talkative's server instead. Your key
-is saved on your PC encrypted with Windows' own data protection, so only
-your Windows account on that PC can read it.
 
 ### Local mode
 

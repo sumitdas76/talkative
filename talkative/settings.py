@@ -69,9 +69,6 @@ _KEYS = {
     "learn_fixes": "LEARN_FIXES",
     "send_diagnostics": "SEND_DIAGNOSTICS",
     "speech_service": "SPEECH_SERVICE",
-    "azure_region": "AZURE_REGION",
-    "azure_language": "AZURE_LANGUAGE",
-    "azure_key_protected": "AZURE_KEY_PROTECTED",
     "fix_suggestions": "FIX_SUGGESTIONS",
     "fix_dismissed": "FIX_DISMISSED",
 }
@@ -167,6 +164,12 @@ def load_into_config(path=None):
         # that the field is read-only. Keep the built-in address instead.
         if key == "cloud_endpoint_url" and not value.strip():
             continue
+        # Branch builds of 2026-10-23 saved "talkative" / "azure" (the
+        # user's own key) before the choice became an accent.
+        if key == "speech_service":
+            value = {"talkative": "us_english", "azure": "indian_english"}.get(value, value)
+            if value not in ("us_english", "indian_english"):
+                continue
         setattr(config, attr, value)
         applied[key] = value
 

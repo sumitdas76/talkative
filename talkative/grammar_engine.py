@@ -307,8 +307,26 @@ def predicted_seconds(text):
     return _overhead + (len(_tokenizer.encode(text).tokens) * 1.15 + 2) / _speed
 
 
+# A small number written out by the model ("the 2 radio buttons" -> "the
+# two radio buttons") is the same number: allowed (2026-10-23 -- this
+# guard threw away a good fix of "and the and the" over it).
+# numbers.format_numbers() picks the written form afterwards anyway.
+_SMALL_NUMBER_WORDS = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+    "ten": "10",
+}
+
+
 def _digits_ok(inp, out):
-    return sorted(_DIGIT_RUN.findall(inp)) == sorted(_DIGIT_RUN.findall(out))
+    want = sorted(_DIGIT_RUN.findall(inp))
+    got = _DIGIT_RUN.findall(out)
+    if sorted(got) == want:
+        return True
+    words = [_SMALL_NUMBER_WORDS[w] for w in _WORD.findall(out.lower())
+             if w in _SMALL_NUMBER_WORDS
+             and w not in _WORD.findall(inp.lower())]
+    return sorted(got + words) == want
 
 
 def _retention_ok(inp, out, strict=False):

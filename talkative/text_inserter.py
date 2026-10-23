@@ -127,11 +127,13 @@ def _put_private_text(text):
             _set(_user32.RegisterClipboardFormatW(name), data)
 
 
-def insert_text(text):
+def insert_text(text, take_back=0):
     """Copy text to the clipboard, paste it via simulated Ctrl+V into
     whatever control currently has focus, then restore the user's previous
     clipboard contents a moment later. In "clipboard" mode, only copy --
-    the user pastes manually, and the clipboard is not restored."""
+    the user pastes manually, and the clipboard is not restored.
+    `take_back` Backspaces go first (continuation.py: the full stop that
+    ended the last dictation, when this one carries on its sentence)."""
     # Windows line breaks: a bare "\n" (bullet lists) shows as nothing in
     # older Win32 edit controls.
     text = text.replace("\r\n", "\n").replace("\n", "\r\n")
@@ -158,6 +160,15 @@ def insert_text(text):
             _put_private_text(text)
         except Exception:
             pyperclip.copy(text)
+
+        for _ in range(take_back):
+            _controller.press(Key.backspace)
+            _controller.release(Key.backspace)
+        if take_back:
+            # Without a moment here the target app (Windows 11 Notepad,
+            # measured) still handles the Backspaces when Ctrl goes down,
+            # and the paste arrives as a plain "v".
+            time.sleep(0.08)
 
         _controller.press(Key.ctrl)
         _controller.press("v")

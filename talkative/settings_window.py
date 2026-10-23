@@ -17,7 +17,7 @@ from tkinter import messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, azure_stt, config, dev_mode, feedback, fix_learning, grammar_engine, history, model_manager, overlay_thread, settings, updater
+from . import __version__, app_icon, config, dev_mode, feedback, fix_learning, grammar_engine, history, model_manager, overlay_thread, settings, updater
 from .keynames import friendly as _friendly_key_name
 
 APP_NAME = "Talkative"
@@ -379,54 +379,17 @@ class _SettingsWindow:
         )
         self.cloud_radio.pack(anchor="w", pady=2)
 
-        # Cloud's speech-to-text: Talkative Cloud or the user's own Azure
-        # key (azure_stt.py). Shown only while Cloud is selected.
-        self.azure_frame = ttk.Frame(proc_box)
+        # Cloud's speech-to-text, chosen by accent (2026-10-23, the user's
+        # wording): US English = Groq's Whisper, Indian English = Azure
+        # en-IN via the Worker. Shown only while Cloud is selected.
+        self.accent_frame = ttk.Frame(proc_box)
         self.var_speech_service = tk.StringVar(value=config.SPEECH_SERVICE)
-        ttk.Radiobutton(
-            self.azure_frame, text="Speech-to-text by Talkative Cloud",
-            variable=self.var_speech_service, value="talkative",
-            command=self._speech_service_changed,
-        ).pack(anchor="w")
-        ttk.Radiobutton(
-            self.azure_frame, text="Speech-to-text with my own Azure Speech key\n"
-                                   "(free tier; audio goes from this PC to Microsoft).",
-            variable=self.var_speech_service, value="azure",
-            command=self._speech_service_changed,
-        ).pack(anchor="w")
-        self.azure_fields = ttk.Frame(self.azure_frame)
-        grid = ttk.Frame(self.azure_fields)
-        grid.pack(anchor="w", padx=(24, 0), pady=(4, 0))
-        ttk.Label(grid, text="Key").grid(row=0, column=0, sticky="w", padx=(0, 6))
-        self.azure_key_entry = ttk.Entry(grid, width=36, show="•")
-        self.azure_key_entry.grid(row=0, column=1, sticky="w", pady=2)
-        if azure_stt.key():
-            self.azure_key_entry.insert(0, azure_stt.key())
-        ttk.Label(grid, text="Region").grid(row=1, column=0, sticky="w", padx=(0, 6))
-        self.azure_region_entry = ttk.Entry(grid, width=20)
-        self.azure_region_entry.grid(row=1, column=1, sticky="w", pady=2)
-        self.azure_region_entry.insert(0, config.AZURE_REGION)
-        ttk.Label(grid, text="Accent").grid(row=2, column=0, sticky="w", padx=(0, 6))
-        self.azure_language_combo = ttk.Combobox(
-            grid, state="readonly", width=26,
-            values=[label for label, _ in azure_stt.LANGUAGES],
-        )
-        codes = [code for _, code in azure_stt.LANGUAGES]
-        self.azure_language_combo.current(
-            codes.index(config.AZURE_LANGUAGE) if config.AZURE_LANGUAGE in codes else 0)
-        self.azure_language_combo.grid(row=2, column=1, sticky="w", pady=2)
-        row = ttk.Frame(self.azure_fields)
-        row.pack(anchor="w", padx=(24, 0), pady=(4, 0))
-        self.azure_test_btn = ttk.Button(row, text="Test key", command=self._azure_test)
-        self.azure_test_btn.pack(side="left")
-        self.azure_status = ttk.Label(row, text="", style="Muted.TLabel")
-        self.azure_status.pack(side="left", padx=8)
-        ttk.Label(
-            self.azure_fields, style="Muted.TLabel", wraplength=440,
-            text="Get a key: portal.azure.com, create a Speech service with "
-                 "the Free F0 tier, then copy Key 1 and its Location. If Azure "
-                 "fails, Talkative Cloud transcribes instead.",
-        ).pack(anchor="w", padx=(24, 0), pady=(4, 0))
+        for label, value in (("US English", "us_english"),
+                             ("Indian English", "indian_english")):
+            ttk.Radiobutton(
+                self.accent_frame, text=label,
+                variable=self.var_speech_service, value=value,
+            ).pack(anchor="w")
 
         self.local_radio = ttk.Radiobutton(
             proc_box, text="Local — fully offline, nothing leaves this device.",
@@ -452,39 +415,10 @@ class _SettingsWindow:
 
     def _processing_changed(self):
         if self.var_processing.get() == "cloud":
-            self.azure_frame.pack(anchor="w", padx=(24, 0), pady=(0, 6),
+            self.accent_frame.pack(anchor="w", padx=(24, 0), pady=(0, 6),
                                   after=self.cloud_radio)
         else:
-            self.azure_frame.pack_forget()
-        self._speech_service_changed()
-
-    def _speech_service_changed(self):
-        if self.var_speech_service.get() == "azure":
-            self.azure_fields.pack(anchor="w")
-        else:
-            self.azure_fields.pack_forget()
-
-    def _azure_language(self):
-        return azure_stt.LANGUAGES[max(self.azure_language_combo.current(), 0)][1]
-
-    def _azure_test(self):
-        key = self.azure_key_entry.get().strip()
-        region = self.azure_region_entry.get().strip()
-        if not key or not region:
-            self.azure_status.config(text="Enter the key and region first.")
-            return
-        self.azure_test_btn.config(state="disabled")
-        self.azure_status.config(text="Testing…")
-
-        def work():
-            problem = azure_stt.test_key(region, key)
-
-            def show():
-                self.azure_test_btn.config(state="normal")
-                self.azure_status.config(text=problem or "Key works ✓")
-            self.root.after(0, show)
-
-        threading.Thread(target=work, daemon=True).start()
+            self.accent_frame.pack_forget()
 
     def _download_local_models(self):
         self._local_op = "downloading"
@@ -1463,8 +1397,6 @@ class _SettingsWindow:
             "learn_fixes": self.var_learn_fixes.get(),
             "send_diagnostics": self.var_diagnostics.get(),
             "speech_service": self.var_speech_service.get(),
-            "azure_region": self.azure_region_entry.get().strip().lower().replace(" ", ""),
-            "azure_language": self._azure_language(),
             "cleanup_mode": self.var_cleanup.get(),
             "enable_history": self.var_history.get(),
             "insert_mode": self.var_insert.get(),
@@ -1495,9 +1427,6 @@ class _SettingsWindow:
         except Exception:
             pass
 
-        # Encrypted (DPAPI) on its own path, never in `values` as plain text.
-        if self.azure_key_entry.get().strip() != azure_stt.key():
-            azure_stt.save_key(self.azure_key_entry.get())
         settings.save(values)
         settings.load_into_config()
         if self.on_applied:
