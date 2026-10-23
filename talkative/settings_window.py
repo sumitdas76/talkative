@@ -17,7 +17,7 @@ from tkinter import messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, config, dev_mode, feedback, grammar_engine, history, model_manager, overlay_thread, settings, updater
+from . import __version__, app_icon, azure_stt, config, dev_mode, feedback, fix_learning, grammar_engine, history, model_manager, overlay_thread, settings, updater
 from .keynames import friendly as _friendly_key_name
 
 APP_NAME = "Talkative"
@@ -388,6 +388,55 @@ class _SettingsWindow:
             variable=self.var_grammar_local,
         )
 
+        # Cloud's speech-to-text: Talkative Cloud or the user's own Azure
+        # key (azure_stt.py). Shown only while Cloud is selected.
+        self.azure_frame = ttk.Frame(proc_box)
+        self.var_speech_service = tk.StringVar(value=config.SPEECH_SERVICE)
+        ttk.Radiobutton(
+            self.azure_frame, text="Speech-to-text by Talkative Cloud",
+            variable=self.var_speech_service, value="talkative",
+            command=self._speech_service_changed,
+        ).pack(anchor="w")
+        ttk.Radiobutton(
+            self.azure_frame, text="Speech-to-text with my own Azure Speech key\n"
+                                   "(free tier; audio goes from this PC to Microsoft).",
+            variable=self.var_speech_service, value="azure",
+            command=self._speech_service_changed,
+        ).pack(anchor="w")
+        self.azure_fields = ttk.Frame(self.azure_frame)
+        grid = ttk.Frame(self.azure_fields)
+        grid.pack(anchor="w", padx=(24, 0), pady=(4, 0))
+        ttk.Label(grid, text="Key").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.azure_key_entry = ttk.Entry(grid, width=36, show="•")
+        self.azure_key_entry.grid(row=0, column=1, sticky="w", pady=2)
+        if azure_stt.key():
+            self.azure_key_entry.insert(0, azure_stt.key())
+        ttk.Label(grid, text="Region").grid(row=1, column=0, sticky="w", padx=(0, 6))
+        self.azure_region_entry = ttk.Entry(grid, width=20)
+        self.azure_region_entry.grid(row=1, column=1, sticky="w", pady=2)
+        self.azure_region_entry.insert(0, config.AZURE_REGION)
+        ttk.Label(grid, text="Accent").grid(row=2, column=0, sticky="w", padx=(0, 6))
+        self.azure_language_combo = ttk.Combobox(
+            grid, state="readonly", width=26,
+            values=[label for label, _ in azure_stt.LANGUAGES],
+        )
+        codes = [code for _, code in azure_stt.LANGUAGES]
+        self.azure_language_combo.current(
+            codes.index(config.AZURE_LANGUAGE) if config.AZURE_LANGUAGE in codes else 0)
+        self.azure_language_combo.grid(row=2, column=1, sticky="w", pady=2)
+        row = ttk.Frame(self.azure_fields)
+        row.pack(anchor="w", padx=(24, 0), pady=(4, 0))
+        self.azure_test_btn = ttk.Button(row, text="Test key", command=self._azure_test)
+        self.azure_test_btn.pack(side="left")
+        self.azure_status = ttk.Label(row, text="", style="Muted.TLabel")
+        self.azure_status.pack(side="left", padx=8)
+        ttk.Label(
+            self.azure_fields, style="Muted.TLabel", wraplength=440,
+            text="Get a key: portal.azure.com, create a Speech service with "
+                 "the Free F0 tier, then copy Key 1 and its Location. If Azure "
+                 "fails, Talkative Cloud transcribes instead.",
+        ).pack(anchor="w", padx=(24, 0), pady=(4, 0))
+
         self.local_radio = ttk.Radiobutton(
             proc_box, text="Local — fully offline, nothing leaves this device.",
             variable=self.var_processing, value="local",
@@ -414,8 +463,40 @@ class _SettingsWindow:
         if self.var_processing.get() == "cloud":
             self.grammar_local_check.pack(anchor="w", padx=(24, 0), pady=(0, 4),
                                           after=self.cloud_radio)
+            self.azure_frame.pack(anchor="w", padx=(24, 0), pady=(0, 6),
+                                  after=self.grammar_local_check)
         else:
             self.grammar_local_check.pack_forget()
+            self.azure_frame.pack_forget()
+        self._speech_service_changed()
+
+    def _speech_service_changed(self):
+        if self.var_speech_service.get() == "azure":
+            self.azure_fields.pack(anchor="w")
+        else:
+            self.azure_fields.pack_forget()
+
+    def _azure_language(self):
+        return azure_stt.LANGUAGES[max(self.azure_language_combo.current(), 0)][1]
+
+    def _azure_test(self):
+        key = self.azure_key_entry.get().strip()
+        region = self.azure_region_entry.get().strip()
+        if not key or not region:
+            self.azure_status.config(text="Enter the key and region first.")
+            return
+        self.azure_test_btn.config(state="disabled")
+        self.azure_status.config(text="Testing…")
+
+        def work():
+            problem = azure_stt.test_key(region, key)
+
+            def show():
+                self.azure_test_btn.config(state="normal")
+                self.azure_status.config(text=problem or "Key works ✓")
+            self.root.after(0, show)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _download_local_models(self):
         self._local_op = "downloading"
@@ -497,6 +578,31 @@ class _SettingsWindow:
         ttk.Button(row, text="Add", command=self._dict_add).pack(side="left", padx=6)
         ttk.Button(row, text="Remove selected", command=self._dict_remove).pack(side="left")
 
+        # Pairs fix_learning.py noticed the user correcting. Add puts one in
+        # the table above (saved with Save, like a typed entry).
+        box = ttk.LabelFrame(f, text="Suggested from your corrections", padding=10)
+        box.pack(fill="x", pady=(12, 0))
+        self.fix_empty = ttk.Label(
+            box, style="Muted.TLabel", wraplength=500,
+            text="None yet. When you correct a name or term Talkative typed, "
+                 "it's suggested here.",
+        )
+        self.fix_tree = ttk.Treeview(
+            box, columns=("heard", "typed", "times"), show="headings", height=3
+        )
+        self.fix_tree.heading("heard", text="Typed as")
+        self.fix_tree.heading("typed", text="You corrected it to")
+        self.fix_tree.heading("times", text="Times")
+        self.fix_tree.column("heard", width=170)
+        self.fix_tree.column("typed", width=230)
+        self.fix_tree.column("times", width=50, anchor="center")
+        self.fix_buttons = ttk.Frame(box)
+        ttk.Button(self.fix_buttons, text="Add to Auto Text",
+                   command=self._fix_add).pack(side="left")
+        ttk.Button(self.fix_buttons, text="Dismiss",
+                   command=self._fix_dismiss).pack(side="left", padx=6)
+        self._fix_render()
+
     def _dict_add(self):
         spoken = self.dict_spoken.get().strip()
         typed = self.dict_typed.get().strip()
@@ -509,6 +615,42 @@ class _SettingsWindow:
     def _dict_remove(self):
         for item in self.dict_tree.selection():
             self.dict_tree.delete(item)
+
+    def _fix_render(self):
+        self.fix_tree.delete(*self.fix_tree.get_children())
+        items = fix_learning.pending()
+        for s in items:
+            self.fix_tree.insert("", "end", values=(s["heard"], s["typed"], s.get("count", 1)))
+        if items:
+            self.fix_empty.pack_forget()
+            self.fix_tree.pack(fill="x")
+            self.fix_buttons.pack(anchor="w", pady=(6, 0))
+        else:
+            self.fix_tree.pack_forget()
+            self.fix_buttons.pack_forget()
+            self.fix_empty.pack(anchor="w")
+
+    def _fix_selected(self):
+        return [self.fix_tree.item(i, "values")[:2] for i in self.fix_tree.selection()]
+
+    def _fix_add(self):
+        picked = self._fix_selected()
+        if not picked:
+            return
+        for heard, typed in picked:
+            self.dict_tree.insert("", "end", values=(heard, typed))
+        # Saved now, not with the window's Save: the suggestion is gone
+        # from its list, so closing without saving would lose it.
+        config.DICTIONARY = dict(config.DICTIONARY, **dict(picked))
+        settings.save({"dictionary": config.DICTIONARY})
+        for heard, typed in picked:
+            fix_learning.remove(heard, typed)
+        self._fix_render()
+
+    def _fix_dismiss(self):
+        for heard, typed in self._fix_selected():
+            fix_learning.remove(heard, typed, dismiss=True)
+        self._fix_render()
 
     def _tab_dictation(self, f):
         cleanup_box = ttk.LabelFrame(f, text="Dictation style", padding=10)
@@ -536,6 +678,25 @@ class _SettingsWindow:
         self.example_label.pack(anchor="w")
         self._update_example()
 
+        acc_box = ttk.LabelFrame(f, text="Accuracy", padding=10)
+        acc_box.pack(fill="x", pady=(16, 0))
+        self.var_context_local = tk.BooleanVar(value=config.CONTEXT_LOCAL)
+        self.var_context_cloud = tk.BooleanVar(value=config.CONTEXT_CLOUD)
+        self.var_learn_fixes = tk.BooleanVar(value=config.LEARN_FIXES)
+        ttk.Checkbutton(
+            acc_box, text="Use the text before the cursor to spell names and terms\n"
+                          "the same way (Local mode: it stays on this PC).",
+            variable=self.var_context_local,
+        ).pack(anchor="w", pady=2)
+        ttk.Checkbutton(
+            acc_box, text="Also in Cloud mode (that text is sent to the speech\n"
+                          "service with your audio, then discarded).",
+            variable=self.var_context_cloud,
+        ).pack(anchor="w", padx=(24, 0), pady=(0, 4))
+        ttk.Checkbutton(
+            acc_box, text="Suggest Auto Text entries from names I correct.",
+            variable=self.var_learn_fixes,
+        ).pack(anchor="w", pady=2)
         history_box = ttk.LabelFrame(f, text="History", padding=10)
         history_box.pack(fill="x", pady=(16, 0))
         self.var_history = tk.BooleanVar(value=config.ENABLE_HISTORY)
@@ -1271,6 +1432,12 @@ class _SettingsWindow:
             "theme": self.var_theme.get(),
             "processing_mode": self.var_processing.get(),
             "grammar_source": "local" if self.var_grammar_local.get() else "auto",
+            "context_local": self.var_context_local.get(),
+            "context_cloud": self.var_context_cloud.get(),
+            "learn_fixes": self.var_learn_fixes.get(),
+            "speech_service": self.var_speech_service.get(),
+            "azure_region": self.azure_region_entry.get().strip().lower().replace(" ", ""),
+            "azure_language": self._azure_language(),
             "cleanup_mode": self.var_cleanup.get(),
             "enable_history": self.var_history.get(),
             "insert_mode": self.var_insert.get(),
@@ -1301,6 +1468,9 @@ class _SettingsWindow:
         except Exception:
             pass
 
+        # Encrypted (DPAPI) on its own path, never in `values` as plain text.
+        if self.azure_key_entry.get().strip() != azure_stt.key():
+            azure_stt.save_key(self.azure_key_entry.get())
         settings.save(values)
         settings.load_into_config()
         if self.on_applied:

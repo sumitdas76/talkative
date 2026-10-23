@@ -6,7 +6,7 @@ import time
 import numpy as np
 from pynput import keyboard
 
-from . import cloud_client, cloud_notice, config, dev_mode, error_toast, feedback, grammar_engine, history, model_manager, onboarding, pill, settings, temp_cleanup, try_it_now, updater
+from . import azure_stt, cloud_client, cloud_notice, config, dev_mode, error_toast, feedback, fix_learning, grammar_engine, history, model_manager, onboarding, pill, screen_context, settings, temp_cleanup, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -151,6 +151,8 @@ class TalkativeApp:
         self._cloud_down = threading.local()  # .value: this dictation's Cloud transcription failed
         self._masked = False  # mask key already sent for the chord currently held
         self._chord_engaged = False  # full chord was down since all its keys were last up
+        self._context = None  # screen_context.Pending for the current recording, or None
+        self._azure_notice = 0.0  # when the last "Azure failed" message was shown
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
             hotkey_label=friendly_key(config.HOTKEY),
@@ -529,6 +531,10 @@ class TalkativeApp:
         if self._cloud_active():
             # Open the Cloud connection while the user speaks, not after.
             threading.Thread(target=cloud_client.warm, daemon=True).start()
+        self._context = (screen_context.Pending()
+                         if screen_context.enabled(self._cloud_active()) else None)
+        # Moving on to the next dictation: any fix to the last one is done.
+        fix_learning.check()
         self._recording = True
         self._latched = False
         self._recording_id += 1
@@ -696,16 +702,16 @@ class TalkativeApp:
         threading.Thread(
             target=self._process_audio, daemon=True,
             args=(audio, self._dev_dictation, seq,
-                  _audio_summary(audio, config.SAMPLE_RATE, reason)),
+                  _audio_summary(audio, config.SAMPLE_RATE, reason), self._context),
         ).start()
         return True
 
-    def _process_audio(self, audio, dev=False, seq=None, info=""):
+    def _process_audio(self, audio, dev=False, seq=None, info="", context=None):
         with self._order:
             self._jobs += 1
         self._job_seq.value = seq
         try:
-            self._process_audio_inner(audio, dev, info)
+            self._process_audio_inner(audio, dev, info, context)
         finally:
             with self._order:
                 self._jobs -= 1
@@ -726,11 +732,18 @@ class TalkativeApp:
         with self._order:
             self._order.wait_for(lambda: self._turn >= seq, timeout=30)
 
-    def _process_audio_inner(self, audio, dev=False, info=""):
+    def _process_audio_inner(self, audio, dev=False, info="", context=None):
         # Developer English swaps the sentence-style bias prompt for one
         # that keeps spoken symbols as literal words (see dev_mode.py).
         base_prompt = dev_mode.STT_PROMPT if dev else config.PUNCTUATION_PROMPT
-        prompt = " ".join(p for p in (base_prompt, vocabulary_prompt()) if p) or None
+        # The text before the cursor goes last: Whisper reads the prompt as
+        # what was said just before, so this dictation continues it
+        # (screen_context.py). Re-checked here in case the mode changed
+        # while recording.
+        on_screen = ""
+        if context is not None and not dev and screen_context.enabled(self._cloud_active()):
+            on_screen = context.get()
+        prompt = " ".join(p for p in (base_prompt, vocabulary_prompt(), on_screen) if p) or None
         t0 = time.time()
         self._cloud_down.value = False
         transcriber = self.transcriber
@@ -773,7 +786,9 @@ class TalkativeApp:
                 # like "AI" -> "artificial intelligence" would corrupt code).
                 _debug_log(audio=info, raw=raw, final=text,
                            timing=f"transcribe {transcribe_secs:.1f}s [developer: code]")
-                self._insert_final(text)
+                # Not watched for corrections: Auto Text never applies to
+                # code, so a learned pair could never help here.
+                self._insert_final(text, learn=False)
                 return
         # Symbol words ("underscore", "dot") first, before anything else
         # sees the text -- this fixes literal-word transcription
@@ -838,6 +853,7 @@ class TalkativeApp:
         text = apply_dictionary(text)
         _debug_log(
             audio=info,
+            context=on_screen,
             raw=raw,
             fillers=after_fillers,
             corrections=after_corrections,
@@ -863,7 +879,22 @@ class TalkativeApp:
         per minute, so seconds later usually works) before giving up.
         Windows' own recognizer is no fallback: the one apps can call
         (SAPI dictation) got 85% of words wrong on the 59 real recordings
-        Cloud gets 14.6% on (2026-10-04); Win+H voice typing has no API."""
+        Cloud gets 14.6% on (2026-10-04); Win+H voice typing has no API.
+
+        With the user's own Azure key (azure_stt.py) Azure goes first; if
+        it fails, Talkative Cloud transcribes that dictation as usual."""
+        if azure_stt.active(True):
+            try:
+                return azure_stt.transcribe(audio, config.SAMPLE_RATE)
+            except Exception as exc:
+                logging.warning("Azure transcription failed (%s); using Talkative Cloud", exc)
+                # Once per 10 minutes: with the month's free hours used up,
+                # every dictation fails the same way.
+                if time.time() - self._azure_notice > 600:
+                    self._azure_notice = time.time()
+                    reason = (str(exc) if isinstance(exc, azure_stt.AzureError)
+                              else "Azure Speech didn't work.")
+                    self.tray.notify(f"{reason} Talkative Cloud is transcribing instead.")
         try:
             return cloud_client.transcribe(audio, config.SAMPLE_RATE,
                                            initial_prompt=prompt)
@@ -926,7 +957,7 @@ class TalkativeApp:
                 self._fallback_timer = None
         gc.collect()  # release the model.bin mapping (updates move the files)
 
-    def _insert_final(self, text):
+    def _insert_final(self, text, learn=True):
         if not text:
             return
         self._wait_for_turn()
@@ -936,11 +967,20 @@ class TalkativeApp:
             return
 
         insert_text(text)
+        if learn and config.INSERT_MODE != "clipboard":
+            fix_learning.watch(text, on_new=self._fixes_noticed)
         if config.ENABLE_HISTORY:
             history.add(text)
         updater.note_words(len(text.split()))
         if config.INSERT_MODE == "clipboard":
             self.tray.notify("Copied to clipboard — press Ctrl+V to paste.")
+
+    def _fixes_noticed(self, pairs):
+        heard, typed = pairs[0]
+        more = f" (and {len(pairs) - 1} more)" if len(pairs) > 1 else ""
+        self.tray.notify(
+            f"You corrected “{heard}” to “{typed}”{more}. To fix it every time, "
+            "add it in Settings → Auto Text.")
 
     def run(self):
         sync_autostart()

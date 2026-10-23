@@ -63,6 +63,15 @@ _KEYS = {
     "feedback_last_seen": "FEEDBACK_LAST_SEEN",
     "feedback_last_reply": "FEEDBACK_LAST_REPLY",
     "old_examples_removed": "OLD_EXAMPLES_REMOVED",
+    "context_local": "CONTEXT_LOCAL",
+    "context_cloud": "CONTEXT_CLOUD",
+    "learn_fixes": "LEARN_FIXES",
+    "speech_service": "SPEECH_SERVICE",
+    "azure_region": "AZURE_REGION",
+    "azure_language": "AZURE_LANGUAGE",
+    "azure_key_protected": "AZURE_KEY_PROTECTED",
+    "fix_suggestions": "FIX_SUGGESTIONS",
+    "fix_dismissed": "FIX_DISMISSED",
 }
 
 # Keys handled outside the type-checked table.

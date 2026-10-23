@@ -15,6 +15,20 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
 ### New
 
+- Names and terms come out spelled the way they already are in what
+  you're writing: Talkative looks at the text just before the cursor
+  when you start dictating. On by default in Local mode (it stays on
+  your PC); in Cloud mode, turn it on in Settings > Dictation >
+  Accuracy. In tests, names already on screen were spelled right about
+  9 times in 10 instead of 6 in 10.
+- When you correct a name Talkative typed ("Kuber Netties" to
+  "Kubernetes"), it offers to remember the fix: Settings > Auto Text
+  lists it with Add and Dismiss. Nothing is added unless you click Add.
+- Cloud mode can use your own free Azure Speech key for speech-to-text
+  instead of Talkative Cloud (Settings > General > Processing). Audio
+  then goes straight from your PC to Microsoft. In tests it made fewer
+  mistakes on Indian-accented English (13% of words wrong instead of
+  19%).
 - Press Esc while dictating to cancel without typing anything.
 - The first-run screen says in plain words how well Local mode suits
   your PC.

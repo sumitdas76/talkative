@@ -255,9 +255,12 @@ def transcribe(audio, sample_rate, initial_prompt=None):
         # or developer mode's literal-symbol style) reaches Groq's `prompt`
         # field via the Worker. Base64 because headers must be ASCII and
         # dictionary words needn't be. Until 2026-09-25 this was accepted
-        # and silently dropped, so Cloud mode never got any biasing.
+        # and silently dropped, so Cloud mode never got any biasing. Too
+        # long, the end is kept: it may hold the text before the cursor
+        # (screen_context.py), which matters most, and Whisper keeps the
+        # end of an over-long prompt too.
         headers["X-Prompt-B64"] = base64.b64encode(
-            initial_prompt[:800].encode("utf-8")).decode("ascii")
+            initial_prompt[-800:].encode("utf-8")).decode("ascii")
     status, data = _post("/transcribe", body, headers, timeout=30)
     if status == 429:
         raise RuntimeError(CLOUD_BUSY_MESSAGE)

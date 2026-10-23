@@ -1,7 +1,7 @@
 Talkative Privacy Policy
 ========================
 
-Last updated: 2026-09-27
+Last updated: 2026-10-23
 
 Talkative is a free, open-source Windows dictation app. This page lists
 every way it talks to the internet, what is sent, and how to turn it
@@ -27,6 +27,11 @@ Each time you dictate, Talkative sends:
   hotkey; recordings with no speech in them are not sent at all), and a
   short hint text built from your personal dictionary words, so names
   and terms you added are recognized.
+- Only if you turn it on (Settings > Dictation > Accuracy, "Also in
+  Cloud mode"; off by default): up to 400 characters of the text just
+  before the cursor in the box you're dictating into, sent with the
+  audio so names and terms already there are spelled the same way.
+  Password boxes are never read.
 - The transcribed text, for grammar and punctuation cleanup.
 - An anonymous install ID: a random number created on your PC the first
   time Talkative runs. It isn't tied to your name, email, or device,
@@ -49,11 +54,28 @@ address itself is not stored, only a one-way scrambled form of it
 (a hash) that the count is filed under. The services above process your data under
 their own policies, linked above.
 
+### Your own Azure Speech key (optional)
+
+In Cloud mode you can choose, in Settings > General > Processing, to
+have speech-to-text done by Microsoft Azure with your own Azure Speech
+key. Then each dictation's audio goes straight from your PC to
+Microsoft (the region you entered), not to Talkative's server, under
+your own Azure account and Microsoft's terms
+(https://learn.microsoft.com/azure/ai-foundry/responsible-ai/speech-service/speech-to-text/data-privacy-security).
+Grammar cleanup still goes to Talkative's server as described above. If
+Azure fails, that dictation goes to Talkative's server instead. Your key
+is saved on your PC encrypted with Windows' own data protection, so only
+your Windows account on that PC can read it.
+
 ### Local mode
 
 Speech recognition and cleanup run entirely on your PC. After the
 one-time download of the voice and grammar models (from Hugging Face),
-your audio and text never leave your computer.
+your audio and text never leave your computer. To spell names and terms
+correctly, Talkative reads up to 400 characters of the text before the
+cursor when you start dictating (never from password boxes); in Local
+mode that text stays on your PC, and you can turn it off in
+Settings > Dictation > Accuracy.
 
 
 Things that happen in both modes
@@ -79,10 +101,16 @@ What stays on your PC
 ---------------------
 
 - Your settings and personal dictionary.
+- Suggested Auto Text entries: when you correct a name or term
+  Talkative typed, it reads the box again a little later to notice the
+  change, and keeps only the word pair (for example "Kuber Netties" ->
+  "Kubernetes") to offer in Settings > Auto Text. The text of the box is
+  not kept. Turn this off in Settings > Dictation > Accuracy.
 - Dictation history, only if you turn it on in the Dictation tab. It is
   never uploaded, in either mode.
-- A debug log, off by default, which holds dictated text and the
-  recordings of the last 30 dictations if turned on.
+- A debug log, off by default, which holds dictated text (and the text
+  read before the cursor) and the recordings of the last 30 dictations
+  if turned on.
 - An error log (errors.log) of program errors, so a problem can be
   diagnosed. It never contains dictated text and is never uploaded.
 

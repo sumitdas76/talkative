@@ -27,6 +27,16 @@ PUNCTUATION_PROMPT = (
     "commas where needed, and each sentence ends with a period."
 )
 
+# Text just before the cursor in the target field, added to the end of the
+# speech-to-text prompt so names and terms already on screen are spelled
+# the same way (screen_context.py). Local: on, it never leaves the PC.
+# Cloud: off until the user ticks it in Settings, since the text is sent
+# to the speech service with the audio. Never in developer English, whose
+# prompt sets a literal-symbol style that prose would undo.
+CONTEXT_LOCAL = True
+CONTEXT_CLOUD = False
+CONTEXT_MAX_CHARS = 400
+
 # Presses shorter than this are treated as accidental taps and discarded.
 MIN_RECORDING_SECONDS = 0.3
 
@@ -171,6 +181,15 @@ CLOUD_ENDPOINT_URL = "https://talkative-cloud.sumitdas76.workers.dev"
 # PROCESSING_MODE is already "local" -- that path always uses the local
 # engine regardless of this setting.
 GRAMMAR_SOURCE = "auto"
+# Cloud mode's speech-to-text: "talkative" (Talkative Cloud: Groq Whisper
+# via the Worker) or "azure" (the user's own Azure Speech key, called
+# straight from this PC -- azure_stt.py). Azure failing (free hours used up,
+# bad key, offline) falls back to Talkative Cloud for that dictation.
+SPEECH_SERVICE = "talkative"
+AZURE_REGION = ""
+AZURE_LANGUAGE = "en-US"
+# The key, encrypted with Windows DPAPI (azure_stt.save_key); never plain.
+AZURE_KEY_PROTECTED = ""
 # Cloud busy or unreachable: app._cloud_transcribe() uses the Local voice
 # model when it's downloaded (kept loaded FALLBACK_IDLE_SECONDS after its
 # last use), otherwise retries Cloud after each of these waits (seconds).
@@ -263,6 +282,14 @@ OLD_EXAMPLE_ENTRIES = {
     "Sumit": "Sumit Chatterjee",
 }
 OLD_EXAMPLES_REMOVED = False
+# Notice when the user corrects a name or term Talkative typed and offer it
+# as an Auto Text entry (fix_learning.py). Suggestions only: nothing is
+# added until the user clicks Add in Settings. The pairs are kept here
+# (saved in settings.json, this PC only); dismissed ones aren't offered
+# again.
+LEARN_FIXES = True
+FIX_SUGGESTIONS = []
+FIX_DISMISSED = []
 # Off by default: biasing Whisper toward short name-like terms makes it
 # mishear ordinary phrases as those terms (observed live: "Send it Monday"
 # transcribed as "Sumit Monday", which the dictionary then expanded to
