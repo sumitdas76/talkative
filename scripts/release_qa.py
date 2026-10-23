@@ -7,7 +7,7 @@ usage (from the project root, with the project venv):
              (default: dist\\Talkative.exe)
   --grammar  also run the grammar-guard evaluation (D5, ~3 min, needs the
              local grammar model)
-  --no-gui   skip checks that open windows (F1, W1, W2, D12, F6)
+  --no-gui   skip checks that open windows (F1, W1, W2, D12, F6, D26-D28)
 
 Prints a PASS/FAIL/SKIP table and exits 1 if anything failed. Offline:
 no Groq or Worker requests (prose is scored on classification only).
@@ -44,6 +44,69 @@ def run_py(args, cwd, timeout=600):
                        encoding="utf-8", errors="replace", timeout=timeout,
                        env=dict(os.environ, PYTHONIOENCODING="utf-8"))
     return p.returncode, p.stdout + p.stderr
+
+
+# --------------------------------------------------------------------- G
+def check_lint():
+    """G3: Ruff, real errors and unused code (E9, F) -- the project's lint
+    level since 2026-10-24, when Ruff was first set up."""
+    code, out = run_py(["-m", "ruff", "check", "talkative", "main.py", "--select", "E9,F",
+                        "--output-format", "concise"], ROOT, timeout=120)
+    if "No module named ruff" in out:
+        record("G3", "Lint (Ruff E9,F)", "SKIP", "ruff not installed: pip install ruff")
+        return
+    record("G3", "Lint (Ruff E9,F)", "PASS" if code == 0 else "FAIL", out.strip().splitlines()[-1])
+
+
+def check_audit():
+    """G4: no known vulnerable dependencies."""
+    code, out = run_py(["-m", "pip_audit", "-r", "requirements.txt"], ROOT, timeout=600)
+    if "No module named pip_audit" in out:
+        record("G4", "Dependency audit (pip-audit)", "SKIP", "pip install pip-audit")
+        return
+    last = out.strip().splitlines()[-1] if out.strip() else ""
+    record("G4", "Dependency audit (pip-audit)",
+           "PASS" if code == 0 and "No known vulnerabilities" in out else "FAIL", last)
+
+
+_SECRET_PATTERNS = [re.compile(p) for p in (
+    r"gsk_[A-Za-z0-9]{20,}",                  # Groq API key
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
+    r"(?i)ocp-apim-subscription-key['\"]?\s*[:=]\s*['\"][A-Za-z0-9]{20,}",
+)]
+_SECRET_FILES = (".talkative_azure_key", ".talkative_admin_key")
+
+
+def check_secrets():
+    """G5: no secrets in the files the public repo tracks. Looks for known
+    key shapes and for the exact contents of this PC's own secret files
+    (Azure key, admin key), which must only ever live outside the repos.
+    The Worker shared secret in config.py is public by design (a soft
+    deterrent, see cloud-backend skill) and not counted."""
+    files = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True,
+                           text=True).stdout.split()
+    own = []
+    for name in _SECRET_FILES:
+        try:
+            for line in (Path.home() / name).read_text(encoding="utf-8-sig").split():
+                if len(line) >= 20:
+                    own.append(line.strip())
+        except OSError:
+            pass
+    hits = []
+    for f in files:
+        path = ROOT / f
+        if path.suffix.lower() in (".png", ".jpg", ".ico", ".gif", ".exe", ".wav", ".flac"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if any(p.search(text) for p in _SECRET_PATTERNS) or any(k in text for k in own):
+            hits.append(f)
+    record("G5", "No secrets in tracked files", "PASS" if not hits else "FAIL",
+           f"{len(files)} files scanned, {len(own)} local secrets compared"
+           + (f"; found in {hits}" if hits else ""))
 
 
 # --------------------------------------------------------------------- B
@@ -224,7 +287,8 @@ def check_text_rules():
     """D17: number formatting and spoken bullets; D20: spoken corrections
     replace only the corrected words."""
     for check_id, script in (("D17", "numbers_test.py"), ("D17", "bullets_test.py"),
-                             ("D20", "self_correction_test.py")):
+                             ("D20", "self_correction_test.py"), ("D29", "you_know_test.py"),
+                             ("D27", "fix_learning_test.py")):
         code, out = run_py([script], ROOT / "tools", timeout=60)
         last = out.strip().splitlines()[-1] if out.strip() else "no output"
         record(check_id, f"Text rules: {script[:-8]}", "PASS" if code == 0 else "FAIL", last)
@@ -363,6 +427,9 @@ def main():
     a = ap.parse_args()
     exe = Path(a.exe).resolve()
     print(f"Release QA -- {exe}\n", flush=True)
+    check_lint()
+    check_audit()
+    check_secrets()
     check_version()
     check_tcl(exe)
     check_single_tk_root()
@@ -375,6 +442,9 @@ def main():
         record("D16", "Clipboard formats survive a dictation", "SKIP", "--no-gui")
         record("W4", "Tray device submenus", "SKIP", "--no-gui")
         record("F6", "First-run switch to Cloud mid-download", "SKIP", "--no-gui")
+        record("D26", "Text before the cursor read in Notepad and Edge", "SKIP", "--no-gui")
+        record("D27", "Corrections noticed in Notepad", "SKIP", "--no-gui")
+        record("D28", "Quick continuation joins the sentence", "SKIP", "--no-gui")
     else:
         check_fresh_launch(exe)
     check_hotkeys()
@@ -392,6 +462,8 @@ def main():
     _script_check("D25", "Cloud silence trim never cuts quiet speech", "cloud_trim_test.py", 180)
     _script_check("W5", "settings.json saved atomically, one save at a time", "settings_save_test.py", 60)
     _script_check("W6", "Models tab shows a background grammar download", "grammar_tile_test.py", 60)
+    _script_check("D31", "Diagnostic data: off sends nothing; on never sends screen text",
+                  "diagnostics_test.py", 60)
     check_hotkey_rules()
     check_pipeline()
     check_text_rules()
@@ -403,6 +475,11 @@ def main():
         _script_check("D16", "Clipboard image/files/rich text survive; dictation kept out of history",
                       "clipboard_formats_test.py", 60)
         _script_check("F6", "First-run setup: switching to Cloud mid Local download works", "onboarding_cloud_test.py", 150)
+        _script_check("D26", "Text before the cursor read, corrections noticed, in Edge (guest profile)",
+                      "browser_context_e2e.py", 150)
+        _script_check("D27", "Corrections noticed in Notepad", "fix_learning_e2e.py", 90)
+        _script_check("D28", "Quick continuation joins the sentence; slow one, names, '?' don't",
+                      "continuation_e2e.py", 120)
     check_corpora()
     if a.grammar:
         check_grammar()
