@@ -66,6 +66,7 @@ _KEYS = {
     "context_local": "CONTEXT_LOCAL",
     "context_cloud": "CONTEXT_CLOUD",
     "learn_fixes": "LEARN_FIXES",
+    "send_diagnostics": "SEND_DIAGNOSTICS",
     "speech_service": "SPEECH_SERVICE",
     "azure_region": "AZURE_REGION",
     "azure_language": "AZURE_LANGUAGE",

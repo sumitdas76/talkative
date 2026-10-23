@@ -6,7 +6,7 @@ import time
 import numpy as np
 from pynput import keyboard
 
-from . import azure_stt, cloud_client, cloud_notice, config, dev_mode, error_toast, feedback, fix_learning, grammar_engine, history, model_manager, onboarding, pill, screen_context, settings, temp_cleanup, try_it_now, updater
+from . import azure_stt, cloud_client, cloud_notice, config, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, model_manager, onboarding, pill, screen_context, settings, temp_cleanup, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -784,8 +784,8 @@ class TalkativeApp:
                 # filler/correction/repeat rules, no grammar model, no
                 # sentence period, and no personal dictionary (an expansion
                 # like "AI" -> "artificial intelligence" would corrupt code).
-                _debug_log(audio=info, raw=raw, final=text,
-                           timing=f"transcribe {transcribe_secs:.1f}s [developer: code]")
+                self._record(audio, audio_info=info, raw=raw, final=text,
+                             timing=f"transcribe {transcribe_secs:.1f}s [developer: code]")
                 # Not watched for corrections: Auto Text never applies to
                 # code, so a learned pair could never help here.
                 self._insert_final(text, learn=False)
@@ -851,8 +851,9 @@ class TalkativeApp:
             grammar_used_local = False
 
         text = apply_dictionary(text)
-        _debug_log(
-            audio=info,
+        self._record(
+            audio,
+            audio_info=info,
             context=on_screen,
             raw=raw,
             fillers=after_fillers,
@@ -868,6 +869,13 @@ class TalkativeApp:
             + (" [developer: prose]" if dev else ""),
         )
         self._insert_final(text)
+
+    def _record(self, audio, **stages):
+        """One dictation's stages to debug.log (if on) and, if the user
+        turned on Send diagnostic data, to Talkative's server."""
+        stages["audio"] = stages.pop("audio_info")
+        _debug_log(**stages)
+        diagnostics.send(audio, self._cloud_active(), stages)
 
     def _cloud_transcribe(self, audio, prompt):
         """Cloud transcription that doesn't lose the dictation when Cloud

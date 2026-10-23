@@ -39,6 +39,18 @@ class_name = "LimitLog"
 tag = "v2"
 new_sqlite_classes = ["LimitLog"]
 
+# Diagnostic reports from users who turned on "Send diagnostic data"
+# (worker.js's DiagStore, 2026-10-23): kept 30 days, read with ADMIN_KEY
+# (tools/diagnostics.py). SQLite-backed, so on the free plan; R2 would
+# need a payment method on the account.
+[[durable_objects.bindings]]
+name = "DIAG_DO"
+class_name = "DiagStore"
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["DiagStore"]
+
 # Set these secrets once, per environment, before deploying:
 #   wrangler secret put SHARED_SECRET
 #   wrangler secret put GROQ_API_KEY

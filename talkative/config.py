@@ -382,6 +382,11 @@ DEBUG_LOG = False
 # in debug.log, so a misheard dictation ("Can you" typed as "Can I",
 # 2026-10-04 and 2026-10-20) can be replayed and tested. 0 = none.
 DEBUG_AUDIO_KEEP = 30
+# "Send diagnostic data" (diagnostics.py): each dictation's stages and
+# recording go to Talkative's server, kept 30 days for the maintainer.
+# MUST default False; the user turns it on in Settings > About and
+# confirms what is sent.
+SEND_DIAGNOSTICS = False
 
 # ---------------------------------------------------------------------------
 # Startup

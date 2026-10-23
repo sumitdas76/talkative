@@ -1354,7 +1354,8 @@ class _SettingsWindow:
             box, wraplength=500,
             text="By default, Talkative processes your dictation via Cloud: "
                  "your audio is sent to a remote server for transcription "
-                 "and cleanup, then discarded, not stored. Switch to "
+                 "and cleanup, then discarded, not stored (unless you turn on "
+                 "diagnostic data below). Switch to "
                  "Local in the General tab and it runs fully offline "
                  "instead, with nothing ever leaving this PC. Dictation "
                  "history, if you turn it on in the Dictation tab, is "
@@ -1363,7 +1364,46 @@ class _SettingsWindow:
                  "nothing is sent unless you type a message and click Send.",
         ).pack(anchor="w")
 
+        diag = ttk.LabelFrame(f, text="Diagnostic data", padding=10)
+        diag.pack(fill="x", pady=(10, 0))
+        self.var_diagnostics = tk.BooleanVar(value=config.SEND_DIAGNOSTICS)
+        ttk.Radiobutton(
+            diag, text="Send diagnostic data to help fix problems",
+            variable=self.var_diagnostics, value=True,
+            command=self._diagnostics_changed,
+        ).pack(anchor="w")
+        ttk.Radiobutton(
+            diag, text="Don't send diagnostic data",
+            variable=self.var_diagnostics, value=False,
+        ).pack(anchor="w")
+        ttk.Label(
+            diag, wraplength=500, style="Muted.TLabel",
+            text="Diagnostic data is what you said, what was typed, and the "
+                 "recording of each dictation. It goes to Sumit only, is "
+                 "kept for 30 days, then deleted. Your diagnostic ID: "
+                 + feedback.install_id()[:8],
+        ).pack(anchor="w", pady=(4, 0))
+
         self._build_feedback_section(f)
+
+    def _diagnostics_changed(self):
+        if config.SEND_DIAGNOSTICS:
+            return
+        ok = messagebox.askyesno(
+            APP_NAME,
+            "Send diagnostic data?\n\n"
+            "From now on, every dictation sends Sumit:\n"
+            "• the recording of what you said\n"
+            "• what was heard, each cleanup step, and what was typed\n"
+            "• your Talkative settings and version\n\n"
+            "It's kept for 30 days to find and fix problems, then deleted. "
+            "It's never shared or sold. You can turn this off here at any time.\n\n"
+            "Don't turn this on if you dictate things you wouldn't want "
+            "someone else to read or hear.",
+            parent=self.root,
+        )
+        if not ok:
+            self.var_diagnostics.set(False)
 
     def _build_feedback_section(self, f):
         box = ttk.LabelFrame(f, text="Feedback", padding=10)
@@ -1435,6 +1475,7 @@ class _SettingsWindow:
             "context_local": self.var_context_local.get(),
             "context_cloud": self.var_context_cloud.get(),
             "learn_fixes": self.var_learn_fixes.get(),
+            "send_diagnostics": self.var_diagnostics.get(),
             "speech_service": self.var_speech_service.get(),
             "azure_region": self.azure_region_entry.get().strip().lower().replace(" ", ""),
             "azure_language": self._azure_language(),

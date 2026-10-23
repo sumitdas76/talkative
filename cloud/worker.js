@@ -207,6 +207,77 @@ function limitLog(env) {
   return env.LIMIT_DO.get(env.LIMIT_DO.idFromName("global"));
 }
 
+// Diagnostic reports (2026-10-23): only from installs whose user turned on
+// "Send diagnostic data" in Settings (off by default). Each report is one
+// dictation: what speech-to-text heard, each cleanup step, the final text,
+// timings, and the recording. Stored here (SQLite-backed Durable Object,
+// free plan, no card -- R2 would need one) for DIAG_DAYS_KEPT days, read
+// only with ADMIN_KEY (tools/diagnostics.py). One object, "global".
+const DIAG_DAYS_KEPT = 30;
+const DIAG_PER_INSTALL_PER_DAY = 50;
+const DIAG_MAX_TEXT = 20000;      // bytes of JSON per report
+const DIAG_MAX_AUDIO = 2000000;   // bytes: ~60 s of 16 kHz 16-bit WAV (SQLite row limit is 2 MB)
+
+export class DiagStore extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.ctx.storage.sql.exec(
+      "CREATE TABLE IF NOT EXISTS diag (id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+      "ts TEXT NOT NULL, install TEXT NOT NULL, data TEXT NOT NULL, audio BLOB)");
+  }
+
+  async add(install, data, audio) {
+    const cutoff = new Date(Date.now() - DIAG_DAYS_KEPT * 86400000).toISOString();
+    this.ctx.storage.sql.exec("DELETE FROM diag WHERE ts < ?", cutoff);
+    this.ctx.storage.sql.exec(
+      "INSERT INTO diag (ts, install, data, audio) VALUES (?, ?, ?, ?)",
+      new Date().toISOString(), install, data, audio);
+  }
+
+  async list(since, install) {
+    const rows = this.ctx.storage.sql.exec(
+      "SELECT id, ts, install, data, audio IS NOT NULL AS has_audio FROM diag " +
+      "WHERE ts >= ? AND (? = '' OR install = ?) ORDER BY id LIMIT 1000",
+      since, install, install).toArray();
+    return rows.map((r) => ({ ...r, data: JSON.parse(r.data) }));
+  }
+
+  async audio(id) {
+    const rows = this.ctx.storage.sql.exec("SELECT audio FROM diag WHERE id = ?", id).toArray();
+    return rows.length && rows[0].audio ? rows[0].audio : null;
+  }
+}
+
+function diagStore(env) {
+  return env.DIAG_DO.get(env.DIAG_DO.idFromName("global"));
+}
+
+async function handleDiagnostics(request, env, installId) {
+  const q = await checkAndIncrementQuota(env, "diag:" + installId, DIAG_PER_INSTALL_PER_DAY);
+  if (!q.ok) return quotaExceeded();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "bad json" }, { status: 400 });
+  }
+  const report = body && typeof body.report === "object" ? body.report : null;
+  if (!report) return Response.json({ error: "missing report" }, { status: 400 });
+  const data = JSON.stringify(report);
+  if (data.length > DIAG_MAX_TEXT) return Response.json({ error: "report too large" }, { status: 413 });
+  let audio = null;
+  if (typeof body.audio_b64 === "string" && body.audio_b64) {
+    const bytes = Uint8Array.from(atob(body.audio_b64), (c) => c.charCodeAt(0));
+    const isWav = bytes.length > 12 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF";
+    if (!isWav || bytes.length > DIAG_MAX_AUDIO) {
+      return Response.json({ error: "bad audio" }, { status: 413 });
+    }
+    audio = bytes.buffer;
+  }
+  await diagStore(env).add(String(installId).slice(0, 64), data, audio);
+  return Response.json({ ok: true });
+}
+
 // Record a limit hit without delaying the response or ever failing it.
 function noteHit(env, ctx, kind, detail) {
   ctx.waitUntil(limitLog(env).hit(today(), kind, detail)
@@ -484,6 +555,18 @@ export default {
       }
       return Response.json(await limitLog(env).report());
     }
+    if (request.method === "GET" && url.pathname.startsWith("/diagnostics")) {
+      if (!env.ADMIN_KEY || request.headers.get("X-Admin-Key") !== env.ADMIN_KEY) {
+        return unauthorized();
+      }
+      if (url.pathname === "/diagnostics/audio") {
+        const audio = await diagStore(env).audio(Number(url.searchParams.get("id")));
+        return audio ? new Response(audio, { headers: { "Content-Type": "audio/wav" } })
+          : new Response("Not found", { status: 404 });
+      }
+      return Response.json(await diagStore(env).list(
+        url.searchParams.get("since") || "", url.searchParams.get("install") || ""));
+    }
     if (request.method !== "POST") {
       return new Response("Not found", { status: 404 });
     }
@@ -493,6 +576,13 @@ export default {
     const installId = request.headers.get("X-Install-Id");
     if (!installId) {
       return new Response("Missing X-Install-Id", { status: 400 });
+    }
+    if (url.pathname === "/diagnostics") {
+      try {
+        return await handleDiagnostics(request, env, installId);
+      } catch (err) {
+        return Response.json({ error: String(err) }, { status: 500 });
+      }
     }
     const handler = { "/transcribe": handleTranscribe, "/grammar": handleGrammar }[url.pathname];
     if (!handler) {

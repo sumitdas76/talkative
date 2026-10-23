@@ -8,7 +8,8 @@ every way it talks to the internet, what is sent, and how to turn it
 off. The source code in this repository is the reference: nothing is
 sent that isn't described here.
 
-Talkative has no accounts, no ads, no analytics and no tracking.
+Talkative has no accounts, no ads, no analytics and no tracking. The
+only diagnostics are the ones you can choose to send (below).
 
 
 Your choice: Cloud or Local
@@ -47,7 +48,8 @@ forwards the audio and text to:
   cleanup when Groq is unavailable.
   Privacy policy: https://www.cloudflare.com/privacypolicy/
 
-Talkative's server does not store or log your audio or text. It keeps
+Talkative's server does not store or log your audio or text, unless you
+turn on diagnostic data (see "Diagnostic data" below). It keeps
 two counts, both reset every day: how many requests each install ID
 made today, and how many came from each network address today. The
 address itself is not stored, only a one-way scrambled form of it
@@ -95,6 +97,29 @@ Things that happen in both modes
   install ID are emailed to the maintainer through FormSubmit
   (https://formsubmit.co), a form-to-email service. Nothing is sent
   unless you click Send.
+
+
+Diagnostic data (off unless you turn it on)
+-------------------------------------------
+
+In Settings > About you can choose "Send diagnostic data to help fix
+problems". It is off by default, and turning it on asks you to confirm.
+While it's on, every dictation sends Talkative's server, in either mode:
+
+- the recording of that dictation (up to 55 seconds),
+- what speech-to-text heard, the text after each cleanup step, and the
+  text that was typed,
+- your Talkative version, Windows version, the settings that affect the
+  result (Cloud or Local, cleanup style, speech service), and your
+  anonymous install ID (Settings > About shows its first 8 characters
+  as your diagnostic ID).
+
+The text before the cursor is never included, only how long it was.
+Reports are stored on Talkative's server (Cloudflare) for 30 days, then
+deleted, and only the maintainer can read them, to find and fix
+problems. They are never sold or shared. Turn it off in the same place;
+reports already sent are deleted when their 30 days are up, or sooner if
+you ask through the Feedback box.
 
 
 What stays on your PC

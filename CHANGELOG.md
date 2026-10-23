@@ -34,6 +34,9 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 - "You know" used as a filler ("it was, you know, fine"; "You know,
   ...") is removed in Cleaned up mode. "Do you know", "as you know" and
   "you know what I mean" stay.
+- "Send diagnostic data" (Settings > About, off by default): if you have
+  a problem, turn it on so Sumit can see what was heard and typed, and
+  hear the recording, for each dictation. Kept 30 days.
 - Press Esc while dictating to cancel without typing anything.
 - The first-run screen says in plain words how well Local mode suits
   your PC.
