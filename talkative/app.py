@@ -208,13 +208,10 @@ class TalkativeApp:
         return config.PROCESSING_MODE == "cloud" and bool(config.CLOUD_ENDPOINT_URL)
 
     def _grammar_uses_local(self):
-        """True when the grammar cleanup stage should run on the local
-        engine -- always in Local processing mode, and also in Cloud mode
-        when GRAMMAR_SOURCE == "local" and the local model is actually
-        installed (falls back to Cloud grammar otherwise)."""
-        if not self._cloud_active():
-            return True
-        return config.GRAMMAR_SOURCE == "local" and grammar_engine.is_installed()
+        """True when the grammar cleanup stage runs on the local engine:
+        Local mode. (Cloud with on-device grammar was an option until
+        2026-10-23; removed at the user's request.)"""
+        return not self._cloud_active()
 
     def _enter_cloud_mode(self):
         self.transcriber = _CLOUD_TRANSCRIBER
@@ -238,7 +235,7 @@ class TalkativeApp:
             if switched:
                 gc.collect()  # release the local model.bin mapping, if any
                 self._enter_cloud_mode()
-            self._sync_grammar_source()
+            grammar_engine.unload()  # Cloud never uses the local grammar engine
         elif self.transcriber is _CLOUD_TRANSCRIBER:
             self.transcriber = None
             self._load_model_async()
@@ -249,25 +246,12 @@ class TalkativeApp:
         changed while it loaded and no longer wants it -- it's ~1.5 GB of
         memory, which matters on 8 GB laptops."""
         def wanted():
-            return not self._cloud_active() or config.GRAMMAR_SOURCE == "local"
+            return not self._cloud_active()
 
         if not wanted():
             return
         grammar_engine.load()
         if not wanted():
-            grammar_engine.unload()
-
-    def _sync_grammar_source(self):
-        """While Cloud transcription is active, load or unload the local
-        grammar engine to match GRAMMAR_SOURCE -- independent of whether
-        the transcriber itself just switched, so toggling GRAMMAR_SOURCE
-        alone (without touching PROCESSING_MODE) still takes effect. Local
-        transcribe mode always wants the engine loaded and is handled by
-        the other branch of _sync_processing_mode, so this only runs from
-        the Cloud branch."""
-        if config.GRAMMAR_SOURCE == "local":
-            threading.Thread(target=self._load_grammar, daemon=True).start()
-        else:
             grammar_engine.unload()
 
     def _no_target_cue(self):
@@ -994,7 +978,7 @@ class TalkativeApp:
         sync_autostart()
         if self._cloud_active():
             self._enter_cloud_mode()
-            self._sync_grammar_source()
+            grammar_engine.unload()
         else:
             self._load_model_async()
             # Separate thread: the grammar engine must never delay dictation

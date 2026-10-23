@@ -176,15 +176,6 @@ STT_BEAM_SIZE = 5
 # ---------------------------------------------------------------------------
 PROCESSING_MODE = "cloud"
 CLOUD_ENDPOINT_URL = "https://talkative-cloud.sumitdas76.workers.dev"
-# Decouples the grammar cleanup stage from PROCESSING_MODE: "auto" (default)
-# follows it (Cloud transcribe -> Cloud grammar, Local -> local
-# grammar_engine). "local" forces the local grammar_engine even while
-# transcription runs on Cloud, for a Cloud-STT + local-grammar mix (falls
-# back to Cloud grammar at runtime if the local grammar model isn't
-# downloaded -- see app.py's _grammar_uses_local()). Meaningless when
-# PROCESSING_MODE is already "local" -- that path always uses the local
-# engine regardless of this setting.
-GRAMMAR_SOURCE = "auto"
 # Cloud mode's speech-to-text: "talkative" (Talkative Cloud: Groq Whisper
 # via the Worker) or "azure" (the user's own Azure Speech key, called
 # straight from this PC -- azure_stt.py). Azure failing (free hours used up,

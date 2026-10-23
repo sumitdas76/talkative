@@ -32,7 +32,6 @@ def _settings_summary(cloud):
     return {
         "processing": "cloud" if cloud else "local",
         "speech_service": config.SPEECH_SERVICE if cloud else "local " + config.MODEL_SIZE,
-        "grammar_source": config.GRAMMAR_SOURCE,
         "cleanup_mode": config.CLEANUP_MODE,
         "context": config.CONTEXT_CLOUD if cloud else config.CONTEXT_LOCAL,
         "azure_language": config.AZURE_LANGUAGE if config.SPEECH_SERVICE == "azure" else "",

@@ -40,7 +40,8 @@ _KEYS = {
     "grammar_model": "GRAMMAR_MODEL_DIR",
     "processing_mode": "PROCESSING_MODE",
     "cloud_endpoint_url": "CLOUD_ENDPOINT_URL",
-    "grammar_source": "GRAMMAR_SOURCE",
+    # "grammar_source" (on-device grammar in Cloud mode) was removed
+    # 2026-10-23; a saved value is ignored.
     # Not exposed in the settings UI -- set by hand-editing settings.json
     # if it ever needs to differ from the shipped default. Still listed
     # here so load_into_config() picks it up.

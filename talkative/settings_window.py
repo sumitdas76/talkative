@@ -379,15 +379,6 @@ class _SettingsWindow:
         )
         self.cloud_radio.pack(anchor="w", pady=2)
 
-        # Belongs to Cloud, so it sits under it, indented, and only shows
-        # while Cloud is selected (2026-10-13, at the user's request).
-        self.var_grammar_local = tk.BooleanVar(value=(config.GRAMMAR_SOURCE == "local"))
-        self.grammar_local_check = ttk.Checkbutton(
-            proc_box, text="Clean up grammar on this device instead of the server\n"
-                    "(needs the local models below).",
-            variable=self.var_grammar_local,
-        )
-
         # Cloud's speech-to-text: Talkative Cloud or the user's own Azure
         # key (azure_stt.py). Shown only while Cloud is selected.
         self.azure_frame = ttk.Frame(proc_box)
@@ -461,12 +452,9 @@ class _SettingsWindow:
 
     def _processing_changed(self):
         if self.var_processing.get() == "cloud":
-            self.grammar_local_check.pack(anchor="w", padx=(24, 0), pady=(0, 4),
-                                          after=self.cloud_radio)
             self.azure_frame.pack(anchor="w", padx=(24, 0), pady=(0, 6),
-                                  after=self.grammar_local_check)
+                                  after=self.cloud_radio)
         else:
-            self.grammar_local_check.pack_forget()
             self.azure_frame.pack_forget()
         self._speech_service_changed()
 
@@ -531,8 +519,7 @@ class _SettingsWindow:
             if installed:
                 self.local_status.config(
                     text="Local models downloaded." if self.var_processing.get() == "local"
-                    else "Local models downloaded — select Local, or tick the box "
-                         "under Cloud, to use them."
+                    else "Local models downloaded — select Local to use them."
                 )
                 self.local_download_btn.config(state="disabled", text="Downloaded")
             else:
@@ -1471,7 +1458,6 @@ class _SettingsWindow:
             "start_with_windows": self.var_autostart.get(),
             "theme": self.var_theme.get(),
             "processing_mode": self.var_processing.get(),
-            "grammar_source": "local" if self.var_grammar_local.get() else "auto",
             "context_local": self.var_context_local.get(),
             "context_cloud": self.var_context_cloud.get(),
             "learn_fixes": self.var_learn_fixes.get(),

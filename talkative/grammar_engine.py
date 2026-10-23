@@ -166,10 +166,10 @@ def download_in_background():
 
 
 def load_if_used():
-    """Load the engine when the current mode uses it (Local, or Cloud with
-    grammar on this device). Call after any download: a download alone
-    used to leave the new engine unused until the next restart."""
-    if config.PROCESSING_MODE == "local" or config.GRAMMAR_SOURCE == "local":
+    """Load the engine when the current mode uses it (Local). Call after
+    any download: a download alone used to leave the new engine unused
+    until the next restart."""
+    if config.PROCESSING_MODE == "local":
         load()
 
 

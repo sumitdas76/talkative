@@ -13,6 +13,18 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
+# From source, Windows groups the app's windows under python(w).exe and
+# shows Python's icon in the taskbar (user report 2026-10-23: "the icon of
+# Talkative in my taskbar has changed"). An app ID of its own makes the
+# taskbar use the window icon (app_icon.set_window_icon) instead. The
+# frozen EXE has its own icon resource and doesn't need this.
+if not getattr(sys, "frozen", False):
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SumitDas.Talkative")
+    except Exception:
+        pass
+
 from talkative import error_log
 from talkative.app import TalkativeApp
 
