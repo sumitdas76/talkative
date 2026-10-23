@@ -16,6 +16,14 @@ point two ...", "number one ... number two ..."; "finally"/"lastly" may
 close it), and every marker must open a clause -- start of the text,
 after . ! ? : ; or a comma, optionally followed by "and". That keeps
 "the first time ... a second chance" and "wait a second" as prose.
+
+Spoken letters count too (user report 2026-10-23: "A never lie. B always
+sleep. C play Fortnite." stayed one paragraph): "a" must open a clause,
+like the markers above, but "b", "c" ... only need to stand alone --
+speech-to-text often runs them into the sentence ("a. This b that C
+then."). A lone "b" or "c" is rare in prose; "plan B", "vitamin C" and
+"a B in maths" are excluded by the word before them.
+
 Anything that doesn't qualify is returned unchanged.
 """
 
@@ -42,6 +50,21 @@ _MARKER = re.compile(
     r"(?P<comma>\s*,)?(?=\s)",
     re.IGNORECASE,
 )
+
+# A single letter a-h standing alone ("i" is the pronoun), optionally with
+# its own "." ")" or ",". Group "lead" as in _MARKER.
+_LETTER_MARKER = re.compile(
+    r"(?P<lead>^|[.!?:;,]\s*|\n\s*|\s)(?:and\s+)?(?P<marker>[a-h])(?P<punct>[.),])?(?=\s)",
+    re.IGNORECASE,
+)
+# Words that make a following letter a name, grade or label, not a point.
+_LETTER_OWNERS = {
+    "plan", "option", "vitamin", "grade", "type", "class", "section", "part",
+    "category", "group", "column", "row", "block", "building", "gate", "wing",
+    "floor", "level", "tier", "size", "cup", "model", "series", "phase", "track",
+    "a", "an", "the", "got", "get", "an", "my", "his", "her", "their", "our",
+    "your", "point", "letter", "and", "or", "between",
+}
 
 _DIGIT_MARKER = re.compile(r"(?:^|(?<=\s))(?P<marker>(?P<n>[1-9])\.)\s+(?=[A-Za-z])")
 
@@ -84,6 +107,24 @@ def _find_markers(text):
     return sorted(found)
 
 
+def _letter_markers(text):
+    """(start, end, value) for spoken letters, a=1, b=2 ..."""
+    found = []
+    for m in _LETTER_MARKER.finditer(text):
+        value = ord(m.group("marker").lower()) - 96
+        lead = m.group("lead")
+        clause_start = lead == "" or bool(re.search(r"[.!?:;,\n]", lead))
+        if value == 1 and not clause_start:
+            continue  # "a" mid-clause is the article
+        before = text[:m.start("marker")].split()
+        prev = before[-1].lower().strip(".,;:!?") if before else ""
+        if prev in _LETTER_OWNERS and not (value > 1 and prev in ("and", "or")
+                                           and clause_start):
+            continue
+        found.append((m.start("marker"), m.end(), value))
+    return found
+
+
 def _ordered_run(found):
     """The longest run counting 1, 2, 3 ... (optionally ending with a
     closer), as a list of markers; [] if there's no run of two."""
@@ -104,6 +145,8 @@ def _ordered_run(found):
     return best
 
 
+_JOINERS = {"and", "or", "nor", "to", "vs", "versus", "plus"}
+
 _SENTENCE_END = re.compile(r"[.!?](?=\s+[A-Z])")
 
 
@@ -119,7 +162,7 @@ def _clean_item(s):
 def format_bullets(text):
     if not text or "\n" in text:
         return text  # already laid out (grammar pass made its own list)
-    run = _ordered_run(_find_markers(text))
+    run = _ordered_run(_find_markers(text)) or _ordered_run(_letter_markers(text))
     if not run:
         return text
 
@@ -141,7 +184,9 @@ def format_bullets(text):
             items[-1] = items[-1][:m.end()]
 
     items = [_clean_item(i) for i in items]
-    if any(not i for i in items):
+    # "A and B are fine": an item that is only a joining word means the
+    # markers were the subject of a sentence, not points.
+    if any(not i or i.lower().strip(".") in _JOINERS for i in items):
         return text
     if single:
         items = [i[:-1] if i.endswith(".") else i for i in items]

@@ -29,6 +29,8 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   then goes straight from your PC to Microsoft. In tests it made fewer
   mistakes on Indian-accented English (13% of words wrong instead of
   19%).
+- Lists spoken with letters ("a, never lie; b, always sleep; c, ...")
+  are typed as bullet points, like "first, second, third" already were.
 - Press Esc while dictating to cancel without typing anything.
 - The first-run screen says in plain words how well Local mode suits
   your PC.
