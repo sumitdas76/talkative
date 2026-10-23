@@ -215,6 +215,13 @@ function limitLog(env) {
 // only with ADMIN_KEY (tools/diagnostics.py). One object, "global".
 const DIAG_DAYS_KEPT = 30;
 const DIAG_PER_INSTALL_PER_DAY = 50;
+// Install ids are client-chosen, so the per-install cap alone doesn't bound
+// storage (G22 review, 2026-10-24): also per network address, and a hard
+// cap on reports kept (oldest dropped). The account's Durable Object
+// storage is shared with the quota counters, so filling it would break
+// Cloud for everyone. Worst case ~ DIAG_MAX_ROWS x 2 MB.
+const DIAG_PER_IP_PER_DAY = 100;
+const DIAG_MAX_ROWS = 1000;
 const DIAG_MAX_TEXT = 20000;      // bytes of JSON per report
 const DIAG_MAX_AUDIO = 2000000;   // bytes: ~60 s of 16 kHz 16-bit WAV (SQLite row limit is 2 MB)
 
@@ -229,6 +236,9 @@ export class DiagStore extends DurableObject {
   async add(install, data, audio) {
     const cutoff = new Date(Date.now() - DIAG_DAYS_KEPT * 86400000).toISOString();
     this.ctx.storage.sql.exec("DELETE FROM diag WHERE ts < ?", cutoff);
+    this.ctx.storage.sql.exec(
+      "DELETE FROM diag WHERE id NOT IN (SELECT id FROM diag ORDER BY id DESC LIMIT ?)",
+      DIAG_MAX_ROWS - 1);
     this.ctx.storage.sql.exec(
       "INSERT INTO diag (ts, install, data, audio) VALUES (?, ?, ?, ?)",
       new Date().toISOString(), install, data, audio);
@@ -255,6 +265,11 @@ function diagStore(env) {
 async function handleDiagnostics(request, env, installId) {
   const q = await checkAndIncrementQuota(env, "diag:" + installId, DIAG_PER_INSTALL_PER_DAY);
   if (!q.ok) return quotaExceeded();
+  const ipName = await ipQuotaName(request);
+  if (ipName) {
+    const ipq = await checkAndIncrementQuota(env, "diag:" + ipName, DIAG_PER_IP_PER_DAY);
+    if (!ipq.ok) return quotaExceeded();
+  }
   let body;
   try {
     body = await request.json();
