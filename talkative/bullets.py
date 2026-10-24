@@ -46,7 +46,7 @@ BULLET = "• "
 _MARKER = re.compile(
     r"(?P<lead>^|[.!?:;,]\s*|\n\s*)(?:and\s+)?"
     r"(?P<marker>first\s+of\s+all|(?:point|number|step)\s+(?:[a-z]+|\d+)"
-    r"|[a-z]+)"
+    r"|[1-9](?:st|nd|rd|th)|[a-z]+)"
     r"(?P<comma>\s*,)?(?=\s)",
     re.IGNORECASE,
 )
@@ -79,6 +79,10 @@ def _marker_value(marker):
             return int(tail)
         return _CARDINAL.get(tail)
     word = m[0]
+    # Azure (Indian English) writes spoken ordinals as digits: "3rd order
+    # the food" (live QA 2026-10-24: the third point stayed in the second).
+    if re.fullmatch(r"[1-9](?:st|nd|rd|th)", word):
+        return int(word[0])
     if word in _CLOSERS:
         return "close"
     return _ORDINAL.get(word) or _LY.get(word)
@@ -95,7 +99,8 @@ def _find_markers(text):
         # A bare ordinal needs its comma ("First, book the hall") or to
         # start a sentence; "point one" / "firstly" / "first of all" are
         # unambiguous enough without one.
-        bare = m.group("marker").lower() in _ORDINAL
+        bare = (m.group("marker").lower() in _ORDINAL
+                or re.fullmatch(r"[1-9](?:st|nd|rd|th)", m.group("marker").lower()))
         if bare and not m.group("comma") and not re.search(
                 r"(^|[.!?:\n])\s*$", m.group("lead")):
             continue

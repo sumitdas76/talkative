@@ -2,7 +2,7 @@
   "_comment": "Minimum scores for scripts/release_qa.py (docs/RELEASE_QA.md D3, D5). Raise them in the same commit as a change that improves them.",
   "code_dictation": {
     "corpus2_all": 250,
-    "corpus3_final": 77,
+    "corpus3_final": 78,
     "corpus4_tune": 183,
     "corpus4_final": 60,
     "prose_guard": 48
