@@ -74,6 +74,11 @@ Settings > Dictation > Accuracy.
 Things that happen in both modes
 --------------------------------
 
+- To fit a dictation into the middle of a sentence (no capital letter
+  or full stop where the sentence carries on), Talkative reads a few
+  words on either side of the cursor just before typing. This is done
+  on your PC in both modes and is never sent anywhere or saved. Password
+  boxes are never read.
 - The microphone stays open for 4 seconds after each dictation, so
   that if you press the hotkey again to carry on, a word you started
   saying as you pressed isn't lost. During those seconds Talkative keeps

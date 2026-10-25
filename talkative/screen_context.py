@@ -80,6 +80,40 @@ def _before_caret(control, limit):
         return None
 
 
+def around_caret(limit=80):
+    """(text before, text after) the caret or selection in the focused
+    control, raw (whitespace kept), at most `limit` characters each; None
+    when the caret can't be located (no TextPattern -- ValuePattern's whole
+    value doesn't say where the caret is) or it's a password field. Used
+    on this PC only, to fit a dictation into the middle of a sentence
+    (continuation.fit_to_cursor); never sent anywhere. Never raises."""
+    try:
+        pythoncom.CoInitialize()
+    except Exception:
+        pass
+    try:
+        control = auto.GetFocusedControl()
+        if control is None or control.IsPassword:
+            return None
+        pattern = control.GetPattern(auto.PatternId.TextPattern)
+        if pattern is None:
+            return None
+        selection = pattern.GetSelection()
+        if not selection:
+            return None
+        start, end = auto.TextPatternRangeEndpoint.Start, auto.TextPatternRangeEndpoint.End
+        before = selection[0].Clone()
+        before.MoveEndpointByRange(end, before, start, waitTime=0)
+        before.MoveEndpointByUnit(start, auto.TextUnit.Character, -limit, waitTime=0)
+        after = selection[0].Clone()
+        after.MoveEndpointByRange(start, after, end, waitTime=0)
+        after.MoveEndpointByUnit(end, auto.TextUnit.Character, limit, waitTime=0)
+        return before.GetText(limit + 1), after.GetText(limit + 1)
+    except Exception:
+        log.debug("caret text unavailable", exc_info=True)
+        return None
+
+
 def capture(limit=None):
     """The text before the cursor in the focused control ("" when there is
     none, it's a password field, or it can't be read). Never raises."""

@@ -4,6 +4,14 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
 ## [Unreleased]
 
+### New
+
+- Dictating into the middle of a sentence fits in: delete a wrong word,
+  dictate the right one, and it's typed in lowercase without a full stop
+  when the sentence carries on ("I want to meet on Tuesday next week",
+  not "on Tuesday. next week"). Names and "I" keep their capitals. Works
+  over selected text too.
+
 ### Fixed
 
 - Carrying on a sentence no longer loses the first word: when you press

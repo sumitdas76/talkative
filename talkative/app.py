@@ -1004,9 +1004,22 @@ class TalkativeApp:
         if learn and press is not None and continuation.last_check:
             _debug_log(continuation=continuation.last_check)
             continuation.last_check = None
-        insert_text(text, take_back=take_back)
+        # Typed into the middle of a sentence (a wrong word deleted, the
+        # right one dictated): no capital, no full stop before the rest of
+        # it. Read here, on this PC only; nothing is sent.
+        space = None
+        if (learn and not take_back and config.FIT_TO_CURSOR
+                and config.INSERT_MODE != "clipboard"):
+            around = screen_context.around_caret()
+            if around is not None:
+                fitted, space = continuation.fit_to_cursor(text, *around)
+                if fitted != text or space is not None:
+                    _debug_log(cursor=f"{around[0][-20:]!r} | {around[1][:20]!r} -> {fitted!r}")
+                text = fitted
+        insert_text(text, take_back=take_back, append_space=space)
         if config.INSERT_MODE != "clipboard":
-            continuation.note_paste(text + (" " if config.APPEND_SPACE else ""))
+            appended = config.APPEND_SPACE if space is None else space
+            continuation.note_paste(text + (" " if appended else ""))
         if learn and config.INSERT_MODE != "clipboard":
             fix_learning.watch(text, on_new=self._fixes_noticed)
         if config.ENABLE_HISTORY:

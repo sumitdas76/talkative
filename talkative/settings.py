@@ -73,6 +73,7 @@ _KEYS = {
     "fix_dismissed": "FIX_DISMISSED",
     # Not in the settings UI: 0.0 turns the mic pre-roll off.
     "preroll_seconds": "PREROLL_SECONDS",
+    "fit_to_cursor": "FIT_TO_CURSOR",
 }
 
 # Keys handled outside the type-checked table.

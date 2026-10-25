@@ -127,13 +127,15 @@ def _put_private_text(text):
             _set(_user32.RegisterClipboardFormatW(name), data)
 
 
-def insert_text(text, take_back=0):
+def insert_text(text, take_back=0, append_space=None):
     """Copy text to the clipboard, paste it via simulated Ctrl+V into
     whatever control currently has focus, then restore the user's previous
     clipboard contents a moment later. In "clipboard" mode, only copy --
     the user pastes manually, and the clipboard is not restored.
     `take_back` Backspaces go first (continuation.py: the full stop that
-    ended the last dictation, when this one carries on its sentence)."""
+    ended the last dictation, when this one carries on its sentence).
+    `append_space` overrides config.APPEND_SPACE (None = use it):
+    continuation.fit_to_cursor knows when text already follows."""
     # Windows line breaks: a bare "\n" (bullet lists) shows as nothing in
     # older Win32 edit controls.
     text = text.replace("\r\n", "\n").replace("\n", "\r\n")
@@ -141,7 +143,7 @@ def insert_text(text, take_back=0):
         pyperclip.copy(text)
         return
 
-    if config.APPEND_SPACE:
+    if config.APPEND_SPACE if append_space is None else append_space:
         text = text + " "
 
     # One paste at a time, from saving the clipboard to restoring it. Two

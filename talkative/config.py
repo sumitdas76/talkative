@@ -47,6 +47,11 @@ CONTINUE_SECONDS = 4.0
 # Never sent unless the hotkey is pressed again. 0.0 = off (mic closes
 # at once, as before 1.3.17); settings key "preroll_seconds".
 PREROLL_SECONDS = 0.75
+# Dictating into the middle of a sentence (continuation.fit_to_cursor):
+# lowercase start after a mid-sentence word, no full stop when the sentence
+# carries on after the cursor. Reads the text around the caret on this PC
+# only, in both modes. Settings key "fit_to_cursor".
+FIT_TO_CURSOR = True
 
 # Presses shorter than this are treated as accidental taps and discarded.
 MIN_RECORDING_SECONDS = 0.3

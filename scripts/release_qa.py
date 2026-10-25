@@ -480,6 +480,8 @@ def main():
         _script_check("D26", "Text before the cursor read, corrections noticed, in Edge (guest profile)",
                       "browser_context_e2e.py", 150)
         _script_check("D27", "Corrections noticed in Notepad", "fix_learning_e2e.py", 90)
+        _script_check("D33", "Mid-sentence dictation: lowercase start, no stray full stop (rules + Notepad)",
+                      "cursor_fit_e2e.py", 120)
         _script_check("D28", "Quick continuation joins the sentence; slow one, names, '?' don't",
                       "continuation_e2e.py", 120)
     check_corpora()

@@ -40,6 +40,11 @@ need like look keep find found try call check add remove change fix open
 close start stop move turn set run write read work help next first last
 one two three four five six seven eight nine ten new old good bad big small
 long short right left back up down out off on
+eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen
+twenty thirty forty fifty sixty seventy eighty ninety hundred thousand
+million half twice once wait sure actually probably definitely almost
+already always never sometimes usually soon instead though although unless
+until since nothing something anything everything someone everyone
 """.split())
 
 _last = None  # (pasted text, monotonic time, window handle)
@@ -118,6 +123,64 @@ def lowercase_start(text):
         return text
     i = m.start(1)
     return text[:i] + text[i].lower() + text[i + 1:]
+
+
+# fit_to_cursor(): what the text before the cursor ends with when a new
+# sentence starts there (closing quotes/brackets after it are skipped).
+_SENTENCE_END = ".!?:"
+_CLOSERS = "\"')]”’"
+_OPENERS = "([{“‘/-"  # no space after these (straight quotes could be either)
+
+
+def _sentence_starts_after(before):
+    s = before.rstrip(" \t ")
+    if not s or s[-1] in "\r\n":
+        return True
+    s = s.rstrip(_CLOSERS) or s
+    return s[-1] in _SENTENCE_END or s.endswith("•")
+
+
+def _continues_sentence(after):
+    """Does the text after the cursor carry on the same sentence?"""
+    s = after.lstrip(" \t ")
+    if not s or s[0] in "\r\n":
+        return False
+    if s[0] in ",.;:!?)]”’\"'":
+        return True
+    m = re.match(r"[A-Za-z][A-Za-z']*|\d", s)
+    if not m:
+        return False
+    word = m.group(0)
+    # "The", "Then", "We" capitalized = a new sentence follows; a name, "I",
+    # an acronym or a lowercase word = the same sentence carries on.
+    return not (word[0].isupper() and word.lower() in _COMMON and word != "I")
+
+
+def fit_to_cursor(text, before, after):
+    """Fit a dictation typed into the middle of existing text: after a
+    mid-sentence word, start in lowercase (and with a space if there isn't
+    one); when the same sentence carries on after the cursor, drop the
+    full stop. Returns (text, trailing space wanted: True/False, or None to
+    leave it to config.APPEND_SPACE). User request 2026-10-25: delete a
+    wrong word, dictate the right one, and get "...on tuesday next week"
+    without a capital or a stray full stop. Lists are left alone."""
+    if not text.strip():
+        return text, None
+    is_list = "\n" in text or "•" in text
+    space = None
+    if not is_list and not _sentence_starts_after(before):
+        text = lowercase_start(text.lstrip())
+        if before and not before[-1].isspace() and before[-1] not in _OPENERS:
+            text = " " + text
+    if (not is_list and _continues_sentence(after)
+            and text.endswith(".") and not text.endswith("..")):
+        text = text[:-1]
+    if after:
+        # Text follows: a space only if it doesn't already start with one
+        # (or with punctuation, which goes straight after the word).
+        nxt = after[0]
+        space = not (nxt.isspace() or nxt in ",.;:!?)]”’\"'")
+    return text, space
 
 
 def chars_to_delete():
