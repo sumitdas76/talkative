@@ -17,6 +17,9 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   for silence, so only part of the sentence got typed.
 - Code dictation: "api dot github dot com" is typed as `api.github.com`,
   not `api .github.com`.
+- Spoken corrections replace the word you meant: "Let's meet on Monday.
+  Sorry, I mean Tuesday" types "Let's meet on Tuesday." They now also
+  work with the Indian English accent, and "umm" / "uhh" count as fillers.
 
 ### New
 
