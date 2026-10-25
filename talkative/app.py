@@ -806,7 +806,9 @@ class TalkativeApp:
                 # Skipped when Cloud just refused the transcription: it
                 # would most likely refuse this too, maybe after a 20 s
                 # timeout. The rule-based cleanup above still ran.
-                text = self._cloud_grammar(text)
+                text = self._cloud_grammar(
+                    text, corrected=after_corrections != after_fillers
+                )
             grammar_secs = time.time() - t0
             if dev:
                 # The grammar model likes to wrap paths in backticks
@@ -857,7 +859,7 @@ class TalkativeApp:
         )
         self._insert_final(text, press=press)
 
-    def _cloud_grammar(self, text):
+    def _cloud_grammar(self, text, corrected=False):
         """Cloud grammar. For Indian English (Azure) it first tries Azure's
         unpunctuated words: Azure ends a sentence at every pause
         ("...the user of the software. Stop between a sentence..."), and
@@ -865,8 +867,15 @@ class TalkativeApp:
         unpunctuated text (it once answered a question instead of
         punctuating it), so if the guards reject that attempt, the
         punctuated text is cleaned up as usual. Measured on 20 real
-        dictations, 2026-10-23: never worse, often better."""
+        dictations, 2026-10-23: never worse, often better.
+
+        Not when a spoken correction was applied to the punctuated text
+        (`corrected`): without sentence breaks the correction rule can't
+        find what to retract, and the model kept "Monday sorry I mean
+        Tuesday" (live test 2026-10-25)."""
         itn = getattr(cloud_client.last_stt, "itn", "") if self._cloud_active() else ""
+        if corrected:
+            itn = ""
         if itn:
             plain = apply_spoken_symbols(itn)
             if config.CLEANUP_MODE == "cleaned_up":

@@ -113,6 +113,39 @@ def _bare(word):
     return word.strip(",.;:!?\"'()").lower()
 
 
+_DAYS = {
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+    "sunday", "today", "tomorrow", "tonight", "yesterday",
+}
+_MONTHS = {
+    "january", "february", "march", "april", "may", "june", "july",
+    "august", "september", "october", "november", "december",
+}
+_NUMBER_WORDS = {
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "fifteen", "twenty", "thirty", "forty",
+    "fifty", "sixty", "hundred", "noon", "midnight",
+    "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
+    "eighth", "ninth", "tenth",
+}
+
+
+def _kind(raw):
+    """A word's kind, for matching a correction to the word it replaces:
+    "day", "month", "number", "name" (capitalised mid-sentence), or None."""
+    b = _bare(raw)
+    if b in _DAYS:
+        return "day"
+    if b in _MONTHS:
+        return "month"
+    if b in _NUMBER_WORDS or re.fullmatch(r"\d[\d:.,]*(st|nd|rd|th|am|pm)?", b):
+        return "number"
+    word = raw.strip(",.;:!?\"'()")
+    if word[:1].isupper() and b != "i":
+        return "name"
+    return None
+
+
 def _kept_head(span, correction):
     """The part of the retracted span the correction does NOT replace.
 
@@ -120,7 +153,10 @@ def _kept_head(span, correction):
     send it to Mary") is a full restatement: nothing is kept. Otherwise it
     only replaces the end ("Let's meet on Monday, sorry, I mean Tuesday" ->
     "Let's meet on Tuesday"): from the last occurrence of the correction's
-    leading small word, else the same number of words as the correction.
+    leading small word, else from the last word of the same kind as its
+    first word (a day, month, number or name: "on Monday, sorry, I mean
+    Tuesday at 3:30" replaces only "Monday" -- live test 2026-10-25),
+    else the same number of words as the correction.
     """
     core = span.strip().rstrip(",.;:!? ")
     words = list(_SPAN_WORD.finditer(core))
@@ -142,6 +178,13 @@ def _kept_head(span, correction):
             start = len(words) - (len(fixed) - 1)
             while start > 1 and _bare(words[start - 1].group()) in _LEADING_WORDS:
                 start -= 1
+    else:
+        kind = _kind(correction.split()[0])
+        if kind:
+            for i in range(len(words) - 1, 0, -1):
+                if _kind(words[i].group()) == kind:
+                    start = i
+                    break
     if start is None:
         start = len(words) - len(fixed)
     head = span[: span.find(core) + words[start].start()]
