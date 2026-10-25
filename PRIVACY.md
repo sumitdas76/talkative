@@ -1,7 +1,7 @@
 Talkative Privacy Policy
 ========================
 
-Last updated: 2026-10-23
+Last updated: 2026-10-25
 
 Talkative is a free, open-source Windows dictation app. This page lists
 every way it talks to the internet, what is sent, and how to turn it
@@ -24,8 +24,8 @@ this at any time in Settings > General > Processing.
 
 Each time you dictate, Talkative sends:
 
-- The audio recording of that dictation (only while you hold the
-  hotkey; recordings with no speech in them are not sent at all), and a
+- The audio recording of that dictation (while you hold the hotkey;
+  recordings with no speech in them are not sent at all), and a
   short hint text built from your personal dictionary words, so names
   and terms you added are recognized.
 - Only if you turn it on (Settings > Dictation > Accuracy, "Also in
@@ -73,6 +73,15 @@ Settings > Dictation > Accuracy.
 
 Things that happen in both modes
 --------------------------------
+
+- The microphone stays open for 4 seconds after each dictation, so
+  that if you press the hotkey again to carry on, a word you started
+  saying as you pressed isn't lost. During those seconds Talkative keeps
+  only the last three-quarters of a second in memory, replacing it
+  continuously. It is never saved, and it is only used (and in Cloud
+  mode sent) if you press the hotkey again within the 4 seconds; then it
+  becomes the start of that dictation. Otherwise it is discarded when
+  the microphone closes. Windows' microphone icon shows this.
 
 - Update checks, once a day. Talkative downloads a small public file
   from GitHub to see whether a newer app version or model update

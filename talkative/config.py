@@ -41,6 +41,12 @@ CONTEXT_MAX_CHARS = 400
 # the same window, carries on that sentence: its full stop is taken back
 # and the new text starts in lowercase (continuation.py). 0 = off.
 CONTINUE_SECONDS = 4.0
+# After each dictation the microphone stays open CONTINUE_SECONDS, keeping
+# only this many seconds in memory; a re-press in that time starts with
+# them, so a word said while pressing isn't lost (audio_recorder.py).
+# Never sent unless the hotkey is pressed again. 0.0 = off (mic closes
+# at once, as before 1.3.17); settings key "preroll_seconds".
+PREROLL_SECONDS = 0.75
 
 # Presses shorter than this are treated as accidental taps and discarded.
 MIN_RECORDING_SECONDS = 0.3

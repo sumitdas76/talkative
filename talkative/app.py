@@ -508,6 +508,7 @@ class TalkativeApp:
             return
 
         try:
+            self.recorder.preroll = config.PREROLL_SECONDS
             self.recorder.start()
         except Exception as exc:
             show_error_popup(f"Could not start recording:\n{exc}")
@@ -676,7 +677,9 @@ class TalkativeApp:
             self._latched = False
         self.tray.set_idle()
         pill.hide()
-        audio = self.recorder.stop()
+        # A dictation that will be typed keeps the mic open for a quick
+        # re-press (audio_recorder: the first word of a continuation).
+        audio = self.recorder.stop(linger=config.CONTINUE_SECONDS if process else 0)
         duration = time.time() - self._record_start_time
 
         if not process or duration < config.MIN_RECORDING_SECONDS:
@@ -1078,3 +1081,4 @@ class TalkativeApp:
         self._running = False
         if self._listener:
             self._listener.stop()
+        self.recorder.close()

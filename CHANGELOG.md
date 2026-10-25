@@ -2,6 +2,17 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [Unreleased]
+
+### Fixed
+
+- Carrying on a sentence no longer loses the first word: when you press
+  the hotkey again within 4 seconds, the words you started saying as you
+  pressed are kept ("move the meeting to Friday" came out as "to
+  Friday"). To do this, the microphone now stays open 4 seconds after
+  each dictation, keeping under a second of audio in memory; it's only
+  used if you press again (see PRIVACY.md).
+
 ## [1.3.16] - 2026-10-25
 
 ### Removed

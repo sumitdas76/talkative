@@ -71,6 +71,8 @@ _KEYS = {
     "speech_service": "SPEECH_SERVICE",
     "fix_suggestions": "FIX_SUGGESTIONS",
     "fix_dismissed": "FIX_DISMISSED",
+    # Not in the settings UI: 0.0 turns the mic pre-roll off.
+    "preroll_seconds": "PREROLL_SECONDS",
 }
 
 # Keys handled outside the type-checked table.
