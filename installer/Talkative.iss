@@ -19,7 +19,7 @@
 ;   half-gigabyte left behind).
 
 #define MyAppName "Talkative"
-#define MyAppVersion "1.3.15"
+#define MyAppVersion "1.3.16"
 #define MyAppExeName "Talkative.exe"
 
 [Setup]
