@@ -11,7 +11,8 @@ UI Automation -- if it can't be read, nothing is joined), the full stop
 that ended the last dictation is deleted and the new text carries on in
 lowercase: "And don't show the Azure."
 
-Only a closing full stop is removed (never "?" or "!"), never after a
+Only a closing full stop or trailing-off mark ("...", "…", "-") is removed
+(never "?" or "!"), never after a
 bullet list, never for code dictations. The first word stays capitalized
 when it is "I", an acronym or a name -- anything that isn't a common
 lowercase word (_COMMON below).
@@ -42,6 +43,12 @@ long short right left back up down out off on
 """.split())
 
 _last = None  # (pasted text, monotonic time, window handle)
+
+# What can end a dictation that stopped mid-sentence: a full stop, or the
+# trailing-off marks Whisper and the grammar model write for a cut-off word
+# ("we should-" -> "we should..."). The 1.3.16 D6 test found "..." was
+# treated as the end of a sentence and never joined.
+_END = re.compile(r"(?:\.|\.\.\.|…|[-–—]+\.?)$")
 
 
 def _foreground():
@@ -82,7 +89,7 @@ def joins(press, before_cursor):
     if hwnd is None or hwnd != press_hwnd:
         return False
     last = _norm(text)
-    if not last.endswith(".") or last.endswith("..") or "\n" in text or "•" in text:
+    if not _END.search(last) or "\n" in text or "•" in text:
         return False
     before = _norm(before_cursor)
     return bool(before) and before.endswith(last[-60:])
@@ -103,8 +110,11 @@ def lowercase_start(text):
 
 def chars_to_delete():
     """How many characters to take back before the joined text: the full
-    stop, and the space Talkative typed after it (config.APPEND_SPACE)."""
+    stop or trailing-off mark, and the space Talkative typed after it
+    (config.APPEND_SPACE)."""
     if _last is None:
         return 0
     text = _last[0]
-    return 1 + (len(text) - len(text.rstrip(" ")))
+    body = text.rstrip(" ")
+    m = _END.search(body)
+    return (len(m.group(0)) if m else 1) + (len(text) - len(body))
