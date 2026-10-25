@@ -998,6 +998,9 @@ class TalkativeApp:
                 and continuation.joins(press, screen_context.capture())):
             take_back = continuation.chars_to_delete()
             text = " " + continuation.lowercase_start(text)
+        if learn and press is not None and continuation.last_check:
+            _debug_log(continuation=continuation.last_check)
+            continuation.last_check = None
         insert_text(text, take_back=take_back)
         if config.INSERT_MODE != "clipboard":
             continuation.note_paste(text + (" " if config.APPEND_SPACE else ""))

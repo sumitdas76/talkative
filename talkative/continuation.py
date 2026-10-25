@@ -74,25 +74,37 @@ def _norm(s):
     return re.sub(r"\s+", " ", s or "").strip()
 
 
+last_check = None  # why joins() last decided as it did, for debug.log
+
+
 def joins(press, before_cursor):
     """True when this dictation carries on the last one's sentence.
     `press` is press_info() from the hotkey press; `before_cursor` the text
     before the cursor now (screen_context.capture())."""
+    global last_check
+    ok, last_check = _joins(press, before_cursor)
+    return ok
+
+
+def _joins(press, before_cursor):
     if _last is None or press is None or not config.CONTINUE_SECONDS:
-        return False
+        return False, "nothing to carry on"
     text, pasted_at, hwnd = _last
     pressed_at, press_hwnd = press
     # Negative when the key went down again before the last dictation was
     # even typed -- the quickest continuation of all.
-    if pressed_at - pasted_at > config.CONTINUE_SECONDS:
-        return False
+    gap = pressed_at - pasted_at
+    if gap > config.CONTINUE_SECONDS:
+        return False, f"pressed {gap:.1f}s after the last paste"
     if hwnd is None or hwnd != press_hwnd:
-        return False
+        return False, f"different window ({hwnd} -> {press_hwnd})"
     last = _norm(text)
     if not _END.search(last) or "\n" in text or "•" in text:
-        return False
+        return False, "last dictation didn't end in a full stop or '...'"
     before = _norm(before_cursor)
-    return bool(before) and before.endswith(last[-60:])
+    if not before or not before.endswith(last[-60:]):
+        return False, f"text before the cursor doesn't end with it: {before[-60:]!r}"
+    return True, f"joined (pressed {gap:+.1f}s after the last paste)"
 
 
 def lowercase_start(text):
