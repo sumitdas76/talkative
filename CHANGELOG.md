@@ -2,6 +2,23 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
+## [Unreleased]
+
+### Changed
+
+- The three Accuracy options are now always on and no longer in
+  Settings: the text before the cursor helps spell names and terms in
+  both Local and Cloud mode (in Cloud it is sent with the audio, see
+  PRIVACY.md), and names you correct are offered as Auto Text
+  suggestions.
+
+### New
+
+- "Start with Windows" in the tray menu (also still in Settings >
+  General).
+- Feedback can include an image (a screenshot, up to 5 MB): Settings >
+  About > Feedback > Attach image.
+
 ## [1.3.17] - 2026-10-25
 
 ### New

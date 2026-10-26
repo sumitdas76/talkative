@@ -28,11 +28,10 @@ Each time you dictate, Talkative sends:
   recordings with no speech in them are not sent at all), and a
   short hint text built from your personal dictionary words, so names
   and terms you added are recognized.
-- Only if you turn it on (Settings > Dictation > Accuracy, "Also in
-  Cloud mode"; off by default): up to 400 characters of the text just
-  before the cursor in the box you're dictating into, sent with the
-  audio so names and terms already there are spelled the same way.
-  Password boxes are never read.
+- Up to 400 characters of the text just before the cursor in the box
+  you're dictating into, sent with the audio so names and terms already
+  there are spelled the same way, then discarded. Password boxes are
+  never read.
 - The transcribed text, for grammar and punctuation cleanup.
 - An anonymous install ID: a random number created on your PC the first
   time Talkative runs. It isn't tied to your name, email, or device,
@@ -67,8 +66,7 @@ one-time download of the voice and grammar models (from Hugging Face),
 your audio and text never leave your computer. To spell names and terms
 correctly, Talkative reads up to 400 characters of the text before the
 cursor when you start dictating (never from password boxes); in Local
-mode that text stays on your PC, and you can turn it off in
-Settings > Dictation > Accuracy.
+mode that text stays on your PC.
 
 
 Things that happen in both modes
@@ -98,8 +96,9 @@ Things that happen in both modes
   your install ID. The check happens on your PC, and nothing is sent
   apart from the plain request itself.
 - Feedback you choose to send. If you type a message in
-  Settings > About and click Send, that message and your anonymous
-  install ID are emailed to the maintainer through FormSubmit
+  Settings > About and click Send, that message, the image you attached
+  to it (if any), and your anonymous install ID are emailed to the
+  maintainer through FormSubmit
   (https://formsubmit.co), a form-to-email service. Nothing is sent
   unless you click Send.
 

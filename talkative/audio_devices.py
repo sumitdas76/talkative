@@ -17,6 +17,7 @@ import logging
 from ctypes import POINTER, byref, c_uint, c_void_p, c_wchar_p, wintypes
 
 _E_RENDER = 0
+_E_CAPTURE = 1
 _DEVICE_STATE_ACTIVE = 1
 _ROLES = (0, 1, 2)  # eConsole, eMultimedia, eCommunications
 _VT_LPWSTR = 31
@@ -135,6 +136,28 @@ def outputs():
     except Exception:
         logging.warning("Could not list playback devices", exc_info=True)
         return []
+
+
+def capture_state():
+    """(Windows' default microphone id, frozenset of connected microphone
+    ids), or None if Windows can't be asked. Cheap enough to poll: it
+    changes when a microphone is plugged in, unplugged, or made the
+    default in Windows."""
+    try:
+        com = _interfaces()
+        com["comtypes"].CoInitialize()
+        enum = com["comtypes"].CoCreateInstance(
+            com["enumerator_clsid"], interface=com["IMMDeviceEnumerator"])
+        try:
+            default_id = enum.GetDefaultAudioEndpoint(_E_CAPTURE, 0).GetId()
+        except Exception:
+            default_id = None  # no microphone at all
+        coll = enum.EnumAudioEndpoints(_E_CAPTURE, _DEVICE_STATE_ACTIVE)
+        ids = frozenset(coll.Item(i).GetId() for i in range(coll.GetCount()))
+        return default_id, ids
+    except Exception:
+        logging.warning("Could not read the microphone list", exc_info=True)
+        return None
 
 
 def set_default_output(device_id):

@@ -11,9 +11,9 @@ whose end stands in for the caret). Password fields are never read. Only
 the last config.CONTEXT_MAX_CHARS characters are kept, in memory, for that
 one dictation; nothing is stored.
 
-Whether it's used: config.CONTEXT_LOCAL (on: it never leaves the PC) and
-config.CONTEXT_CLOUD (off until the user ticks it in Settings: in Cloud
-mode the text goes to the speech service along with the audio, PRIVACY.md).
+Whether it's used: config.CONTEXT_LOCAL (it never leaves the PC) and
+config.CONTEXT_CLOUD (the text goes to the speech service along with the
+audio, PRIVACY.md). Both on, and not settings since 2026-10-26.
 """
 
 import logging

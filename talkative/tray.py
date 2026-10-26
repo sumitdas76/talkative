@@ -6,7 +6,7 @@ import time
 import pystray
 from PIL import Image, ImageDraw
 
-from . import audio_devices, config
+from . import audio_devices, autostart, config, settings
 
 _WM_RBUTTONUP = 0x0205
 
@@ -101,6 +101,11 @@ class TrayApp:
         if on_input_device is not None:
             menu_items.append(pystray.MenuItem("Microphone", pystray.Menu(self._mic_items)))
         menu_items.append(pystray.MenuItem("Headphones", pystray.Menu(self._output_items)))
+        # Also in Settings > General (2026-10-26, user request).
+        menu_items.append(pystray.MenuItem(
+            "Start with Windows", self._toggle_autostart,
+            checked=lambda item: config.START_WITH_WINDOWS,
+        ))
         menu_items.append(pystray.Menu.SEPARATOR)
         menu_items.append(pystray.MenuItem("Quit", self._quit))
         self.icon = pystray.Icon(
@@ -158,6 +163,17 @@ class TrayApp:
         for device_id, name, is_default in devices:
             yield pystray.MenuItem(name, pick(device_id),
                                    checked=lambda item, d=is_default: d, radio=True)
+
+    def _toggle_autostart(self, icon, item):
+        enabled = not config.START_WITH_WINDOWS
+        try:
+            settings.save({"start_with_windows": enabled})
+            autostart.sync_autostart(enabled)
+        except Exception:
+            logging.getLogger(__name__).exception("start with Windows toggle failed")
+            self.notify("Couldn't change the start with Windows setting.")
+            return
+        config.START_WITH_WINDOWS = enabled
 
     def _settings(self):
         if self._on_settings is not None:

@@ -10,15 +10,19 @@ touches tkinter objects. A second open request while the window exists is
 ignored.
 """
 
+import logging
+import os
 import threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
 from . import __version__, app_icon, config, dev_mode, feedback, fix_learning, grammar_engine, history, model_manager, overlay_thread, settings, updater
 from .keynames import friendly as _friendly_key_name
+
+log = logging.getLogger(__name__)
 
 APP_NAME = "Talkative"
 
@@ -599,25 +603,6 @@ class _SettingsWindow:
         self.example_label.pack(anchor="w")
         self._update_example()
 
-        acc_box = ttk.LabelFrame(f, text="Accuracy", padding=10)
-        acc_box.pack(fill="x", pady=(16, 0))
-        self.var_context_local = tk.BooleanVar(value=config.CONTEXT_LOCAL)
-        self.var_context_cloud = tk.BooleanVar(value=config.CONTEXT_CLOUD)
-        self.var_learn_fixes = tk.BooleanVar(value=config.LEARN_FIXES)
-        ttk.Checkbutton(
-            acc_box, text="Use the text before the cursor to spell names and terms\n"
-                          "the same way (Local mode: it stays on this PC).",
-            variable=self.var_context_local,
-        ).pack(anchor="w", pady=2)
-        ttk.Checkbutton(
-            acc_box, text="Also in Cloud mode (that text is sent to the speech\n"
-                          "service with your audio, then discarded).",
-            variable=self.var_context_cloud,
-        ).pack(anchor="w", padx=(24, 0), pady=(0, 4))
-        ttk.Checkbutton(
-            acc_box, text="Suggest Auto Text entries from names I correct.",
-            variable=self.var_learn_fixes,
-        ).pack(anchor="w", pady=2)
         history_box = ttk.LabelFrame(f, text="History", padding=10)
         history_box.pack(fill="x", pady=(16, 0))
         self.var_history = tk.BooleanVar(value=config.ENABLE_HISTORY)
@@ -1273,7 +1258,8 @@ class _SettingsWindow:
         ttk.Label(
             box, wraplength=500,
             text="By default, Talkative processes your dictation via Cloud: "
-                 "your audio is sent to a remote server for transcription "
+                 "your audio (and the text just before the cursor, to spell "
+                 "names right) is sent to a remote server for transcription "
                  "and cleanup, then discarded, not stored (unless you turn on "
                  "diagnostic data below). Switch to "
                  "Local in the General tab and it runs fully offline "
@@ -1346,8 +1332,23 @@ class _SettingsWindow:
             row, text="Send", command=self._send_feedback
         )
         self.feedback_send_btn.pack(side="left")
+        # A screenshot can go with the message (2026-10-26, user request).
+        self.feedback_image = None
+        self.feedback_attach_btn = ttk.Button(
+            row, text="Attach image…", command=self._attach_feedback_image
+        )
+        self.feedback_attach_btn.pack(side="left", padx=(8, 0))
         self.feedback_status = ttk.Label(row, text="", style="Muted.TLabel")
         self.feedback_status.pack(side="left", padx=8)
+        self.feedback_image_row = ttk.Frame(box)
+        self.feedback_image_label = ttk.Label(
+            self.feedback_image_row, text="", style="Muted.TLabel"
+        )
+        self.feedback_image_label.pack(side="left")
+        ttk.Button(
+            self.feedback_image_row, text="Remove",
+            command=lambda: self._set_feedback_image(None),
+        ).pack(side="left", padx=8)
 
         if config.FEEDBACK_LAST_REPLY:
             reply_box = ttk.Frame(box)
@@ -1357,26 +1358,57 @@ class _SettingsWindow:
             ttk.Label(reply_box, text=config.FEEDBACK_LAST_REPLY,
                       wraplength=500).pack(anchor="w")
 
+    def _attach_feedback_image(self):
+        types = " ".join("*" + ext for ext in config.FEEDBACK_IMAGE_TYPES)
+        path = filedialog.askopenfilename(
+            parent=self.root, title="Attach an image",
+            filetypes=[("Images", types)],
+        )
+        if not path:
+            return
+        problem = feedback.image_problem(path)
+        if problem:
+            self.feedback_status.config(text=problem)
+            return
+        self._set_feedback_image(path)
+
+    def _set_feedback_image(self, path):
+        self.feedback_image = path
+        self.feedback_status.config(text="")
+        if path:
+            self.feedback_image_label.config(text="Attached: " + os.path.basename(path))
+            self.feedback_image_row.pack(anchor="w", pady=(4, 0))
+        else:
+            self.feedback_image_row.pack_forget()
+
     def _send_feedback(self):
         message = self.feedback_text.get("1.0", "end").strip()
-        if not message:
+        image = self.feedback_image
+        if not message and not image:
             return
         self.feedback_send_btn.config(state="disabled")
-        self.feedback_status.config(text="Sending…")
+        self.feedback_attach_btn.config(state="disabled")
+        # FormSubmit is slow with a file (40 s measured), so say so.
+        self.feedback_status.config(
+            text="Sending… (an image can take up to a minute)" if image else "Sending…"
+        )
 
         def done(ok, error):
             def update():
                 self.feedback_send_btn.config(state="normal")
+                self.feedback_attach_btn.config(state="normal")
                 if ok:
-                    self.feedback_status.config(text="Sent ✓")
                     self.feedback_text.delete("1.0", "end")
+                    self._set_feedback_image(None)
+                    self.feedback_status.config(text="Sent ✓")
                 else:
+                    log.warning("feedback send failed: %s", error)
                     self.feedback_status.config(
                         text="Could not send. Please try again later."
                     )
             self.root.after(0, update)
 
-        feedback.send(message, on_done=done)
+        feedback.send(message or "(image only)", on_done=done, image=image)
 
     # ---------------- save ----------------
 
@@ -1391,9 +1423,6 @@ class _SettingsWindow:
             "start_with_windows": self.var_autostart.get(),
             "theme": self.var_theme.get(),
             "processing_mode": self.var_processing.get(),
-            "context_local": self.var_context_local.get(),
-            "context_cloud": self.var_context_cloud.get(),
-            "learn_fixes": self.var_learn_fixes.get(),
             "send_diagnostics": self.var_diagnostics.get(),
             "speech_service": self.var_speech_service.get(),
             "cleanup_mode": self.var_cleanup.get(),

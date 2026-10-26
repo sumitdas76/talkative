@@ -133,17 +133,35 @@ class AudioRecorder:
         """Restart PortAudio so it re-reads the device list -- after sleep
         the microphone it knew may have disappeared or been renumbered.
         Only when no stream is open; failures are ignored (the next
-        start() reports a real problem itself)."""
+        start() reports a real problem itself). True if it restarted.
+        A chosen microphone (self.device) is found again by name, since
+        restarting can renumber the list; if it's gone, self.device
+        becomes None (the Windows default)."""
         with PA_LOCK:
             if self.lingering():
                 self._close_now()
             if self._stream is not None:
-                return
+                return False
+            chosen = None
+            if self.device is not None:
+                try:
+                    info = sd.query_devices(self.device)
+                    chosen = (info["name"], info["hostapi"])
+                except Exception:
+                    pass
             try:
                 sd._terminate()
                 sd._initialize()
             except Exception:
-                pass
+                return False
+            if chosen is not None:
+                self.device = next(
+                    (i for i, d in enumerate(sd.query_devices())
+                     if (d["name"], d["hostapi"]) == chosen
+                     and d.get("max_input_channels", 0) > 0),
+                    None,
+                )
+            return True
 
     def stop(self, linger=0.0):
         """The recording so far. With `linger` (seconds) and a preroll set,

@@ -64,9 +64,9 @@ _KEYS = {
     "feedback_last_seen": "FEEDBACK_LAST_SEEN",
     "feedback_last_reply": "FEEDBACK_LAST_REPLY",
     "old_examples_removed": "OLD_EXAMPLES_REMOVED",
-    "context_local": "CONTEXT_LOCAL",
-    "context_cloud": "CONTEXT_CLOUD",
-    "learn_fixes": "LEARN_FIXES",
+    # "context_local", "context_cloud" and "learn_fixes" (the Accuracy
+    # checkboxes) were removed 2026-10-26 -- always on now; a saved value
+    # is ignored, so a "context_cloud": false every save wrote is too.
     "send_diagnostics": "SEND_DIAGNOSTICS",
     "speech_service": "SPEECH_SERVICE",
     "fix_suggestions": "FIX_SUGGESTIONS",

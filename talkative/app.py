@@ -6,7 +6,7 @@ import time
 import numpy as np
 from pynput import keyboard
 
-from . import cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, model_manager, onboarding, pill, screen_context, settings, temp_cleanup, try_it_now, updater
+from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, model_manager, onboarding, pill, screen_context, settings, temp_cleanup, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -602,6 +602,31 @@ class TalkativeApp:
         self.recorder.reset()
         self._start_listener()
 
+    def _watch_microphones(self):
+        """PortAudio reads the device list once, so a microphone plugged
+        in or made the Windows default later was never used until a
+        restart (user report 2026-10-26). Restart it when Windows' list
+        or default changes -- between dictations only: a change seen
+        mid-dictation is applied after it."""
+        applied = audio_devices.capture_state()
+        while self._running:
+            time.sleep(config.MIC_CHECK_SECONDS)
+            state = audio_devices.capture_state()
+            if state is None or state == applied or self._recording:
+                continue
+            try:
+                chosen = config.INPUT_DEVICE
+                if not self.recorder.reset():
+                    continue
+                applied = state
+                logging.getLogger(__name__).info("Microphones changed; device list reloaded")
+                if chosen is not None and self.recorder.device != chosen:
+                    # Renumbered, or gone (None: back to the Windows default).
+                    config.INPUT_DEVICE = self.recorder.device
+                    settings.save({"input_device": self.recorder.device})
+            except Exception:
+                logging.getLogger(__name__).exception("microphone reload failed")
+
     def _start_listener(self):
         # pynput stops the listener for good when a callback raises, which
         # silently ends dictation until a restart. Log and carry on.
@@ -1066,6 +1091,7 @@ class TalkativeApp:
                 title="Sumit replied",
             )
         )
+        threading.Thread(target=self._watch_microphones, daemon=True).start()
         self._start_listener()
         self.tray.run_detached()
 

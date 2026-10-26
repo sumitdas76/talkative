@@ -29,12 +29,12 @@ PUNCTUATION_PROMPT = (
 
 # Text just before the cursor in the target field, added to the end of the
 # speech-to-text prompt so names and terms already on screen are spelled
-# the same way (screen_context.py). Local: on, it never leaves the PC.
-# Cloud: off until the user ticks it in Settings, since the text is sent
-# to the speech service with the audio. Never in developer English, whose
+# the same way (screen_context.py). On in both modes, not a setting
+# (2026-10-26, user's choice): in Cloud the text is sent to the speech
+# service with the audio (PRIVACY.md). Never in developer English, whose
 # prompt sets a literal-symbol style that prose would undo.
 CONTEXT_LOCAL = True
-CONTEXT_CLOUD = False
+CONTEXT_CLOUD = True
 CONTEXT_MAX_CHARS = 400
 
 # Pressing the hotkey again within this many seconds of the last paste, in
@@ -214,6 +214,10 @@ FALLBACK_IDLE_SECONDS = 300
 # The main loop naps 0.2 s; a nap this much longer means the PC slept, and
 # app._on_resume() resets the hotkey hook, key state and audio.
 RESUME_GAP_SECONDS = 10
+# How often app._watch_microphones asks Windows whether a microphone was
+# plugged in, unplugged or made the default; on a change PortAudio re-reads
+# its list, so "System default" follows Windows without a restart.
+MIC_CHECK_SECONDS = 2.0
 # Main-loop checks (0.2 s apart) a hold-mode recording may run with its
 # hotkey physically up before app._check_lost_release drops it as a lost
 # release (Ctrl+Alt+Del, lock screen). 3 = 0.6 s: well past the hook's own
@@ -372,6 +376,13 @@ FEEDBACK_REPLIES_URL = (
 FEEDBACK_LAST_CHECK = ""
 FEEDBACK_LAST_SEEN = ""
 FEEDBACK_LAST_REPLY = ""
+# An image the user attaches to a feedback message (screenshot). FormSubmit
+# allows 10 MB in total per message; 5 MB keeps a slow upload bearable.
+FEEDBACK_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+FEEDBACK_IMAGE_TYPES = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".bmp": "image/bmp", ".webp": "image/webp",
+}
 
 # ---------------------------------------------------------------------------
 # Debugging

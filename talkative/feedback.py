@@ -21,6 +21,7 @@ import time
 import urllib.request
 import uuid
 from datetime import date
+from pathlib import Path
 
 from . import config, settings
 
@@ -54,21 +55,71 @@ def install_id():
     return new_id
 
 
-def send(message, on_done=None):
-    """POST `message` to Sumit. Runs on a background thread; on_done(ok,
-    error) is called from that same thread when done (callers touching Tk
-    widgets must hop back via root.after)."""
+def image_problem(path):
+    """Why the file at `path` can't be attached (plain language), or None."""
+    path = Path(path)
+    if path.suffix.lower() not in config.FEEDBACK_IMAGE_TYPES:
+        return "Only images can be attached (PNG, JPG, GIF, BMP or WebP)."
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return "That file can't be read."
+    if size > config.FEEDBACK_IMAGE_MAX_BYTES:
+        limit = config.FEEDBACK_IMAGE_MAX_BYTES // (1024 * 1024)
+        return f"That image is over {limit} MB. Please pick a smaller one."
+    return None
+
+
+def _multipart(fields, image):
+    """A multipart/form-data body (FormSubmit's way of taking a file) and
+    its Content-Type header."""
+    boundary = "----talkative" + uuid.uuid4().hex
+    parts = []
+    for name, value in fields.items():
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"'
+            f"\r\n\r\n{value}\r\n".encode("utf-8")
+        )
+    image = Path(image)
+    filename = image.name.replace('"', "")
+    mime = config.FEEDBACK_IMAGE_TYPES[image.suffix.lower()]
+    parts.append(
+        f'--{boundary}\r\nContent-Disposition: form-data; name="attachment"; '
+        f'filename="{filename}"\r\nContent-Type: {mime}\r\n\r\n'.encode("utf-8")
+        + image.read_bytes() + b"\r\n"
+    )
+    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def send(message, on_done=None, image=None):
+    """POST `message` (and the image file at `image`, if given) to Sumit.
+    Runs on a background thread; on_done(ok, error) is called from that
+    same thread when done (callers touching Tk widgets must hop back via
+    root.after)."""
 
     def work():
         ok, error = False, None
         try:
-            body = json.dumps({
+            fields = {
                 "message": message,
                 "install_id": install_id(),
                 "_subject": "Talkative feedback",
-            }).encode("utf-8")
-            req = urllib.request.Request(FORM_ENDPOINT, data=body, headers=_HEADERS)
-            with urllib.request.urlopen(req, timeout=10) as r:
+            }
+            headers = dict(_HEADERS)
+            if image:
+                problem = image_problem(image)
+                if problem:
+                    raise ValueError(problem)
+                body, headers["Content-Type"] = _multipart(fields, image)
+                # Measured 2026-10-26: FormSubmit took 40 s to answer a
+                # send with a 2 KB image (under 1 s without one).
+                timeout = 120
+            else:
+                body = json.dumps(fields).encode("utf-8")
+                timeout = 10
+            req = urllib.request.Request(FORM_ENDPOINT, data=body, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 result = json.loads(r.read().decode("utf-8"))
             if str(result.get("success", "")).lower() != "true":
                 raise ValueError(result.get("message", "send failed"))
