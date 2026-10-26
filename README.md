@@ -81,4 +81,4 @@ switches off) at first run and in Settings.
 ## Source
 
 This repo holds both the source (`talkative/`) and the packaged
-releases. See `CHANGELOG.md` for what's changed release to release.
+releases.
