@@ -21,7 +21,7 @@ import queue
 import threading
 import time
 
-from . import overlay_thread
+from . import overlay_thread, palette
 
 _SCALE = 0.8  # sized down 20% at the user's request, July 20 2026
 _WIDTH, _HEIGHT = round(172 * _SCALE), round(40 * _SCALE)
@@ -36,11 +36,8 @@ _BAR_HALF_MIN = round(1.5 * _SCALE)
 _BAR_MAX_MARGIN = round(4.5 * _SCALE)
 _SCREEN_BOTTOM_MARGIN = round(48 * _SCALE)
 _TICK_MS = 33  # ~30 frames a second, only while recording
-_BG = "#16161f"
-_DOT = "#ef4444"
-# Bars run blue -> violet -> pink, the same colors as Settings' header
-# (redesigned 2026-10-26, user request: "a cooler animation").
-GRADIENT = ("#3b82f6", "#8b5cf6", "#ec4899")
+# Colors come from palette.py (redesigned 2026-10-26, user request: "a
+# cooler animation"); read when the pill is built.
 # Chroma-key color: anything painted this exact color becomes fully
 # see-through (Windows-only Tk feature), so the canvas's own rectangular
 # shape doesn't show as a box around the rounded capsule. Picked to not
@@ -97,18 +94,18 @@ class _Pill:
                 highlightthickness=0, bg=_TRANSPARENT_KEY,
             )
             self.canvas.pack()
-            # Capsule background.
+            # Capsule background (colored by _recolor).
             r = _HEIGHT // 2
-            self.canvas.create_oval(0, 0, 2 * r, _HEIGHT, fill=_BG, outline="")
-            self.canvas.create_oval(_WIDTH - 2 * r, 0, _WIDTH, _HEIGHT,
-                                    fill=_BG, outline="")
-            self.canvas.create_rectangle(r, 0, _WIDTH - r, _HEIGHT,
-                                         fill=_BG, outline="")
+            self.capsule = [
+                self.canvas.create_oval(0, 0, 2 * r, _HEIGHT, outline=""),
+                self.canvas.create_oval(_WIDTH - 2 * r, 0, _WIDTH, _HEIGHT, outline=""),
+                self.canvas.create_rectangle(r, 0, _WIDTH - r, _HEIGHT, outline=""),
+            ]
             mid = _HEIGHT / 2
-            self.ring = self.canvas.create_oval(0, 0, 0, 0, outline=_BG, width=2)
+            self.ring = self.canvas.create_oval(0, 0, 0, 0, width=2)
             self.dot = self.canvas.create_oval(
                 _DOT_X - _DOT_R, mid - _DOT_R, _DOT_X + _DOT_R, mid + _DOT_R,
-                fill=_DOT, outline="",
+                outline="",
             )
             # Rounded bars (lines with round caps), mirrored around the
             # center one: the newest level drives the center and older ones
@@ -117,12 +114,12 @@ class _Pill:
             step = (_WIDTH - _BAR_X0 - _BAR_RIGHT_MARGIN) / (_BARS - 1)
             for i in range(_BARS):
                 x = _BAR_X0 + i * step
-                color = gradient_color(i / (_BARS - 1))
                 bar = self.canvas.create_line(
                     x, mid - _BAR_HALF_MIN, x, mid + _BAR_HALF_MIN,
-                    width=_BAR_WIDTH, capstyle="round", fill=color,
+                    width=_BAR_WIDTH, capstyle="round",
                 )
-                self.bars.append((bar, x, color))
+                self.bars.append((bar, x))
+            self._recolor()
             self._history = [0.0] * (_BARS // 2 + 1)
             self._level = 0.0
             self._shown_at = 0.0
@@ -151,6 +148,17 @@ class _Pill:
         y = screen_h - _HEIGHT - _SCREEN_BOTTOM_MARGIN
         self.root.geometry(f"{_WIDTH}x{_HEIGHT}+{x}+{y}")
 
+    def _recolor(self):
+        """Colors from the current scheme; re-read on every show, so a
+        scheme picked in Settings applies from the next dictation."""
+        pal = palette.get()
+        self._bg, self._dot_color = pal["pill_bg"], pal["pill_dot"]
+        for item in self.capsule:
+            self.canvas.itemconfigure(item, fill=self._bg)
+        self.canvas.itemconfigure(self.dot, fill=self._dot_color)
+        self._bar_colors = [gradient_color(i / (_BARS - 1), pal["pill_bars"])
+                            for i in range(_BARS)]
+
     def _wake(self):
         if not self._ticking:
             self._ticking = True
@@ -164,6 +172,7 @@ class _Pill:
                     self._history = [0.0] * len(self._history)
                     self._level = 0.0
                     self._shown_at = time.time()
+                    self._recolor()
                     self._place_bottom_center()
                     self.root.deiconify()
                     self._no_activate()
@@ -198,7 +207,7 @@ class _Pill:
         mid = _HEIGHT / 2
         room = mid - _BAR_MAX_MARGIN
         center = _BARS // 2
-        for i, (bar, x, color) in enumerate(self.bars):
+        for i, ((bar, x), color) in enumerate(zip(self.bars, self._bar_colors)):
             k = abs(i - center)
             # Taller in the middle; a slow wave keeps it alive in pauses.
             shape = 1.0 - 0.45 * (k / center) ** 2
@@ -214,7 +223,7 @@ class _Pill:
         self.canvas.coords(self.dot, _DOT_X - r, mid - r, _DOT_X + r, mid + r)
         ring = _DOT_R + phase * (_RING_MAX - _DOT_R)
         self.canvas.coords(self.ring, _DOT_X - ring, mid - ring, _DOT_X + ring, mid + ring)
-        self.canvas.itemconfigure(self.ring, outline=_mix(_DOT, _BG, phase))
+        self.canvas.itemconfigure(self.ring, outline=_mix(self._dot_color, self._bg, phase))
 
 
 def _rgb(color):
@@ -227,11 +236,11 @@ def _mix(a, b, amount):
     return "#%02x%02x%02x" % tuple(round(x + (y - x) * amount) for x, y in zip(ra, rb))
 
 
-def gradient_color(pos):
-    """The GRADIENT color at pos 0-1."""
-    pos = min(1.0, max(0.0, pos)) * (len(GRADIENT) - 1)
-    i = min(int(pos), len(GRADIENT) - 2)
-    return _mix(GRADIENT[i], GRADIENT[i + 1], pos - i)
+def gradient_color(pos, stops):
+    """The color at pos 0-1 along `stops`."""
+    pos = min(1.0, max(0.0, pos)) * (len(stops) - 1)
+    i = min(int(pos), len(stops) - 2)
+    return _mix(stops[i], stops[i + 1], pos - i)
 
 
 _pill = None

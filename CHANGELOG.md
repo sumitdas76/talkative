@@ -18,10 +18,13 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   General).
 - Feedback can include an image (a screenshot, up to 5 MB): Settings >
   About > Feedback > Attach image.
-- A new look: Settings has a colored header and navy-tinted light and
-  dark themes with an indigo accent, and the listening pill's bars are a
-  blue-to-pink wave that ripples out from the middle as you speak, with
-  a pulsing recording dot.
+- A new look, in three color schemes to choose from under Settings >
+  General > Appearance: Forest (cream and deep green, the default), Coral
+  (graphite and coral red) and Teal (slate and teal), each in light and
+  dark. Settings has a colored header, and the listening pill's bars are
+  a wave in the scheme's colors that ripples out from the middle as you
+  speak, with a pulsing recording dot.
+- Radio buttons in dark mode no longer look selected when they aren't.
 
 ### Fixed
 

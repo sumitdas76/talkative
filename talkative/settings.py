@@ -57,6 +57,7 @@ _KEYS = {
     "start_with_windows": "START_WITH_WINDOWS",
     "hotkey_mode": "HOTKEY_MODE",
     "theme": "THEME",
+    "color_scheme": "COLOR_SCHEME",
     "first_run_done": "FIRST_RUN_DONE",
     "debug_log": "DEBUG_LOG",
     "install_id": "INSTALL_ID",

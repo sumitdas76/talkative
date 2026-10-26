@@ -19,7 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, config, dev_mode, feedback, fix_learning, grammar_engine, history, model_manager, overlay_thread, pill, settings, updater
+from . import __version__, app_icon, config, dev_mode, feedback, fix_learning, grammar_engine, history, model_manager, overlay_thread, palette, pill, settings, updater
 from .keynames import friendly as _friendly_key_name
 
 log = logging.getLogger(__name__)
@@ -116,6 +116,22 @@ def _apply_checkbox_glyphs(style, field, border, accent, accent_fg):
             ]}),
         ]}),
     ])
+
+
+def _swatch(pal):
+    """A small rounded chip: the accent, then the pill's bar colors."""
+    scale, w, h = 4, 44, 14
+    colors = [pal["accent"], *pal["pill_bars"]]
+    img = Image.new("RGBA", (w * scale, h * scale), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    part = w * scale / len(colors)
+    for i, color in enumerate(colors):
+        draw.rectangle((round(i * part), 0, round((i + 1) * part), h * scale), fill=color)
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, w * scale - 1, h * scale - 1), radius=4 * scale, fill=255)
+    img.putalpha(mask)
+    return img.resize((w, h), Image.LANCZOS)
 
 
 def _on_closed():
@@ -263,16 +279,13 @@ class _SettingsWindow:
         # ignores color styling, and the active tab must stand out.
         style = ttk.Style(self.root)
         style.theme_use("clam")
-        # Navy-tinted rather than grey, with an indigo accent (2026-10-26,
-        # user request: "more colorful"). Every text/background pair here
-        # is at least 4.5:1 contrast (checked when chosen).
-        if self._effective_theme() == "dark":
-            bg, fg, field, raised = "#1b1e2b", "#e9ebf5", "#252938", "#2e3346"
-            border, hover, title = "#4a5170", "#3a4060", "#a5b4fc"
-        else:
-            bg, fg, field, raised = "#f3f5fb", "#1b1e2b", "#ffffff", "#e2e6f3"
-            border, hover, title = "#b4bbd4", "#d3d9ee", "#4338ca"
-        accent, accent_fg, accent_hover = "#5b4fe0", "#ffffff", "#4a3fd0"
+        # Colors from palette.py (2026-10-26, user request: "more
+        # colorful", then "not the generic AI look").
+        pal = palette.get()
+        m = pal["dark" if self._effective_theme() == "dark" else "light"]
+        bg, fg, field, raised = m["bg"], m["fg"], m["field"], m["raised"]
+        border, hover, title = m["border"], m["hover"], m["title"]
+        accent, accent_fg, accent_hover = pal["accent"], pal["accent_fg"], pal["accent_hover"]
 
         self.root.configure(bg=bg)
         style.configure(".", background=bg, foreground=fg,
@@ -322,6 +335,17 @@ class _SettingsWindow:
             background=[("active", bg)],
             foreground=[("disabled", border)],
         )
+        # clam's radio dot was white on an unselected button in dark mode,
+        # so the chosen option looked like the only empty one. Now: an
+        # empty field-colored circle, and the accent dot when selected.
+        style.configure("TRadiobutton", indicatorbackground=field,
+                        indicatorforeground=accent, bordercolor=border,
+                        upperbordercolor=border, lowerbordercolor=border)
+        style.map(
+            "TRadiobutton",
+            indicatorbackground=[("pressed", hover), ("selected", field)],
+            indicatorforeground=[("disabled", border), ("selected", accent)],
+        )
         style.configure("Treeview", background=field, foreground=fg,
                         fieldbackground=field)
         style.configure("Treeview.Heading", background=raised, foreground=fg)
@@ -357,7 +381,7 @@ class _SettingsWindow:
         self._bg, self._fg, self._field = bg, fg, field
         # Secondary text that must stay readable on this theme's background
         # (plain "grey" is faint on dark and nearly invisible on light).
-        self._muted = "#aeb4c8" if self._effective_theme() == "dark" else "#4e566e"
+        self._muted = m["muted"]
         # Hint text everywhere in Settings uses this style (was a fixed
         # "grey"), so it is readable on both themes and follows a live
         # Light/Dark switch.
@@ -371,28 +395,27 @@ class _SettingsWindow:
             )
 
     def _build_header(self):
-        """A band in the listening pill's colors (blue -> violet -> pink),
-        darkened a quarter so the white text on it stays readable."""
+        """A band across the top in the palette's header colors."""
         canvas = tk.Canvas(self.root, height=44, highlightthickness=0, bd=0)
         canvas.pack(fill="x")
-        stops = [pill._mix(c, "#000000", 0.25) for c in pill.GRADIENT]
 
         def paint(event=None):
+            pal = palette.get()
+            start, end = pal["header"]
             width = max(canvas.winfo_width(), 2)
             row = Image.new("RGB", (width, 1))
             for x in range(width):
-                pos = x / (width - 1) * (len(stops) - 1)
-                i = min(int(pos), len(stops) - 2)
-                row.putpixel((x, 0), pill._rgb(pill._mix(stops[i], stops[i + 1], pos - i)))
+                row.putpixel((x, 0), pill._rgb(pill._mix(start, end, x / (width - 1))))
             self._header_image = ImageTk.PhotoImage(row.resize((width, 44)))
             canvas.delete("all")
             canvas.create_image(0, 0, anchor="nw", image=self._header_image)
-            canvas.create_text(18, 22, anchor="w", text=APP_NAME, fill="#ffffff",
+            canvas.create_text(18, 22, anchor="w", text=APP_NAME, fill=pal["header_fg"],
                                font=("Segoe UI Semibold", 15))
             canvas.create_text(width - 18, 22, anchor="e", text="Settings",
-                               fill="#ffffff", font=("Segoe UI", 10))
+                               fill=pal["header_fg"], font=("Segoe UI", 10))
 
         canvas.bind("<Configure>", paint)
+        self._paint_header = paint
 
     # ---------------- tabs ----------------
 
@@ -406,12 +429,27 @@ class _SettingsWindow:
 
         box = ttk.LabelFrame(f, text="Appearance", padding=10)
         box.pack(fill="x", pady=(10, 0))
+        modes = ttk.Frame(box)
+        modes.pack(anchor="w", pady=(0, 6))
         for label, value in [("Light", "light"), ("Dark", "dark"),
                              ("Follow Windows setting", "system")]:
             ttk.Radiobutton(
-                box, text=label, variable=self.var_theme, value=value,
+                modes, text=label, variable=self.var_theme, value=value,
                 command=self._theme_changed,
-            ).pack(anchor="w", pady=2)
+            ).pack(side="left", padx=(0, 16))
+        # Color schemes (2026-10-26: the user chose to let people pick),
+        # each shown with a swatch of its accent and pill colors.
+        self.var_scheme = tk.StringVar(value=config.COLOR_SCHEME)
+        schemes = ttk.Frame(box)
+        schemes.pack(anchor="w")
+        self._swatches = []
+        for name, pal in palette.PALETTES.items():
+            swatch = ImageTk.PhotoImage(_swatch(pal))
+            self._swatches.append(swatch)
+            ttk.Radiobutton(
+                schemes, text=pal["label"], image=swatch, compound="left",
+                variable=self.var_scheme, value=name, command=self._theme_changed,
+            ).pack(side="left", padx=(0, 16))
 
         proc_box = ttk.LabelFrame(f, text="Processing", padding=10)
         proc_box.pack(fill="x", pady=(10, 0))
@@ -514,7 +552,9 @@ class _SettingsWindow:
 
     def _theme_changed(self):
         config.THEME = self.var_theme.get()
+        config.COLOR_SCHEME = self.var_scheme.get()
         self._apply_theme()
+        self._paint_header()
 
     def _tab_dictionary(self, f):
         ttk.Label(
@@ -1463,6 +1503,7 @@ class _SettingsWindow:
         values = {
             "start_with_windows": self.var_autostart.get(),
             "theme": self.var_theme.get(),
+            "color_scheme": self.var_scheme.get(),
             "processing_mode": self.var_processing.get(),
             "send_diagnostics": self.var_diagnostics.get(),
             "speech_service": self.var_speech_service.get(),
