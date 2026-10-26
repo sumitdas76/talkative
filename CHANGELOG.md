@@ -29,13 +29,13 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   shows a sweeping light while your words are processed; if it takes
   more than 6 seconds, a note says Talkative is still working on it. If
   nothing will be typed, a message near the cursor says why, in plain
-  words: no words were heard, the microphone sent only silence or
-  couldn't be opened, or Talkative Cloud was busy, unreachable or too
-  slow. This replaces the blocking error popup.
+  words: no words were heard, the microphone couldn't be opened, or
+  Talkative Cloud was busy, unreachable or too slow. This replaces the
+  blocking error popup.
 - Some problems are now shown while you're still speaking, not after:
   the line turns red and a message says what's wrong if your microphone
-  is sending only silence (muted), sends nothing, or stops (unplugged),
-  or if Talkative Cloud can't be reached.
+  is muted in Windows, sends nothing, or stops (unplugged), or if
+  Talkative Cloud can't be reached.
 
 ### Fixed
 

@@ -234,16 +234,19 @@ NOT_TYPED_SECONDS = 5.0
 CLOUD_TIMEOUT_BASE = 10.0
 # Problems found while the user is still speaking (2026-10-27, user
 # request: better to hear mid-speech than after). Only certain signals:
-# after LIVE_CHECK_SECONDS of recording, no audio at all or only digital
-# silence (peak < BLANK_PEAK: a quiet room is never that quiet), or no
-# new audio for LIVE_STALL_SECONDS (device gone); and Cloud unreachable
-# when the hotkey went down (connecting gives up after CLOUD_WARM_TIMEOUT).
+# the microphone muted in Windows (asked when the hotkey goes down); after
+# LIVE_CHECK_SECONDS of recording, no audio at all, or no new audio for
+# LIVE_STALL_SECONDS (device gone); and Cloud unreachable when the hotkey
+# went down (connecting gives up after CLOUD_WARM_TIMEOUT). Digital
+# silence is NOT one of them (see BLANK_PEAK).
 LIVE_CHECK_SECONDS = 1.5
 LIVE_STALL_SECONDS = 1.0
 CLOUD_WARM_TIMEOUT = 5.0
-# A recording whose loudest sample is below this is blank -- not a quiet
-# room (which still measures ~0.005+), but a microphone delivering
-# nothing: gone, muted, or the wrong one. It triggers a device check.
+# A recording whose loudest sample is below this is digital silence. That
+# is a muted or dead microphone -- or a noise-suppressing headset while
+# nobody speaks (Logi H340, unmuted, gives +-1 step: 0.00003), so it is
+# never reported as a problem on its own; it only triggers a device
+# re-check and, when no words came back, a gentler "nothing was heard".
 BLANK_PEAK = 0.0005
 # Main-loop checks (0.2 s apart) a hold-mode recording may run with its
 # hotkey physically up before app._check_lost_release drops it as a lost

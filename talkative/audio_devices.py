@@ -107,8 +107,21 @@ def _interfaces():
             COMMETHOD([], HRESULT, "SetDefaultEndpoint", (["in"], c_wchar_p), (["in"], c_uint)),
         ]
 
+    # Only GetMute is called; the methods before it are declared so it
+    # lands on the right vtable slot.
+    class IAudioEndpointVolume(IUnknown):
+        _iid_ = GUID("{5CDF2C82-841E-4546-9722-0CF74078229A}")
+        _methods_ = [COMMETHOD([], HRESULT, name) for name in (
+            "RegisterControlChangeNotify", "UnregisterControlChangeNotify", "GetChannelCount",
+            "SetMasterVolumeLevel", "SetMasterVolumeLevelScalar", "GetMasterVolumeLevel",
+            "GetMasterVolumeLevelScalar", "SetChannelVolumeLevel", "SetChannelVolumeLevelScalar",
+            "GetChannelVolumeLevel", "GetChannelVolumeLevelScalar", "SetMute")] + [
+            COMMETHOD([], HRESULT, "GetMute", (["out"], POINTER(wintypes.BOOL))),
+        ]
+
     _com = {
         "comtypes": comtypes,
+        "IAudioEndpointVolume": IAudioEndpointVolume,
         "enumerator_clsid": GUID("{BCDE0395-E52F-467C-8E3D-C4579291692E}"),
         "policy_clsid": GUID("{870af99c-171d-4f9e-af0d-e63df40c2bc9}"),
         "IMMDeviceEnumerator": IMMDeviceEnumerator,
@@ -176,6 +189,29 @@ def capture_state():
         return default_id, ids
     except Exception:
         logging.warning("Could not read the microphone list", exc_info=True)
+        return None
+
+
+def default_mic_muted():
+    """Is Windows' default microphone muted in Windows (Sound settings, a
+    mute key)? True/False, or None if Windows can't be asked. A muted
+    microphone can't be told from a quiet one by its sound -- a noise-
+    suppressing headset sends the same digital silence while nobody
+    speaks (measured 2026-10-27: Logi H340, unmuted) -- so Windows is
+    asked instead."""
+    try:
+        com = _interfaces()
+        comtypes = com["comtypes"]
+        comtypes.CoInitialize()
+        enum = comtypes.CoCreateInstance(
+            com["enumerator_clsid"], interface=com["IMMDeviceEnumerator"])
+        device = enum.GetDefaultAudioEndpoint(_E_CAPTURE, 0)
+        volume_iid = com["IAudioEndpointVolume"]._iid_
+        pointer = device.Activate(byref(volume_iid), comtypes.CLSCTX_ALL, None)
+        volume = ctypes.cast(pointer, POINTER(com["IAudioEndpointVolume"]))
+        return bool(volume.GetMute())
+    except Exception:
+        logging.debug("Could not read the microphone's mute state", exc_info=True)
         return None
 
 

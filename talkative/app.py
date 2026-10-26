@@ -534,6 +534,8 @@ class TalkativeApp:
         self._live_warned = False
         self.tray.set_recording()
         pill.show(lambda: self.recorder.level)
+        threading.Thread(target=self._check_mute, args=(self._recording_id,),
+                         daemon=True).start()
         if self._cloud_active():
             # Open the Cloud connection while the user speaks, not after --
             # and if Cloud can't be reached, say so now, not after.
@@ -550,12 +552,23 @@ class TalkativeApp:
             self._live_problem("Can't reach Talkative Cloud. Check your internet; "
                                "Talkative will keep trying when you let go.")
 
+    def _check_mute(self, rec_id):
+        """When the hotkey goes down: a microphone muted in Windows is
+        reported at once. Only for the Windows default microphone (a mic
+        picked in the tray is a PortAudio index, not a Windows device)."""
+        if config.INPUT_DEVICE is not None or not audio_devices.default_mic_muted():
+            return
+        if self._recording_id == rec_id and self._recording:
+            self._live_problem("Your microphone is muted in Windows. Let go, "
+                               "unmute it, and try again.")
+
     def _check_live_mic(self):
         """Called from the main loop (every 0.2 s) while recording: a
-        microphone that sends nothing, or only digital silence, is
+        microphone that sends nothing at all, or stops sending, is
         reported while the user is still speaking, not after (2026-10-27,
-        user request). Only certain signals -- never "too quiet", which a
-        pause before speaking looks like."""
+        user request). Only certain signals -- never "too quiet" or
+        "silent": a pause before speaking looks like both, and a noise-
+        suppressing headset sends digital silence then (see BLANK_PEAK)."""
         if not self._recording or self._live_warned or self._record_start_time is None:
             return
         if time.time() - self._record_start_time < config.LIVE_CHECK_SECONDS:
@@ -564,9 +577,6 @@ class TalkativeApp:
         if not rec.chunks or time.monotonic() - rec.last_chunk > config.LIVE_STALL_SECONDS:
             self._live_problem("The microphone isn't sending any sound. Let go, "
                                "then check that it's connected.")
-        elif rec.peak < config.BLANK_PEAK:
-            self._live_problem("Your microphone is sending only silence. Check "
-                               "that it isn't muted.")
         else:
             return
         self._mic_blank = True  # check the microphones once this one ends
@@ -1130,8 +1140,8 @@ class TalkativeApp:
     def _insert_final(self, text, learn=True, press=None):
         if not text:
             if getattr(self._job_blank, "value", False):
-                self._not_typed("Your microphone sent only silence, so nothing was "
-                                "typed. Check that it isn't muted.")
+                self._not_typed("No words were heard, so nothing was typed. If you "
+                                "spoke, check that your microphone isn't muted.")
             else:
                 self._not_typed("No words were heard, so nothing was typed.")
             return
