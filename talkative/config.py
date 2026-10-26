@@ -222,6 +222,16 @@ RESUME_GAP_SECONDS = 10
 # burst of notifications (one plug-in sends several) finish first.
 MIC_CHECK_SECONDS = 2.0
 MIC_SETTLE_SECONDS = 0.5
+# Showing what happens to a dictation (2026-10-27, user report: up to 10 s
+# and more with nothing on screen, and sometimes nothing typed with no
+# reason given). After release the listening line shows "processing"; this
+# long without a result, a "still working" notice appears; a dictation
+# that won't be typed says why for NOT_TYPED_SECONDS.
+SLOW_NOTICE_SECONDS = 6.0
+NOT_TYPED_SECONDS = 5.0
+# Cloud transcription gives up on a stalled request after this many
+# seconds plus a quarter of the recording's length (at most 30).
+CLOUD_TIMEOUT_BASE = 10.0
 # A recording whose loudest sample is below this is blank -- not a quiet
 # room (which still measures ~0.005+), but a microphone delivering
 # nothing: gone, muted, or the wrong one. It triggers a device check.

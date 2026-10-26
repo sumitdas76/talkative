@@ -26,6 +26,18 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   a single thin line, like a heart monitor's: flat while you're quiet, a
   wave that follows your voice while you speak, in your color scheme.
 - Radio buttons in dark mode no longer look selected when they aren't.
+- You can see what happens to a dictation. After you let go, the line
+  shows a sweeping light while your words are processed; if it takes
+  more than 6 seconds, a note says Talkative is still working on it. If
+  nothing will be typed, a message near the cursor says why, in plain
+  words: no words were heard, the microphone sent only silence or
+  couldn't be opened, or Talkative Cloud was busy, unreachable or too
+  slow. This replaces the blocking error popup.
+- If no text box is selected when your words are ready, they go to the
+  clipboard (press Ctrl+V) instead of being lost.
+- A stalled Talkative Cloud request is given up on sooner (10 seconds
+  plus a quarter of the recording's length, instead of 30 seconds), so
+  the fallback starts earlier.
 
 ### Fixed
 

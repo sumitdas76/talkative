@@ -127,6 +127,11 @@ def _put_private_text(text):
             _set(_user32.RegisterClipboardFormatW(name), data)
 
 
+def copy_only(text):
+    """Put text on the clipboard for the user to paste (nowhere to type it)."""
+    pyperclip.copy(text.replace("\r\n", "\n").replace("\n", "\r\n"))
+
+
 def insert_text(text, take_back=0, append_space=None):
     """Copy text to the clipboard, paste it via simulated Ctrl+V into
     whatever control currently has focus, then restore the user's previous

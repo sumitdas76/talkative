@@ -1,5 +1,7 @@
 """
-Floating on-screen error message (e.g. "no editable field focused").
+Floating on-screen message: errors (e.g. "no editable field focused", why
+a dictation wasn't typed) in red, and notices ("still working on it") in
+a quiet dark style.
 
 A small always-on-top red box that flashes near the cursor and disappears
 on its own after a few seconds -- no click needed, never steals focus.
@@ -30,13 +32,14 @@ from pynput import keyboard, mouse
 
 from . import overlay_thread
 
-_WIDTH, _HEIGHT = 360, 60
-_DURATION_MS = 1500
+_WIDTH, _HEIGHT = 360, 60  # grows taller for a longer message
+_DURATION_MS = 1500  # default; reasons a dictation wasn't typed stay longer
 _GWL_EXSTYLE = -20
 _WS_EX_NOACTIVATE = 0x08000000
 _WS_EX_TOOLWINDOW = 0x00000080
 _BG = "#c82828"  # same red as the tray's recording icon (tray.py)
-_FG = "#000000"
+_FG = "#ffffff"  # 5.5:1 on the red (black was 3.8:1)
+_INFO_BG, _INFO_FG = "#22262e", "#ffffff"  # "still working" notices
 _DISMISS = object()  # sentinel put on the command queue to hide early
 
 
@@ -57,8 +60,11 @@ class _Toast:
 
     # ---- public, called from any thread ----
 
-    def show(self, text):
-        self._commands.put(text)
+    def show(self, text, seconds=None, info=False):
+        self._commands.put((text, seconds, info))
+        # The poll loop stops while nothing is shown; the shared overlay
+        # thread (which polls anyway) restarts it.
+        self._overlay.build(self._wake)
 
     # ---- overlay thread ----
 
@@ -76,8 +82,8 @@ class _Toast:
                 highlightthickness=0, bd=0, bg=_BG,
             )
             self.canvas.pack()
-            self.canvas.create_rectangle(0, 0, _WIDTH, _HEIGHT,
-                                         fill=_BG, outline="")
+            self.box = self.canvas.create_rectangle(0, 0, _WIDTH, _HEIGHT,
+                                                    fill=_BG, outline="")
             self.text_id = self.canvas.create_text(
                 _WIDTH / 2, _HEIGHT / 2, text="", fill=_FG,
                 font=("Segoe UI", 10, "bold"), width=_WIDTH - 28,
@@ -90,7 +96,8 @@ class _Toast:
             self._hide_job = None
             self._mouse_listener = None
             self._key_listener = None
-            self.root.after(60, self._poll)
+            self._polling = False
+            self._height = _HEIGHT
             self._ready.set()
         except Exception:
             self._failed = True
@@ -108,17 +115,41 @@ class _Toast:
             pass
 
     def _place_near_cursor(self):
+        height = self._height
         try:
             point = ctypes.wintypes.POINT()
             ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
-            x, y = point.x - _WIDTH // 2, point.y - _HEIGHT - 24
+            x, y = point.x - _WIDTH // 2, point.y - height - 24
         except Exception:
             x = y = 200
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
         x = max(8, min(x, screen_w - _WIDTH - 8))
-        y = max(8, min(y, screen_h - _HEIGHT - 8))
-        self.root.geometry(f"{_WIDTH}x{_HEIGHT}+{x}+{y}")
+        y = max(8, min(y, screen_h - height - 8))
+        self.root.geometry(f"{_WIDTH}x{height}+{x}+{y}")
+
+    def _wake(self):
+        if not self._polling:
+            self._polling = True
+            self._poll()
+
+    def _show(self, text, seconds, info):
+        bg, fg = (_INFO_BG, _INFO_FG) if info else (_BG, _FG)
+        self.canvas.itemconfigure(self.text_id, text=text, fill=fg)
+        x0, y0, x1, y1 = self.canvas.bbox(self.text_id)
+        self._height = max(_HEIGHT, y1 - y0 + 26)
+        self.canvas.configure(height=self._height, bg=bg)
+        self.canvas.coords(self.box, 0, 0, _WIDTH, self._height)
+        self.canvas.itemconfigure(self.box, fill=bg)
+        self.canvas.coords(self.text_id, _WIDTH / 2, self._height / 2)
+        self._place_near_cursor()
+        self.root.deiconify()
+        self._no_activate()
+        self._start_dismiss_listeners()
+        if self._hide_job is not None:
+            self.root.after_cancel(self._hide_job)
+        ms = _DURATION_MS if seconds is None else int(seconds * 1000)
+        self._hide_job = self.root.after(ms, self._hide)
 
     def _poll(self):
         try:
@@ -127,17 +158,13 @@ class _Toast:
                 if cmd is _DISMISS:
                     self._hide()
                     continue
-                self.canvas.itemconfigure(self.text_id, text=cmd)
-                self._place_near_cursor()
-                self.root.deiconify()
-                self._no_activate()
-                self._start_dismiss_listeners()
-                if self._hide_job is not None:
-                    self.root.after_cancel(self._hide_job)
-                self._hide_job = self.root.after(_DURATION_MS, self._hide)
+                self._show(*cmd)
         except queue.Empty:
             pass
-        self.root.after(60, self._poll)
+        if self._hide_job is not None:
+            self.root.after(60, self._poll)
+        else:
+            self._polling = False  # nothing shown: wait for the next show()
 
     def _dismiss(self):
         """User-initiated early dismiss (click or Escape) -- routed through
@@ -191,13 +218,14 @@ def _get():
         return _toast
 
 
-def show(text):
+def show(text, seconds=None, info=False):
     """Flash `text` in a small topmost, non-activating box near the
-    cursor for a few seconds. Safe from any thread; no-op on failure."""
+    cursor for `seconds` (default 1.5), red, or dark with info=True.
+    Safe from any thread; no-op on failure."""
     try:
         toast = _get()
         toast._ready.wait(timeout=3)
         if not toast._failed:
-            toast.show(text)
+            toast.show(text, seconds, info)
     except Exception:
         pass

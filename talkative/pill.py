@@ -6,7 +6,11 @@ the bottom-center of the screen while recording (user request: "a
 minimalistic analogue line like a heartbeat ... instead of an entire pill
 animation"; it replaced a capsule with a red dot and level bars). Flat
 with a faint ripple while the user is quiet; speech scrolls in from the
-right as a wave whose height follows the voice. Disappears on release.
+right as a wave whose height follows the voice. After release it stays
+as a dimmed flat line with a bright streak sweeping along it while the
+dictation is processed (busy()), and goes when the text is typed or the
+reason it wasn't has been shown (done()) -- added 2026-10-27, user
+report: up to 10 s and more with nothing on screen.
 It must never steal keyboard focus (the user is mid-dictation into
 another window) -- the window gets WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
 no taskbar entry, and is never focused.
@@ -70,6 +74,13 @@ class _Pill:
         # (which polls anyway) restarts it.
         self._overlay.build(self._wake)
 
+    def busy(self):
+        self._commands.put("busy")
+        self._overlay.build(self._wake)
+
+    def done(self):
+        self._commands.put("done")
+
     def hide(self):
         self._commands.put("hide")
 
@@ -97,6 +108,10 @@ class _Pill:
                 *flat, width=_HALO_WIDTH, smooth=True, capstyle="round", joinstyle="round")
             self.line = self.canvas.create_line(
                 *flat, width=_LINE_WIDTH, smooth=True, capstyle="round", joinstyle="round")
+            # The streak that sweeps along the flat line while processing.
+            self.sweep = self.canvas.create_line(
+                0, 0, 0, 0, width=_LINE_WIDTH + 1, capstyle="round", state="hidden")
+            self._mode = "listen"
             self._recolor()
             self._wave = [0.0] * _POINTS
             self._level = 0.0
@@ -131,8 +146,12 @@ class _Pill:
         """Colors from the current scheme; re-read on every show, so a
         scheme picked in Settings applies from the next dictation."""
         pal = palette.get()
-        self.canvas.itemconfigure(self.line, fill=pal["line"])
+        busy = self._mode == "busy"
+        self.canvas.itemconfigure(
+            self.line, fill=_mix(pal["line"], pal["line_halo"], 0.55) if busy else pal["line"])
         self.canvas.itemconfigure(self.halo, fill=pal["line_halo"])
+        self.canvas.itemconfigure(self.sweep, fill=_mix(pal["line"], "#ffffff", 0.35),
+                                  state="normal" if busy else "hidden")
 
     def _flat(self):
         step = (_WIDTH - 2 * _EDGE) / (_POINTS - 1)
@@ -151,16 +170,21 @@ class _Pill:
         try:
             while True:
                 cmd = self._commands.get_nowait()
-                if cmd == "show" and not self._visible:
-                    self._wave = [0.0] * _POINTS
-                    self._level = 0.0
-                    self._shown_at = time.time()
-                    self._recolor()
-                    self._place_bottom_center()
-                    self.root.deiconify()
-                    self._no_activate()
-                    self._visible = True
-                elif cmd == "hide" and self._visible:
+                if cmd in ("show", "busy"):
+                    mode = "listen" if cmd == "show" else "busy"
+                    if mode != self._mode or not self._visible:
+                        self._mode = mode
+                        self._wave = [0.0] * _POINTS
+                        self._level = 0.0
+                        self._shown_at = time.time()
+                        self._recolor()
+                    if not self._visible:
+                        self._place_bottom_center()
+                        self.root.deiconify()
+                        self._no_activate()
+                        self._visible = True
+                elif self._visible and (cmd == "hide" or (cmd == "done" and self._mode == "busy")):
+                    # "done" never hides a new dictation's listening line.
                     self.root.withdraw()
                     self._visible = False
         except queue.Empty:
@@ -175,6 +199,9 @@ class _Pill:
             self._ticking = False
 
     def _draw(self, t):
+        if self._mode == "busy":
+            self._draw_busy(t)
+            return
         source = self._level_source
         target = 0.0
         if source is not None:
@@ -206,6 +233,21 @@ class _Pill:
             coords += [_EDGE + i * step, mid - (value + idle) * fade * room]
         self.canvas.coords(self.halo, *coords)
         self.canvas.coords(self.line, *coords)
+
+
+    def _draw_busy(self, t):
+        """Flat line, a bright streak sweeping left to right about once a
+        second -- "working on it"."""
+        mid = _HEIGHT / 2
+        self.canvas.coords(self.halo, *self._flat())
+        self.canvas.coords(self.line, *self._flat())
+        span = _WIDTH - 2 * _EDGE
+        head = (t * 0.9 % 1.3) - 0.15  # runs a little past both ends
+        x0 = _EDGE + max(0.0, head - 0.22) * span
+        x1 = _EDGE + min(1.0, max(0.0, head)) * span
+        if x1 - x0 < 2:
+            x0 = x1 = -10  # between sweeps: off the canvas
+        self.canvas.coords(self.sweep, x0, mid, x1, mid)
 
 
 def _rgb(color):
@@ -247,5 +289,25 @@ def hide():
         pill = _get()
         if not pill._failed:
             pill.hide()
+    except Exception:
+        pass
+
+
+def busy():
+    """After release: the line shows the dictation is being processed."""
+    try:
+        pill = _get()
+        if not pill._failed:
+            pill.busy()
+    except Exception:
+        pass
+
+
+def done():
+    """Processing finished: hide, unless a new dictation is listening."""
+    try:
+        pill = _get()
+        if not pill._failed:
+            pill.done()
     except Exception:
         pass

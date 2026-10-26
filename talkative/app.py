@@ -17,7 +17,7 @@ from .focus_check import is_focus_editable
 from .keynames import friendly as friendly_key
 from .self_correction import apply_self_corrections
 from .spoken_symbols import apply_spoken_symbols
-from .text_inserter import insert_text
+from .text_inserter import copy_only, insert_text
 from .transcriber import Transcriber
 from .tray import TrayApp, show_error_popup
 
@@ -138,6 +138,7 @@ class TalkativeApp:
         self._turn = 0           # the dictation whose turn it is to paste
         self._finished = set()   # finished early, waiting for earlier ones
         self._job_seq = threading.local()
+        self._job_blank = threading.local()  # this dictation's mic sent silence
         self._swapping = False  # model swap in progress (update install/undo)
         self._hotkey_pressed = set()  # currently-held keys that are part of HOTKEY or DEV_HOTKEY
         self._chord_active = False  # chord already handled for this press-hold, ignore OS key-repeat
@@ -513,7 +514,11 @@ class TalkativeApp:
             self.recorder.preroll = config.PREROLL_SECONDS
             self.recorder.start()
         except Exception as exc:
-            show_error_popup(f"Could not start recording:\n{exc}")
+            logging.warning("Could not start recording: %s", exc)
+            self._mic_blank = True  # check the microphones again
+            self._mic_event.set()
+            self._not_typed("Couldn't open the microphone. Check that one is "
+                            "connected and allowed in Windows' privacy settings.")
             return
 
         if self._cloud_active():
@@ -733,14 +738,17 @@ class TalkativeApp:
             self._recording = False
             self._latched = False
         self.tray.set_idle()
-        pill.hide()
         # A dictation that will be typed keeps the mic open for a quick
         # re-press (audio_recorder: the first word of a continuation).
         audio = self.recorder.stop(linger=config.CONTINUE_SECONDS if process else 0)
         duration = time.time() - self._record_start_time
 
         if not process or duration < config.MIN_RECORDING_SECONDS:
+            pill.hide()
             return True
+        # The line stays, as "processing", until this dictation is typed
+        # or the reason it wasn't is shown (_process_audio).
+        pill.busy()
         self._check_blank(audio)
 
         with self._order:
@@ -759,16 +767,43 @@ class TalkativeApp:
             self._jobs += 1
         self._job_seq.value = seq
         try:
+            self._job_blank.value = bool(
+                audio.size and float(np.max(np.abs(audio))) < config.BLANK_PEAK)
+        except Exception:
+            self._job_blank.value = False
+        # Taking long (Cloud slow, a fallback loading): say so once, so the
+        # user isn't left wondering whether anything is happening.
+        slow = threading.Timer(config.SLOW_NOTICE_SECONDS, lambda: error_toast.show(
+            "Still working on it…" + (" Talkative Cloud is slower than usual right now."
+                                      if self._cloud_active() else ""),
+            seconds=4, info=True))
+        slow.daemon = True
+        slow.start()
+        try:
             self._process_audio_inner(audio, dev, info, context, press)
+        except Exception:
+            logging.exception("Dictation failed")
+            self._not_typed("Something went wrong, so nothing was typed. "
+                            "The details are in errors.log.")
         finally:
+            slow.cancel()
             with self._order:
                 self._jobs -= 1
+                idle = self._jobs == 0
                 if seq is not None:
                     self._finished.add(seq)
                     while self._turn in self._finished:
                         self._finished.remove(self._turn)
                         self._turn += 1
                     self._order.notify_all()
+            if idle:
+                pill.done()
+
+    def _not_typed(self, reason):
+        """A dictation that won't be typed says why, near the cursor, long
+        enough to read -- never silently, never a blocking popup."""
+        _debug_log(not_typed=reason)
+        error_toast.show(reason, seconds=config.NOT_TYPED_SECONDS)
 
     def _wait_for_turn(self):
         """Block until every earlier dictation has pasted (or finished
@@ -811,7 +846,12 @@ class TalkativeApp:
                     audio, config.SAMPLE_RATE, initial_prompt=prompt
                 )
         except Exception as exc:
-            show_error_popup(f"Transcription failed:\n{exc}")
+            logging.warning("Transcription failed: %s", exc)
+            if self._cloud_active():
+                why = cloud_client.friendly_error(exc)
+            else:
+                why = "The speech model couldn't transcribe it."
+            self._not_typed(f"{why} Nothing was typed — please try again.")
             return
         transcribe_secs = time.time() - t0
         saved = _debug_save_audio(audio)
@@ -1044,11 +1084,19 @@ class TalkativeApp:
 
     def _insert_final(self, text, learn=True, press=None):
         if not text:
+            if getattr(self._job_blank, "value", False):
+                self._not_typed("Your microphone sent only silence, so nothing was "
+                                "typed. Check that it isn't muted.")
+            else:
+                self._not_typed("No words were heard, so nothing was typed.")
             return
         self._wait_for_turn()
 
         if not is_focus_editable():
-            self._no_target_cue()
+            # Focus moved while it was processed: keep the words.
+            copy_only(text)
+            self._not_typed("No text box was selected, so the text is on the "
+                            "clipboard. Click where it goes and press Ctrl+V.")
             return
 
         take_back = 0

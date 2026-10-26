@@ -339,6 +339,18 @@ def transcribe(audio, sample_rate, initial_prompt=None, indian_english=False):
     return str(result.get("text", "")).strip()
 
 
+def friendly_error(exc):
+    """Why a Cloud transcription failed, in words for the user."""
+    text = str(exc)
+    if text == CLOUD_BUSY_MESSAGE:
+        return "Talkative Cloud is busy right now."
+    if text.startswith("Cloud transcription failed: HTTP"):
+        return "Talkative Cloud had a problem with that one."
+    if "timed out" in text.lower() or isinstance(exc, TimeoutError):
+        return "Talkative Cloud took too long to answer."
+    return "Couldn't reach Talkative Cloud. Check your internet connection."
+
+
 def _transcribe_once(audio, sample_rate, initial_prompt, azure=False):
     """One /transcribe request -> the Worker's JSON. Raises on failure."""
     body = _wav_bytes(audio, sample_rate)
@@ -357,7 +369,13 @@ def _transcribe_once(audio, sample_rate, initial_prompt, azure=False):
         # end of an over-long prompt too.
         headers["X-Prompt-B64"] = base64.b64encode(
             initial_prompt[-800:].encode("utf-8")).decode("ascii")
-    status, data = _post("/transcribe", body, headers, timeout=30)
+    # A stalled request used to wait 30 s before Talkative fell back (seen
+    # live: 44.8 s with nothing typed yet). Groq answers in well under a
+    # second; uploading a long recording on a slow link takes longer, so
+    # the wait grows with its length.
+    seconds = len(audio) / sample_rate
+    timeout = min(30.0, config.CLOUD_TIMEOUT_BASE + 0.25 * seconds)
+    status, data = _post("/transcribe", body, headers, timeout=timeout)
     if status == 429:
         raise RuntimeError(CLOUD_BUSY_MESSAGE)
     if status != 200:
