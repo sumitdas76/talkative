@@ -1,5 +1,6 @@
 import collections
 import threading
+import time
 
 import numpy as np
 import sounddevice as sd
@@ -43,6 +44,12 @@ class AudioRecorder:
         # RMS of the most recent chunk, 0.0-1.0-ish; read by the listening
         # pill's animation loop. Plain float write is atomic enough.
         self.level = 0.0
+        # This recording so far, for app._check_live_mic (a dead or muted
+        # microphone is reported while the user is still speaking):
+        # chunks received, when the last one came, and the loudest sample.
+        self.chunks = 0
+        self.last_chunk = 0.0
+        self.peak = 0.0
 
     def _callback(self, indata, frames, time_info, status):
         chunk = indata.copy()
@@ -57,6 +64,9 @@ class AudioRecorder:
                     self._held_len -= len(self._held.popleft())
         if self._recording:
             self.level = float(np.sqrt(np.mean(indata ** 2)))
+            self.chunks += 1
+            self.last_chunk = time.monotonic()
+            self.peak = max(self.peak, float(np.max(np.abs(indata))))
 
     def lingering(self):
         """True while a stream is open between dictations."""
@@ -71,6 +81,7 @@ class AudioRecorder:
             return False
 
     def start(self):
+        self.chunks, self.last_chunk, self.peak = 0, time.monotonic(), 0.0
         with PA_LOCK:
             if self.lingering() and self._stream_device == self.device:
                 self._cancel_close()

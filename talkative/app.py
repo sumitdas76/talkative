@@ -123,6 +123,7 @@ class TalkativeApp:
         self.transcriber = None
         self._recording = False
         self._record_start_time = None
+        self._live_warned = False  # a live problem was shown this dictation
         self._running = True
         self._mic_event = threading.Event()  # devices changed / blank recording
         self._mic_blank = False
@@ -521,9 +522,6 @@ class TalkativeApp:
                             "connected and allowed in Windows' privacy settings.")
             return
 
-        if self._cloud_active():
-            # Open the Cloud connection while the user speaks, not after.
-            threading.Thread(target=cloud_client.warm, daemon=True).start()
         self._context = (screen_context.Pending()
                          if screen_context.enabled(self._cloud_active()) else None)
         self._press = continuation.press_info()
@@ -533,8 +531,55 @@ class TalkativeApp:
         self._latched = False
         self._recording_id += 1
         self._record_start_time = time.time()
+        self._live_warned = False
         self.tray.set_recording()
         pill.show(lambda: self.recorder.level)
+        if self._cloud_active():
+            # Open the Cloud connection while the user speaks, not after --
+            # and if Cloud can't be reached, say so now, not after.
+            threading.Thread(target=self._warm_cloud,
+                             args=(self._recording_id,), daemon=True).start()
+
+    def _warm_cloud(self, rec_id):
+        if cloud_client.warm() or self._recording_id != rec_id or not self._recording:
+            return
+        if model_manager.is_downloaded(config.MODEL_SIZE):
+            self._live_problem("Can't reach Talkative Cloud. Keep talking: this one "
+                               "will be transcribed on this PC instead.")
+        else:
+            self._live_problem("Can't reach Talkative Cloud. Check your internet; "
+                               "Talkative will keep trying when you let go.")
+
+    def _check_live_mic(self):
+        """Called from the main loop (every 0.2 s) while recording: a
+        microphone that sends nothing, or only digital silence, is
+        reported while the user is still speaking, not after (2026-10-27,
+        user request). Only certain signals -- never "too quiet", which a
+        pause before speaking looks like."""
+        if not self._recording or self._live_warned or self._record_start_time is None:
+            return
+        if time.time() - self._record_start_time < config.LIVE_CHECK_SECONDS:
+            return
+        rec = self.recorder
+        if not rec.chunks or time.monotonic() - rec.last_chunk > config.LIVE_STALL_SECONDS:
+            self._live_problem("The microphone isn't sending any sound. Let go, "
+                               "then check that it's connected.")
+        elif rec.peak < config.BLANK_PEAK:
+            self._live_problem("Your microphone is sending only silence. Check "
+                               "that it isn't muted.")
+        else:
+            return
+        self._mic_blank = True  # check the microphones once this one ends
+        self._mic_event.set()
+
+    def _live_problem(self, message):
+        """Once per dictation: red line and the reason, while recording."""
+        if self._live_warned:
+            return
+        self._live_warned = True
+        _debug_log(live_problem=message)
+        pill.alert()
+        error_toast.show(message, seconds=config.NOT_TYPED_SECONDS)
 
     def _drop_stale_keys(self, key):
         """Forget hotkey keys whose release the hook never saw (lock screen,
@@ -1194,6 +1239,10 @@ class TalkativeApp:
                     self._check_lost_release()
                 except Exception:
                     logging.getLogger(__name__).exception("lost-release check failed")
+                try:
+                    self._check_live_mic()
+                except Exception:
+                    logging.getLogger(__name__).exception("live microphone check failed")
         except KeyboardInterrupt:
             pass
 

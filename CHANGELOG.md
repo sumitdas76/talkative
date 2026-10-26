@@ -33,6 +33,10 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   words: no words were heard, the microphone sent only silence or
   couldn't be opened, or Talkative Cloud was busy, unreachable or too
   slow. This replaces the blocking error popup.
+- Some problems are now shown while you're still speaking, not after:
+  the line turns red and a message says what's wrong if your microphone
+  is sending only silence (muted), sends nothing, or stops (unplugged),
+  or if Talkative Cloud can't be reached.
 - If no text box is selected when your words are ready, they go to the
   clipboard (press Ctrl+V) instead of being lost.
 - A stalled Talkative Cloud request is given up on sooner (10 seconds

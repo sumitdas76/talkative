@@ -107,18 +107,21 @@ def _give_back(conn):
 def warm():
     """Open a connection ahead of the next request (called when the hotkey
     goes down in Cloud mode), so the handshake happens while the user
-    speaks. Never raises."""
+    speaks. Never raises. Returns False if Cloud couldn't be reached (the
+    app then says so while the user is still speaking), else True -- also
+    when nothing was tested (a pooled connection, or a system proxy)."""
     try:
         target = _target()
         if target is None:
-            return
+            return True
         host, port, _ = target
-        conn, reused = _take(host, port, 10)
+        conn, reused = _take(host, port, config.CLOUD_WARM_TIMEOUT)
         if not reused:
             conn.connect()
         _give_back(conn)
+        return True
     except Exception:
-        pass
+        return False
 
 
 def _post(route, body, headers, timeout):

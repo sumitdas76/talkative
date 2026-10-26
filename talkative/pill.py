@@ -40,6 +40,7 @@ _HALO_WIDTH = 4  # dark outline under the line, so it shows on light windows
 _CYCLE = 7  # points per wave: an analogue sine, not a point-to-point zigzag
 _SCREEN_BOTTOM_MARGIN = round(48 * _SCALE)
 _TICK_MS = 40  # 25 frames a second, only while recording
+_ALERT = "#ef4444"  # the line turns red when the microphone or Cloud fails
 # Chroma-key color: anything painted this exact color becomes fully
 # see-through (Windows-only Tk feature), so only the line itself shows.
 # Picked to not collide with any color actually used in the drawing.
@@ -81,6 +82,9 @@ class _Pill:
     def done(self):
         self._commands.put("done")
 
+    def alert(self):
+        self._commands.put("alert")
+
     def hide(self):
         self._commands.put("hide")
 
@@ -112,6 +116,7 @@ class _Pill:
             self.sweep = self.canvas.create_line(
                 0, 0, 0, 0, width=_LINE_WIDTH + 1, capstyle="round", state="hidden")
             self._mode = "listen"
+            self._alert = False
             self._recolor()
             self._wave = [0.0] * _POINTS
             self._level = 0.0
@@ -147,8 +152,9 @@ class _Pill:
         scheme picked in Settings applies from the next dictation."""
         pal = palette.get()
         busy = self._mode == "busy"
+        color = _ALERT if self._alert else pal["line"]
         self.canvas.itemconfigure(
-            self.line, fill=_mix(pal["line"], pal["line_halo"], 0.55) if busy else pal["line"])
+            self.line, fill=_mix(color, pal["line_halo"], 0.55) if busy else color)
         self.canvas.itemconfigure(self.halo, fill=pal["line_halo"])
         self.canvas.itemconfigure(self.sweep, fill=_mix(pal["line"], "#ffffff", 0.35),
                                   state="normal" if busy else "hidden")
@@ -170,8 +176,14 @@ class _Pill:
         try:
             while True:
                 cmd = self._commands.get_nowait()
+                if cmd == "alert":
+                    self._alert = True
+                    self._recolor()
+                    continue
                 if cmd in ("show", "busy"):
                     mode = "listen" if cmd == "show" else "busy"
+                    if cmd == "show" and not (self._visible and self._mode == "listen"):
+                        self._alert = False  # a new dictation starts clean
                     if mode != self._mode or not self._visible:
                         self._mode = mode
                         self._wave = [0.0] * _POINTS
@@ -289,6 +301,16 @@ def hide():
         pill = _get()
         if not pill._failed:
             pill.hide()
+    except Exception:
+        pass
+
+
+def alert():
+    """Something is wrong with this dictation (app._live_problem): red line."""
+    try:
+        pill = _get()
+        if not pill._failed:
+            pill.alert()
     except Exception:
         pass
 
