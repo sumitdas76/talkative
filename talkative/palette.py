@@ -1,5 +1,5 @@
 """Talkative's colors, in one place: the Settings window (both themes),
-its header band and the listening pill all read from here.
+its header band and the listening line all read from here.
 
 PALETTES holds the three schemes shown to the user on 2026-10-26 after
 the first restyle read as "the generic AI look" (indigo/violet/pink,
@@ -12,7 +12,7 @@ background pair is checked for at least 4.5:1 contrast
 
 PALETTES = {
     # Warm editorial: cream paper, ink, deep forest green (in the spirit
-    # of Wispr Flow's site), pill in orange -> lavender.
+    # of Wispr Flow's site), an orange listening line.
     "forest": {
         "label": "Forest",
         "light": dict(bg="#fbf8ee", fg="#1a1a1a", field="#ffffff", raised="#ece5d3",
@@ -21,11 +21,10 @@ PALETTES = {
                      border="#3b574f", hover="#29443d", title="#93d4bf", muted="#b3bdb2"),
         "accent": "#035c51", "accent_fg": "#ffffff", "accent_hover": "#023f37",
         "header": ("#034f46", "#0b6b5c"), "header_fg": "#fbf8ee",
-        "pill_bg": "#12221f", "pill_dot": "#ff6b5e",
-        "pill_bars": ("#ffa946", "#ffc58a", "#e6c8ff"),
+        "line": "#ff9f43", "line_halo": "#12221f",
     },
     # Graphite and coral (in the spirit of Raycast): near-black, one
-    # warm red accent, pill in coral -> amber.
+    # warm red accent and line.
     "coral": {
         "label": "Coral",
         "light": dict(bg="#f6f6f7", fg="#16181d", field="#ffffff", raised="#e6e7ea",
@@ -34,10 +33,9 @@ PALETTES = {
                      border="#3e4350", hover="#30353f", title="#ff8f86", muted="#a9adb7"),
         "accent": "#c9342d", "accent_fg": "#ffffff", "accent_hover": "#a92a24",
         "header": ("#1b1d23", "#2a2d36"), "header_fg": "#ffffff",
-        "pill_bg": "#15171c", "pill_dot": "#ff6363",
-        "pill_bars": ("#ff6363", "#ff8a5c", "#ffb347"),
+        "line": "#ff6363", "line_halo": "#15171c",
     },
-    # Calm teal on slate, pill in teal -> lime.
+    # Calm teal on slate, a teal line.
     "teal": {
         "label": "Teal",
         "light": dict(bg="#f3f7f7", fg="#132022", field="#ffffff", raised="#e0eaea",
@@ -46,8 +44,7 @@ PALETTES = {
                      border="#385255", hover="#283d40", title="#6fd9cc", muted="#a5b9b8"),
         "accent": "#0b6f69", "accent_fg": "#ffffff", "accent_hover": "#08544f",
         "header": ("#0b5f5a", "#13807a"), "header_fg": "#ffffff",
-        "pill_bg": "#0f191b", "pill_dot": "#ff5a5f",
-        "pill_bars": ("#2dd4bf", "#5ee0a0", "#a3e635"),
+        "line": "#2dd4bf", "line_halo": "#0f191b",
     },
 }
 

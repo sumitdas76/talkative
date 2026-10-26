@@ -1,23 +1,27 @@
 """
-Floating "listening" pill (spec section 10.1).
+Floating "listening" indicator (spec section 10.1).
 
-A small always-on-top capsule fixed at the bottom-center of the screen
-while recording: a red dot plus live audio-level bars, so the user can see
-the app is hearing them. Disappears on release. It must never steal
-keyboard focus (the user is mid-dictation into another window) -- the
-window gets WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, no taskbar entry, and is
-never focused.
+Since 2026-10-26 a single thin line, like a heart monitor's trace, near
+the bottom-center of the screen while recording (user request: "a
+minimalistic analogue line like a heartbeat ... instead of an entire pill
+animation"; it replaced a capsule with a red dot and level bars). Flat
+with a faint ripple while the user is quiet; speech scrolls in from the
+right as a wave whose height follows the voice. Disappears on release.
+It must never steal keyboard focus (the user is mid-dictation into
+another window) -- the window gets WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+no taskbar entry, and is never focused.
 
 Built as a tk.Toplevel on the shared overlay thread (see overlay_thread.py
 -- multiple independent tk.Tk() roots across threads caused real crashes),
 not its own Tk instance. The app talks to it only through
-show(level_source) / hide(), which are thread-safe and no-ops if the pill
-failed to start. Pill problems must never break dictation.
+show(level_source) / hide(), which are thread-safe and no-ops if the
+indicator failed to start. Its problems must never break dictation.
 """
 
 import ctypes
 import math
 import queue
+import random
 import threading
 import time
 
@@ -25,23 +29,16 @@ from . import overlay_thread, palette
 
 _SCALE = 0.8  # sized down 20% at the user's request, July 20 2026
 _WIDTH, _HEIGHT = round(172 * _SCALE), round(40 * _SCALE)
-_DOT_X = round(20 * _SCALE)  # center of the recording dot
-_DOT_R = round(5 * _SCALE)
-_RING_MAX = round(11 * _SCALE)  # the pulse ring grows to this radius
-_BARS = 15  # odd: one center bar, the rest mirrored around it
-_BAR_X0 = round(40 * _SCALE)
-_BAR_RIGHT_MARGIN = round(14 * _SCALE)
-_BAR_WIDTH = max(2, round(3.5 * _SCALE))
-_BAR_HALF_MIN = round(1.5 * _SCALE)
-_BAR_MAX_MARGIN = round(4.5 * _SCALE)
+_POINTS = 46  # along the line; the newest enters at the right
+_EDGE = 3  # pixels kept clear at each end for the halo
+_LINE_WIDTH = 2
+_HALO_WIDTH = 4  # dark outline under the line, so it shows on light windows
+_CYCLE = 7  # points per wave: an analogue sine, not a point-to-point zigzag
 _SCREEN_BOTTOM_MARGIN = round(48 * _SCALE)
-_TICK_MS = 33  # ~30 frames a second, only while recording
-# Colors come from palette.py (redesigned 2026-10-26, user request: "a
-# cooler animation"); read when the pill is built.
+_TICK_MS = 40  # 25 frames a second, only while recording
 # Chroma-key color: anything painted this exact color becomes fully
-# see-through (Windows-only Tk feature), so the canvas's own rectangular
-# shape doesn't show as a box around the rounded capsule. Picked to not
-# collide with any color actually used in the pill's drawing.
+# see-through (Windows-only Tk feature), so only the line itself shows.
+# Picked to not collide with any color actually used in the drawing.
 _TRANSPARENT_KEY = "#ff00fe"
 _GWL_EXSTYLE = -20
 _WS_EX_NOACTIVATE = 0x08000000
@@ -86,7 +83,6 @@ class _Pill:
             self.root.withdraw()
             self.root.overrideredirect(True)
             self.root.attributes("-topmost", True)
-            self.root.attributes("-alpha", 0.93)
             self.root.attributes("-transparentcolor", _TRANSPARENT_KEY)
             self.root.configure(bg=_TRANSPARENT_KEY)
             self.canvas = tk.Canvas(
@@ -94,34 +90,17 @@ class _Pill:
                 highlightthickness=0, bg=_TRANSPARENT_KEY,
             )
             self.canvas.pack()
-            # Capsule background (colored by _recolor).
-            r = _HEIGHT // 2
-            self.capsule = [
-                self.canvas.create_oval(0, 0, 2 * r, _HEIGHT, outline=""),
-                self.canvas.create_oval(_WIDTH - 2 * r, 0, _WIDTH, _HEIGHT, outline=""),
-                self.canvas.create_rectangle(r, 0, _WIDTH - r, _HEIGHT, outline=""),
-            ]
-            mid = _HEIGHT / 2
-            self.ring = self.canvas.create_oval(0, 0, 0, 0, width=2)
-            self.dot = self.canvas.create_oval(
-                _DOT_X - _DOT_R, mid - _DOT_R, _DOT_X + _DOT_R, mid + _DOT_R,
-                outline="",
-            )
-            # Rounded bars (lines with round caps), mirrored around the
-            # center one: the newest level drives the center and older ones
-            # ripple outwards.
-            self.bars = []
-            step = (_WIDTH - _BAR_X0 - _BAR_RIGHT_MARGIN) / (_BARS - 1)
-            for i in range(_BARS):
-                x = _BAR_X0 + i * step
-                bar = self.canvas.create_line(
-                    x, mid - _BAR_HALF_MIN, x, mid + _BAR_HALF_MIN,
-                    width=_BAR_WIDTH, capstyle="round",
-                )
-                self.bars.append((bar, x))
+            # Colors come from palette.py (_recolor). The halo is the same
+            # line, wider and dark, underneath.
+            flat = self._flat()
+            self.halo = self.canvas.create_line(
+                *flat, width=_HALO_WIDTH, smooth=True, capstyle="round", joinstyle="round")
+            self.line = self.canvas.create_line(
+                *flat, width=_LINE_WIDTH, smooth=True, capstyle="round", joinstyle="round")
             self._recolor()
-            self._history = [0.0] * (_BARS // 2 + 1)
+            self._wave = [0.0] * _POINTS
             self._level = 0.0
+            self._phase = 0.0
             self._shown_at = 0.0
             self._visible = False
             self._ticking = False
@@ -152,12 +131,16 @@ class _Pill:
         """Colors from the current scheme; re-read on every show, so a
         scheme picked in Settings applies from the next dictation."""
         pal = palette.get()
-        self._bg, self._dot_color = pal["pill_bg"], pal["pill_dot"]
-        for item in self.capsule:
-            self.canvas.itemconfigure(item, fill=self._bg)
-        self.canvas.itemconfigure(self.dot, fill=self._dot_color)
-        self._bar_colors = [gradient_color(i / (_BARS - 1), pal["pill_bars"])
-                            for i in range(_BARS)]
+        self.canvas.itemconfigure(self.line, fill=pal["line"])
+        self.canvas.itemconfigure(self.halo, fill=pal["line_halo"])
+
+    def _flat(self):
+        step = (_WIDTH - 2 * _EDGE) / (_POINTS - 1)
+        mid = _HEIGHT / 2
+        coords = []
+        for i in range(_POINTS):
+            coords += [_EDGE + i * step, mid]
+        return coords
 
     def _wake(self):
         if not self._ticking:
@@ -169,7 +152,7 @@ class _Pill:
             while True:
                 cmd = self._commands.get_nowait()
                 if cmd == "show" and not self._visible:
-                    self._history = [0.0] * len(self._history)
+                    self._wave = [0.0] * _POINTS
                     self._level = 0.0
                     self._shown_at = time.time()
                     self._recolor()
@@ -187,7 +170,7 @@ class _Pill:
             self._draw(time.time() - self._shown_at)
             self.root.after(_TICK_MS, self._tick)
         else:
-            # Hidden: stop until the next show() (_wake), so the pill costs
+            # Hidden: stop until the next show() (_wake), so it costs
             # nothing between dictations.
             self._ticking = False
 
@@ -196,34 +179,33 @@ class _Pill:
         target = 0.0
         if source is not None:
             try:
-                target = min(1.0, source() * 12)  # speech RMS is small
+                target = min(1.0, source() * 20)  # speech RMS is small
             except Exception:
                 pass
         # Quick to rise, slower to fall, so speech looks smooth, not jumpy.
         rate = 0.55 if target > self._level else 0.18
         self._level += (target - self._level) * rate
-        self._history = [self._level] + self._history[:-1]
+        # A sine wave whose height follows the voice (a little uneven, like
+        # a real trace); new points enter at the right, older ones scroll
+        # left.
+        self._phase += math.tau / _CYCLE
+        swing = math.sin(self._phase) * self._level * (0.75 + 0.25 * random.random())
+        self._wave = self._wave[1:] + [swing]
 
         mid = _HEIGHT / 2
-        room = mid - _BAR_MAX_MARGIN
-        center = _BARS // 2
-        for i, ((bar, x), color) in enumerate(zip(self.bars, self._bar_colors)):
-            k = abs(i - center)
-            # Taller in the middle; a slow wave keeps it alive in pauses.
-            shape = 1.0 - 0.45 * (k / center) ** 2
-            idle = 0.07 * (1 + math.sin(t * 5 - k * 0.8)) / 2
-            value = min(1.0, self._history[k] * shape + idle)
-            half = _BAR_HALF_MIN + value * room
-            self.canvas.coords(bar, x, mid - half, x, mid + half)
-            self.canvas.itemconfigure(bar, fill=_mix(color, "#ffffff", 0.35 * self._history[k]))
-
-        # The dot breathes, and a ring pulses out from it once a second.
-        phase = (t % 1.0)
-        r = _DOT_R + 0.8 * math.sin(t * math.tau)
-        self.canvas.coords(self.dot, _DOT_X - r, mid - r, _DOT_X + r, mid + r)
-        ring = _DOT_R + phase * (_RING_MAX - _DOT_R)
-        self.canvas.coords(self.ring, _DOT_X - ring, mid - ring, _DOT_X + ring, mid + ring)
-        self.canvas.itemconfigure(self.ring, outline=_mix(self._dot_color, self._bg, phase))
+        room = mid - _HALO_WIDTH
+        step = (_WIDTH - 2 * _EDGE) / (_POINTS - 1)
+        coords = []
+        for i, value in enumerate(self._wave):
+            # Fades out over the left half as it scrolls away, and eases in
+            # over the last few points so the right end isn't a hard edge;
+            # a faint slow ripple keeps it alive in pauses.
+            fade = (math.sin(math.pi / 2 * min(1.0, i / (_POINTS * 0.45)))
+                    * min(1.0, 0.35 + (_POINTS - 1 - i) / 4))
+            idle = 0.06 * math.sin(t * 4 - i * 0.35)
+            coords += [_EDGE + i * step, mid - (value + idle) * fade * room]
+        self.canvas.coords(self.halo, *coords)
+        self.canvas.coords(self.line, *coords)
 
 
 def _rgb(color):
@@ -234,13 +216,6 @@ def _mix(a, b, amount):
     """Color `amount` (0-1) of the way from a to b."""
     ra, rb = _rgb(a), _rgb(b)
     return "#%02x%02x%02x" % tuple(round(x + (y - x) * amount) for x, y in zip(ra, rb))
-
-
-def gradient_color(pos, stops):
-    """The color at pos 0-1 along `stops`."""
-    pos = min(1.0, max(0.0, pos)) * (len(stops) - 1)
-    i = min(int(pos), len(stops) - 2)
-    return _mix(stops[i], stops[i + 1], pos - i)
 
 
 _pill = None
@@ -256,7 +231,7 @@ def _get():
 
 
 def show(level_source):
-    """Show the pill; level_source is a zero-arg callable returning the
+    """Show the line; level_source is a zero-arg callable returning the
     current input RMS. Safe from any thread; no-op on failure."""
     try:
         pill = _get()

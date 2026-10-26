@@ -21,9 +21,10 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 - A new look, in three color schemes to choose from under Settings >
   General > Appearance: Forest (cream and deep green, the default), Coral
   (graphite and coral red) and Teal (slate and teal), each in light and
-  dark. Settings has a colored header, and the listening pill's bars are
-  a wave in the scheme's colors that ripples out from the middle as you
-  speak, with a pulsing recording dot.
+  dark. Settings has a colored header.
+- While you dictate, the pill at the bottom of the screen is replaced by
+  a single thin line, like a heart monitor's: flat while you're quiet, a
+  wave that follows your voice while you speak, in your color scheme.
 - Radio buttons in dark mode no longer look selected when they aren't.
 
 ### Fixed
@@ -33,8 +34,9 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   dictation. Windows tells Talkative when this happens, so nothing runs
   in the background to watch for it. A recording that comes back
   completely silent also makes Talkative check its microphones again.
-- The listening pill no longer keeps redrawing while hidden, roughly
-  halving Talkative's background CPU use between dictations.
+- The listening indicator no longer keeps redrawing after a dictation
+  (1.3.17's pill did, forever): background CPU between dictations is
+  about a third lower.
 
 ## [1.3.17] - 2026-10-25
 

@@ -119,9 +119,9 @@ def _apply_checkbox_glyphs(style, field, border, accent, accent_fg):
 
 
 def _swatch(pal):
-    """A small rounded chip: the accent, then the pill's bar colors."""
+    """A small rounded chip: the accent, then the listening line's color."""
     scale, w, h = 4, 44, 14
-    colors = [pal["accent"], *pal["pill_bars"]]
+    colors = [pal["accent"], pal["line"]]
     img = Image.new("RGBA", (w * scale, h * scale), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     part = w * scale / len(colors)
