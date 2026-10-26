@@ -77,9 +77,9 @@ def _build(overlay, on_choice):
             for item in items:
                 row = ttk.Frame(parent)
                 row.pack(fill="x", anchor="w", pady=(4, 0))
-                ttk.Label(row, text="•", foreground="grey").pack(side="left", anchor="n")
+                ttk.Label(row, text="•", style="Muted.TLabel").pack(side="left", anchor="n")
                 ttk.Label(
-                    row, wraplength=440, foreground="grey", text=item,
+                    row, wraplength=440, style="Muted.TLabel", text=item,
                 ).pack(side="left", padx=(6, 0), anchor="w")
 
         mode = tk.StringVar(value=config.PROCESSING_MODE)
@@ -92,7 +92,8 @@ def _build(overlay, on_choice):
         ).pack(anchor="w")
         bullets(cloud_box, [
             "Uses no extra RAM or disk.",
-            "Your dictation audio is sent to a remote server to be processed.",
+            "Your dictation audio, and the text just before the cursor (to "
+            "spell names right), is sent to a remote server to be processed.",
         ])
 
         local_box = ttk.LabelFrame(root, text="Local", padding=12)
@@ -114,7 +115,7 @@ def _build(overlay, on_choice):
         ttk.Label(local_box, wraplength=460, text=hardware.local_fit()).pack(
             anchor="w", pady=(8, 0))
 
-        status = ttk.Label(root, padding=(18, 4, 18, 0), foreground="grey", wraplength=480)
+        status = ttk.Label(root, padding=(18, 4, 18, 0), style="Muted.TLabel", wraplength=480)
         status.pack(anchor="w")
         bar = ttk.Progressbar(root, mode="indeterminate", length=300)
 
@@ -193,7 +194,7 @@ def _build(overlay, on_choice):
                 bar.config(value=done_mb)
                 pct = int(done_mb / needed_mb * 100) if needed_mb else 100
                 status.config(
-                    foreground="grey",
+                    style="Muted.TLabel", foreground="",  # "" clears an error's red
                     text=f"Getting dictation ready... {pct}% "
                          f"({int(done_mb)} MB of {needed_mb} MB). "
                          "Changed your mind? Choose Online above to "

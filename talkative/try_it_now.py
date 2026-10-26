@@ -78,7 +78,7 @@ def _build(overlay):
         bar = ttk.Frame(root, padding=(16, 10, 16, 12))
         bar.pack(fill="x")
         ttk.Label(
-            bar, foreground="grey",
+            bar, style="Muted.TLabel",
             text="This works in any app — documents, chats, browsers.",
         ).pack(side="left")
 

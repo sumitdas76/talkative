@@ -49,7 +49,9 @@ def bg_color():
     """Current theme's background color, for a Toplevel's own .configure(bg=)
     -- ttk styling covers its own widgets but not the raw Tk background
     showing through gaps/padding on the window itself."""
-    return "#2b2b2b" if _effective_theme() == "dark" else "#f0f0f0"
+    from . import palette
+
+    return palette.get()["dark" if _effective_theme() == "dark" else "light"]["bg"]
 
 
 def _apply_base_theme(root):
@@ -65,23 +67,26 @@ def _apply_base_theme(root):
     try:
         from tkinter import ttk
 
+        from . import palette
+
         style = ttk.Style(root)
         style.theme_use("clam")
-        if _effective_theme() == "dark":
-            bg, fg, field, raised = "#2b2b2b", "#e6e6e6", "#3c3c3c", "#454545"
-            border, hover = "#555555", "#5a5a5a"
-        else:
-            bg, fg, field, raised = "#f0f0f0", "#1a1a1a", "#ffffff", "#dcdcdc"
-            border, hover = "#b0b0b0", "#cccccc"
-        accent = "#4682b4"  # steel blue, matches the tray icon
+        # The color scheme's colors (palette.py, 2026-10-27), so the
+        # first-run windows match Settings.
+        pal = palette.get()
+        m = pal["dark" if _effective_theme() == "dark" else "light"]
+        bg, fg, field, raised = m["bg"], m["fg"], m["field"], m["raised"]
+        border, hover, accent = m["border"], m["hover"], pal["accent"]
 
         root.configure(bg=bg)
         style.configure(".", background=bg, foreground=fg,
                         fieldbackground=field, bordercolor=border,
                         lightcolor=bg, darkcolor=bg, font=("Segoe UI", 9))
         style.configure("TLabelframe", background=bg, bordercolor=border)
-        style.configure("TLabelframe.Label", background=bg, foreground=fg,
+        style.configure("TLabelframe.Label", background=bg, foreground=m["title"],
                         font=("Segoe UI", 9, "bold"))
+        # Hint text (was a fixed "grey": ~1.9:1 on light backgrounds).
+        style.configure("Muted.TLabel", foreground=m["muted"])
         style.configure("TButton", background=raised, padding=(10, 5))
         style.map(
             "TButton",
@@ -94,6 +99,15 @@ def _apply_base_theme(root):
                   foreground=[("disabled", border)])
         style.map("TRadiobutton", background=[("active", bg)],
                   foreground=[("disabled", border)])
+        # clam's radio dot was white on an unselected button in dark mode
+        # (looked selected): an empty circle, a dot in the title color when
+        # chosen (the accent is too dark to see on dark backgrounds).
+        style.configure("TRadiobutton", indicatorbackground=field,
+                        indicatorforeground=m["title"], bordercolor=border,
+                        upperbordercolor=border, lowerbordercolor=border)
+        style.map("TRadiobutton",
+                  indicatorbackground=[("pressed", hover), ("selected", field)],
+                  indicatorforeground=[("disabled", border), ("selected", m["title"])])
         style.configure("TProgressbar", background=accent, troughcolor=field,
                         bordercolor=border, lightcolor=accent, darkcolor=accent)
     except Exception:

@@ -73,7 +73,8 @@ def _build(overlay):
         ).pack(anchor="w")
         ttk.Label(
             root, padding=(16, 0, 16, 8), wraplength=420,
-            text="Nothing to download -- your dictation is processed on a "
+            text="Nothing to download -- your dictation (and the text just "
+                 "before the cursor, to spell names right) is processed on a "
                  "remote server instead of this device.",
         ).pack(anchor="w")
         ttk.Label(

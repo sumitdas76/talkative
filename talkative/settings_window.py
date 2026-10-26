@@ -337,14 +337,15 @@ class _SettingsWindow:
         )
         # clam's radio dot was white on an unselected button in dark mode,
         # so the chosen option looked like the only empty one. Now: an
-        # empty field-colored circle, and the accent dot when selected.
+        # empty field-colored circle, and a title-colored dot when selected
+        # (the accent is too dark to see on dark backgrounds).
         style.configure("TRadiobutton", indicatorbackground=field,
-                        indicatorforeground=accent, bordercolor=border,
+                        indicatorforeground=title, bordercolor=border,
                         upperbordercolor=border, lowerbordercolor=border)
         style.map(
             "TRadiobutton",
             indicatorbackground=[("pressed", hover), ("selected", field)],
-            indicatorforeground=[("disabled", border), ("selected", accent)],
+            indicatorforeground=[("disabled", border), ("selected", title)],
         )
         style.configure("Treeview", background=field, foreground=fg,
                         fieldbackground=field)
