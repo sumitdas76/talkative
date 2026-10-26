@@ -2,7 +2,7 @@
 
 All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
-## [Unreleased]
+## [1.3.18] - 2026-10-27
 
 ### Changed
 
@@ -25,7 +25,6 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 - While you dictate, the pill at the bottom of the screen is replaced by
   a single thin line, like a heart monitor's: flat while you're quiet, a
   wave that follows your voice while you speak, in your color scheme.
-- Radio buttons in dark mode no longer look selected when they aren't.
 - You can see what happens to a dictation. After you let go, the line
   shows a sweeping light while your words are processed; if it takes
   more than 6 seconds, a note says Talkative is still working on it. If
@@ -37,14 +36,15 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   the line turns red and a message says what's wrong if your microphone
   is sending only silence (muted), sends nothing, or stops (unplugged),
   or if Talkative Cloud can't be reached.
+
+### Fixed
+
 - If no text box is selected when your words are ready, they go to the
   clipboard (press Ctrl+V) instead of being lost.
 - A stalled Talkative Cloud request is given up on sooner (10 seconds
   plus a quarter of the recording's length, instead of 30 seconds), so
   the fallback starts earlier.
-
-### Fixed
-
+- Radio buttons in dark mode no longer look selected when they aren't.
 - Dictating into a terminal (Claude Code, PowerShell, Command Prompt,
   bash) no longer starts with a small letter after extra spaces, and no
   longer drops the full stop when the terminal shows grey hint text: a

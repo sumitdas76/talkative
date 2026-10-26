@@ -466,6 +466,15 @@ def main():
                   "preroll_test.py", 60)
     _script_check("D31", "Diagnostic data: off sends nothing; on never sends screen text",
                   "diagnostics_test.py", 60)
+    _script_check("D34", "Microphone changes followed without a restart (Windows notifies, no polling)",
+                  "mic_watch_test.py", 90)
+    _script_check("D35", "Feedback image: types and 5 MB limit, multipart body intact",
+                  "feedback_image_test.py", 60)
+    _script_check("D38", "Color schemes: every text pair readable (4.5:1)", "palette_contrast_test.py", 30)
+    _script_check("D39", "Processing shown; every not-typed case says why; text kept on the clipboard",
+                  "not_typed_test.py", 60)
+    _script_check("D40", "Mic and Cloud problems reported mid-speech, no false alarm",
+                  "live_problem_test.py", 90)
     check_hotkey_rules()
     check_pipeline()
     check_text_rules()
