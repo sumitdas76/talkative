@@ -132,6 +132,19 @@ _CLOSERS = "\"')]”’"
 _OPENERS = "([{“‘/-"  # no space after these (straight quotes could be either)
 
 
+# A terminal's input line, read through UI Automation: the whole line is
+# one prompt token -- Claude Code's "❯", PowerShell's "PS C:\x>", cmd's
+# "C:\x>", bash's "user@pc:~$", zsh's "%" / "➜". (User report 2026-10-27:
+# in Claude Code the first word came out lowercase after 2-3 spaces.)
+_PROMPT = re.compile(r"(?:PS\s+)?\S*[❯›»>$#%λ➜]")
+
+
+def _at_prompt(before):
+    """Is the cursor right after a terminal prompt (start of fresh input)?"""
+    line = re.split(r"[\r\n]", before)[-1].strip()
+    return bool(line) and _PROMPT.fullmatch(line) is not None
+
+
 def _sentence_starts_after(before):
     s = before.rstrip(" \t ")
     if not s or s[-1] in "\r\n":
@@ -166,6 +179,12 @@ def fit_to_cursor(text, before, after):
     without a capital or a stray full stop. Lists are left alone."""
     if not text.strip():
         return text, None
+    if _at_prompt(before):
+        # Fresh input after a terminal prompt: a sentence start, and what
+        # follows the cursor is screen padding or the app's grey hint text
+        # ("Try ...", "add the focus guard"), not words to fit around --
+        # reading it as the sentence carrying on dropped full stops.
+        return text.lstrip(), None
     is_list = "\n" in text or "•" in text
     space = None
     if not is_list and not _sentence_starts_after(before):

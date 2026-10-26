@@ -45,6 +45,11 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
 
 ### Fixed
 
+- Dictating into a terminal (Claude Code, PowerShell, Command Prompt,
+  bash) no longer starts with a small letter after extra spaces, and no
+  longer drops the full stop when the terminal shows grey hint text: a
+  prompt such as "❯" or "C:\>" now counts as the start of fresh input
+  (1.3.17's mid-sentence fitting mistook it for a sentence carrying on).
 - Switching microphones no longer needs a restart: a microphone you plug
   in, unplug or make the Windows default is used from the next
   dictation. Windows tells Talkative when this happens, so nothing runs
