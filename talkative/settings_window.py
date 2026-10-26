@@ -19,7 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, config, dev_mode, feedback, fix_learning, grammar_engine, history, model_manager, overlay_thread, settings, updater
+from . import __version__, app_icon, config, dev_mode, feedback, fix_learning, grammar_engine, history, model_manager, overlay_thread, pill, settings, updater
 from .keynames import friendly as _friendly_key_name
 
 log = logging.getLogger(__name__)
@@ -209,6 +209,7 @@ class _SettingsWindow:
         # Models tab's download progress bar appearing).
         self.root.minsize(520, 420)
         self._apply_theme()
+        self._build_header()
 
         nb = ttk.Notebook(self.root)
         nb.pack(fill="both", expand=True, padx=10, pady=(10, 4))
@@ -231,7 +232,8 @@ class _SettingsWindow:
         self.saved_label = ttk.Label(bar, text="")
         self.saved_label.pack(side="left")
         ttk.Button(bar, text="Close", command=self._close).pack(side="right")
-        ttk.Button(bar, text="Save and apply", command=self._save).pack(side="right", padx=6)
+        ttk.Button(bar, text="Save and apply", command=self._save,
+                   style="Accent.TButton").pack(side="right", padx=6)
 
         self.root.protocol("WM_DELETE_WINDOW", self._close)
 
@@ -261,13 +263,16 @@ class _SettingsWindow:
         # ignores color styling, and the active tab must stand out.
         style = ttk.Style(self.root)
         style.theme_use("clam")
+        # Navy-tinted rather than grey, with an indigo accent (2026-10-26,
+        # user request: "more colorful"). Every text/background pair here
+        # is at least 4.5:1 contrast (checked when chosen).
         if self._effective_theme() == "dark":
-            bg, fg, field, raised = "#2b2b2b", "#e6e6e6", "#3c3c3c", "#454545"
-            border, hover = "#555555", "#5a5a5a"
+            bg, fg, field, raised = "#1b1e2b", "#e9ebf5", "#252938", "#2e3346"
+            border, hover, title = "#4a5170", "#3a4060", "#a5b4fc"
         else:
-            bg, fg, field, raised = "#f0f0f0", "#1a1a1a", "#ffffff", "#dcdcdc"
-            border, hover = "#b0b0b0", "#cccccc"
-        accent, accent_fg = "#4682b4", "#ffffff"  # steel blue, matches the tray icon
+            bg, fg, field, raised = "#f3f5fb", "#1b1e2b", "#ffffff", "#e2e6f3"
+            border, hover, title = "#b4bbd4", "#d3d9ee", "#4338ca"
+        accent, accent_fg, accent_hover = "#5b4fe0", "#ffffff", "#4a3fd0"
 
         self.root.configure(bg=bg)
         style.configure(".", background=bg, foreground=fg,
@@ -289,6 +294,18 @@ class _SettingsWindow:
             background=[("disabled", raised), ("active", hover)],
             foreground=[("disabled", border)],
         )
+        # The main action ("Save and apply") in the accent color.
+        style.configure("Accent.TButton", background=accent, foreground=accent_fg,
+                        bordercolor=accent, font=("Segoe UI", 9, "bold"))
+        style.map(
+            "Accent.TButton",
+            background=[("disabled", raised), ("active", accent_hover)],
+            foreground=[("disabled", border)],
+        )
+        # Section titles ("Dictation style", "Feedback"...) in color.
+        style.configure("TLabelframe", background=bg, bordercolor=border)
+        style.configure("TLabelframe.Label", background=bg, foreground=title,
+                        font=("Segoe UI", 9, "bold"))
         # Radiobutton/checkbutton row background was never mapped for the
         # "active" (hover) state, so clam's built-in light default painted
         # every row white on hover regardless of theme.
@@ -340,7 +357,7 @@ class _SettingsWindow:
         self._bg, self._fg, self._field = bg, fg, field
         # Secondary text that must stay readable on this theme's background
         # (plain "grey" is faint on dark and nearly invisible on light).
-        self._muted = "#b4b4b4" if self._effective_theme() == "dark" else "#555555"
+        self._muted = "#aeb4c8" if self._effective_theme() == "dark" else "#4e566e"
         # Hint text everywhere in Settings uses this style (was a fixed
         # "grey"), so it is readable on both themes and follows a live
         # Light/Dark switch.
@@ -352,6 +369,30 @@ class _SettingsWindow:
                 bg=field, fg=fg, insertbackground=fg,
                 selectbackground=accent, selectforeground=accent_fg,
             )
+
+    def _build_header(self):
+        """A band in the listening pill's colors (blue -> violet -> pink),
+        darkened a quarter so the white text on it stays readable."""
+        canvas = tk.Canvas(self.root, height=44, highlightthickness=0, bd=0)
+        canvas.pack(fill="x")
+        stops = [pill._mix(c, "#000000", 0.25) for c in pill.GRADIENT]
+
+        def paint(event=None):
+            width = max(canvas.winfo_width(), 2)
+            row = Image.new("RGB", (width, 1))
+            for x in range(width):
+                pos = x / (width - 1) * (len(stops) - 1)
+                i = min(int(pos), len(stops) - 2)
+                row.putpixel((x, 0), pill._rgb(pill._mix(stops[i], stops[i + 1], pos - i)))
+            self._header_image = ImageTk.PhotoImage(row.resize((width, 44)))
+            canvas.delete("all")
+            canvas.create_image(0, 0, anchor="nw", image=self._header_image)
+            canvas.create_text(18, 22, anchor="w", text=APP_NAME, fill="#ffffff",
+                               font=("Segoe UI Semibold", 15))
+            canvas.create_text(width - 18, 22, anchor="e", text="Settings",
+                               fill="#ffffff", font=("Segoe UI", 10))
+
+        canvas.bind("<Configure>", paint)
 
     # ---------------- tabs ----------------
 

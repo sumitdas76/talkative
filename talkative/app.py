@@ -124,6 +124,8 @@ class TalkativeApp:
         self._recording = False
         self._record_start_time = None
         self._running = True
+        self._mic_event = threading.Event()  # devices changed / blank recording
+        self._mic_blank = False
         self._listener = None
         self._no_model = False  # active model was deleted; not merely still loading
         self._jobs = 0  # dictations currently in the pipeline (updater idle check)
@@ -607,25 +609,55 @@ class TalkativeApp:
         in or made the Windows default later was never used until a
         restart (user report 2026-10-26). Restart it when Windows' list
         or default changes -- between dictations only: a change seen
-        mid-dictation is applied after it."""
+        mid-dictation is applied after it. Windows says when that happens
+        (audio_devices.watch_devices), so this thread sleeps otherwise;
+        a blank recording (_check_blank) also wakes it, and then PortAudio
+        is restarted even if Windows' list looks the same."""
+        if audio_devices.watch_devices(self._mic_event.set):
+            wait = None
+        else:
+            wait = config.MIC_CHECK_SECONDS  # fall back to asking
         applied = audio_devices.capture_state()
         while self._running:
-            time.sleep(config.MIC_CHECK_SECONDS)
+            self._mic_event.wait(wait)
+            if not self._running:
+                return
+            if self._mic_event.is_set():
+                time.sleep(config.MIC_SETTLE_SECONDS)
+                self._mic_event.clear()
+            while self._recording and self._running:
+                time.sleep(0.2)
             state = audio_devices.capture_state()
-            if state is None or state == applied or self._recording:
+            force, self._mic_blank = self._mic_blank, False
+            if state is None or (state == applied and not force):
                 continue
             try:
                 chosen = config.INPUT_DEVICE
                 if not self.recorder.reset():
+                    self._mic_blank = force
+                    self._mic_event.set()  # recording again: retry after
                     continue
                 applied = state
-                logging.getLogger(__name__).info("Microphones changed; device list reloaded")
+                logging.getLogger(__name__).info(
+                    "Device list reloaded (%s)", "blank recording" if force else "microphones changed")
                 if chosen is not None and self.recorder.device != chosen:
                     # Renumbered, or gone (None: back to the Windows default).
                     config.INPUT_DEVICE = self.recorder.device
                     settings.save({"input_device": self.recorder.device})
             except Exception:
                 logging.getLogger(__name__).exception("microphone reload failed")
+
+    def _check_blank(self, audio):
+        """A recording with no signal at all means the microphone gave
+        nothing (gone, muted, the wrong one): check the devices now
+        rather than wait for Windows to say something changed."""
+        try:
+            if audio.size and float(np.max(np.abs(audio))) < config.BLANK_PEAK:
+                logging.getLogger(__name__).warning("Blank recording; checking microphones")
+                self._mic_blank = True
+                self._mic_event.set()
+        except Exception:
+            logging.getLogger(__name__).exception("blank check failed")
 
     def _start_listener(self):
         # pynput stops the listener for good when a callback raises, which
@@ -709,6 +741,7 @@ class TalkativeApp:
 
         if not process or duration < config.MIN_RECORDING_SECONDS:
             return True
+        self._check_blank(audio)
 
         with self._order:
             seq = self._next_seq
@@ -1118,6 +1151,7 @@ class TalkativeApp:
 
     def quit(self):
         self._running = False
+        self._mic_event.set()
         if self._listener:
             self._listener.stop()
         self.recorder.close()

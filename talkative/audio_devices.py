@@ -69,6 +69,18 @@ def _interfaces():
             COMMETHOD([], HRESULT, "Item", (["in"], c_uint), (["out"], POINTER(POINTER(IMMDevice)))),
         ]
 
+    # Implemented by Talkative (watch_devices), called by Windows.
+    class IMMNotificationClient(IUnknown):
+        _iid_ = GUID("{7991EEC9-7E89-4D85-8390-6C703CEC60C0}")
+        _methods_ = [
+            COMMETHOD([], HRESULT, "OnDeviceStateChanged", (["in"], c_wchar_p), (["in"], wintypes.DWORD)),
+            COMMETHOD([], HRESULT, "OnDeviceAdded", (["in"], c_wchar_p)),
+            COMMETHOD([], HRESULT, "OnDeviceRemoved", (["in"], c_wchar_p)),
+            COMMETHOD([], HRESULT, "OnDefaultDeviceChanged", (["in"], c_uint), (["in"], c_uint),
+                      (["in"], c_wchar_p)),
+            COMMETHOD([], HRESULT, "OnPropertyValueChanged", (["in"], c_wchar_p), (["in"], _PROPERTYKEY)),
+        ]
+
     class IMMDeviceEnumerator(IUnknown):
         _iid_ = GUID("{A95664D2-9614-4F35-A746-DE8DB63617E6}")
         _methods_ = [
@@ -76,6 +88,12 @@ def _interfaces():
                       (["out"], POINTER(POINTER(IMMDeviceCollection)))),
             COMMETHOD([], HRESULT, "GetDefaultAudioEndpoint", (["in"], c_uint), (["in"], c_uint),
                       (["out"], POINTER(POINTER(IMMDevice)))),
+            COMMETHOD([], HRESULT, "GetDevice", (["in"], c_wchar_p),
+                      (["out"], POINTER(POINTER(IMMDevice)))),
+            COMMETHOD([], HRESULT, "RegisterEndpointNotificationCallback",
+                      (["in"], POINTER(IMMNotificationClient))),
+            COMMETHOD([], HRESULT, "UnregisterEndpointNotificationCallback",
+                      (["in"], POINTER(IMMNotificationClient))),
         ]
 
     # Only SetDefaultEndpoint is called; the ten methods before it are
@@ -94,6 +112,7 @@ def _interfaces():
         "enumerator_clsid": GUID("{BCDE0395-E52F-467C-8E3D-C4579291692E}"),
         "policy_clsid": GUID("{870af99c-171d-4f9e-af0d-e63df40c2bc9}"),
         "IMMDeviceEnumerator": IMMDeviceEnumerator,
+        "IMMNotificationClient": IMMNotificationClient,
         "IPolicyConfig": IPolicyConfig,
     }
     return _com
@@ -158,6 +177,74 @@ def capture_state():
     except Exception:
         logging.warning("Could not read the microphone list", exc_info=True)
         return None
+
+
+def watch_devices(on_change):
+    """Have Windows call on_change() whenever an audio device is plugged
+    in, unplugged, enabled, disabled or made a default -- no polling, so
+    no CPU while nothing changes. on_change runs on a Windows audio
+    thread and must only signal (set an Event), never block. True if
+    Windows took the registration. It lives on a thread of its own in
+    the multithreaded COM apartment (Windows calls in from its own
+    threads); the other functions here use single-threaded COM, and one
+    thread can't be both."""
+    import threading
+
+    started = threading.Event()
+    result = []
+    try:
+        # Importing comtypes sets up COM on the importing thread (as
+        # single-threaded), so it must not happen first on `run`'s thread.
+        com = _interfaces()
+    except Exception:
+        logging.warning("Could not watch for audio device changes", exc_info=True)
+        return False
+
+    def run():
+        try:
+            comtypes = com["comtypes"]
+            comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
+
+            class Client(comtypes.COMObject):
+                _com_interfaces_ = [com["IMMNotificationClient"]]
+
+                def OnDeviceStateChanged(self, device_id, state):
+                    on_change()
+                    return 0
+
+                def OnDeviceAdded(self, device_id):
+                    on_change()
+                    return 0
+
+                def OnDeviceRemoved(self, device_id):
+                    on_change()
+                    return 0
+
+                def OnDefaultDeviceChanged(self, flow, role, device_id):
+                    on_change()
+                    return 0
+
+                def OnPropertyValueChanged(self, device_id, key):
+                    return 0  # names, formats...: not a different device
+
+            enum = comtypes.CoCreateInstance(
+                com["enumerator_clsid"], interface=com["IMMDeviceEnumerator"])
+            client = Client()
+            enum.RegisterEndpointNotificationCallback(client)
+            result.append(True)
+        except Exception:
+            logging.warning("Could not watch for audio device changes", exc_info=True)
+            result.append(False)
+            started.set()
+            return
+        started.set()
+        # Holding `enum` and `client` keeps the registration alive; the
+        # thread just sleeps (no CPU) for the life of the app.
+        threading.Event().wait()
+
+    threading.Thread(target=run, name="audio-device-watch", daemon=True).start()
+    started.wait(5)
+    return bool(result and result[0])
 
 
 def set_default_output(device_id):

@@ -214,10 +214,18 @@ FALLBACK_IDLE_SECONDS = 300
 # The main loop naps 0.2 s; a nap this much longer means the PC slept, and
 # app._on_resume() resets the hotkey hook, key state and audio.
 RESUME_GAP_SECONDS = 10
-# How often app._watch_microphones asks Windows whether a microphone was
-# plugged in, unplugged or made the default; on a change PortAudio re-reads
-# its list, so "System default" follows Windows without a restart.
+# Windows tells app._watch_microphones when a microphone is plugged in,
+# unplugged or made the default (no polling); PortAudio then re-reads its
+# list, so "System default" follows Windows without a restart. Only if
+# Windows refuses the registration does it ask every MIC_CHECK_SECONDS
+# instead (0.4 ms of CPU per check, measured). MIC_SETTLE_SECONDS lets a
+# burst of notifications (one plug-in sends several) finish first.
 MIC_CHECK_SECONDS = 2.0
+MIC_SETTLE_SECONDS = 0.5
+# A recording whose loudest sample is below this is blank -- not a quiet
+# room (which still measures ~0.005+), but a microphone delivering
+# nothing: gone, muted, or the wrong one. It triggers a device check.
+BLANK_PEAK = 0.0005
 # Main-loop checks (0.2 s apart) a hold-mode recording may run with its
 # hotkey physically up before app._check_lost_release drops it as a lost
 # release (Ctrl+Alt+Del, lock screen). 3 = 0.6 s: well past the hook's own

@@ -16,21 +16,31 @@ failed to start. Pill problems must never break dictation.
 """
 
 import ctypes
+import math
 import queue
 import threading
+import time
 
 from . import overlay_thread
 
 _SCALE = 0.8  # sized down 20% at the user's request, July 20 2026
 _WIDTH, _HEIGHT = round(172 * _SCALE), round(40 * _SCALE)
-_BARS = 12
-_DOT_MARGIN = round(14 * _SCALE)
-_DOT_DIAM = round(12 * _SCALE)
-_BAR_X0 = round(38 * _SCALE)
-_BAR_RIGHT_MARGIN = round(16 * _SCALE)
-_BAR_HALF_MIN = round(2 * _SCALE)
-_BAR_MAX_MARGIN = round(8 * _SCALE)
+_DOT_X = round(20 * _SCALE)  # center of the recording dot
+_DOT_R = round(5 * _SCALE)
+_RING_MAX = round(11 * _SCALE)  # the pulse ring grows to this radius
+_BARS = 15  # odd: one center bar, the rest mirrored around it
+_BAR_X0 = round(40 * _SCALE)
+_BAR_RIGHT_MARGIN = round(14 * _SCALE)
+_BAR_WIDTH = max(2, round(3.5 * _SCALE))
+_BAR_HALF_MIN = round(1.5 * _SCALE)
+_BAR_MAX_MARGIN = round(4.5 * _SCALE)
 _SCREEN_BOTTOM_MARGIN = round(48 * _SCALE)
+_TICK_MS = 33  # ~30 frames a second, only while recording
+_BG = "#16161f"
+_DOT = "#ef4444"
+# Bars run blue -> violet -> pink, the same colors as Settings' header
+# (redesigned 2026-10-26, user request: "a cooler animation").
+GRADIENT = ("#3b82f6", "#8b5cf6", "#ec4899")
 # Chroma-key color: anything painted this exact color becomes fully
 # see-through (Windows-only Tk feature), so the canvas's own rectangular
 # shape doesn't show as a box around the rounded capsule. Picked to not
@@ -62,6 +72,9 @@ class _Pill:
     def show(self, level_source):
         self._level_source = level_source
         self._commands.put("show")
+        # The drawing loop stops while hidden; the shared overlay thread
+        # (which polls anyway) restarts it.
+        self._overlay.build(self._wake)
 
     def hide(self):
         self._commands.put("hide")
@@ -86,30 +99,35 @@ class _Pill:
             self.canvas.pack()
             # Capsule background.
             r = _HEIGHT // 2
-            self.canvas.create_oval(0, 0, 2 * r, _HEIGHT, fill="#202020", outline="")
+            self.canvas.create_oval(0, 0, 2 * r, _HEIGHT, fill=_BG, outline="")
             self.canvas.create_oval(_WIDTH - 2 * r, 0, _WIDTH, _HEIGHT,
-                                    fill="#202020", outline="")
+                                    fill=_BG, outline="")
             self.canvas.create_rectangle(r, 0, _WIDTH - r, _HEIGHT,
-                                         fill="#202020", outline="")
+                                         fill=_BG, outline="")
+            mid = _HEIGHT / 2
+            self.ring = self.canvas.create_oval(0, 0, 0, 0, outline=_BG, width=2)
             self.dot = self.canvas.create_oval(
-                _DOT_MARGIN, _DOT_MARGIN,
-                _DOT_MARGIN + _DOT_DIAM, _DOT_MARGIN + _DOT_DIAM,
-                fill="#c82828", outline="",
+                _DOT_X - _DOT_R, mid - _DOT_R, _DOT_X + _DOT_R, mid + _DOT_R,
+                fill=_DOT, outline="",
             )
+            # Rounded bars (lines with round caps), mirrored around the
+            # center one: the newest level drives the center and older ones
+            # ripple outwards.
             self.bars = []
-            x0 = _BAR_X0
-            width = (_WIDTH - x0 - _BAR_RIGHT_MARGIN) / _BARS
+            step = (_WIDTH - _BAR_X0 - _BAR_RIGHT_MARGIN) / (_BARS - 1)
             for i in range(_BARS):
-                x = x0 + i * width
-                bar = self.canvas.create_rectangle(
-                    x + 1, _HEIGHT / 2 - _BAR_HALF_MIN,
-                    x + width - 1, _HEIGHT / 2 + _BAR_HALF_MIN,
-                    fill="#5a8fd8", outline="",
+                x = _BAR_X0 + i * step
+                color = gradient_color(i / (_BARS - 1))
+                bar = self.canvas.create_line(
+                    x, mid - _BAR_HALF_MIN, x, mid + _BAR_HALF_MIN,
+                    width=_BAR_WIDTH, capstyle="round", fill=color,
                 )
-                self.bars.append(bar)
-            self._history = [0.0] * _BARS
+                self.bars.append((bar, x, color))
+            self._history = [0.0] * (_BARS // 2 + 1)
+            self._level = 0.0
+            self._shown_at = 0.0
             self._visible = False
-            self.root.after(40, self._tick)
+            self._ticking = False
             self._ready.set()
         except Exception:
             self._failed = True
@@ -133,12 +151,19 @@ class _Pill:
         y = screen_h - _HEIGHT - _SCREEN_BOTTOM_MARGIN
         self.root.geometry(f"{_WIDTH}x{_HEIGHT}+{x}+{y}")
 
+    def _wake(self):
+        if not self._ticking:
+            self._ticking = True
+            self._tick()
+
     def _tick(self):
         try:
             while True:
                 cmd = self._commands.get_nowait()
                 if cmd == "show" and not self._visible:
-                    self._history = [0.0] * _BARS
+                    self._history = [0.0] * len(self._history)
+                    self._level = 0.0
+                    self._shown_at = time.time()
                     self._place_bottom_center()
                     self.root.deiconify()
                     self._no_activate()
@@ -150,26 +175,63 @@ class _Pill:
             pass
 
         if self._visible:
-            source = self._level_source
-            level = 0.0
-            if source is not None:
-                try:
-                    level = min(1.0, source() * 12)  # speech RMS is small
-                except Exception:
-                    pass
-            self._history = self._history[1:] + [level]
-            mid = _HEIGHT / 2
-            for bar, value in zip(self.bars, self._history):
-                half = _BAR_HALF_MIN + value * (mid - _BAR_MAX_MARGIN)
-                x0, _, x1, _ = self.canvas.coords(bar)
-                self.canvas.coords(bar, x0, mid - half, x1, mid + half)
-            # Blink the dot gently.
-            import time
+            self._draw(time.time() - self._shown_at)
+            self.root.after(_TICK_MS, self._tick)
+        else:
+            # Hidden: stop until the next show() (_wake), so the pill costs
+            # nothing between dictations.
+            self._ticking = False
 
-            on = int(time.time() * 2) % 2 == 0
-            self.canvas.itemconfigure(self.dot, fill="#c82828" if on else "#802020")
+    def _draw(self, t):
+        source = self._level_source
+        target = 0.0
+        if source is not None:
+            try:
+                target = min(1.0, source() * 12)  # speech RMS is small
+            except Exception:
+                pass
+        # Quick to rise, slower to fall, so speech looks smooth, not jumpy.
+        rate = 0.55 if target > self._level else 0.18
+        self._level += (target - self._level) * rate
+        self._history = [self._level] + self._history[:-1]
 
-        self.root.after(40, self._tick)
+        mid = _HEIGHT / 2
+        room = mid - _BAR_MAX_MARGIN
+        center = _BARS // 2
+        for i, (bar, x, color) in enumerate(self.bars):
+            k = abs(i - center)
+            # Taller in the middle; a slow wave keeps it alive in pauses.
+            shape = 1.0 - 0.45 * (k / center) ** 2
+            idle = 0.07 * (1 + math.sin(t * 5 - k * 0.8)) / 2
+            value = min(1.0, self._history[k] * shape + idle)
+            half = _BAR_HALF_MIN + value * room
+            self.canvas.coords(bar, x, mid - half, x, mid + half)
+            self.canvas.itemconfigure(bar, fill=_mix(color, "#ffffff", 0.35 * self._history[k]))
+
+        # The dot breathes, and a ring pulses out from it once a second.
+        phase = (t % 1.0)
+        r = _DOT_R + 0.8 * math.sin(t * math.tau)
+        self.canvas.coords(self.dot, _DOT_X - r, mid - r, _DOT_X + r, mid + r)
+        ring = _DOT_R + phase * (_RING_MAX - _DOT_R)
+        self.canvas.coords(self.ring, _DOT_X - ring, mid - ring, _DOT_X + ring, mid + ring)
+        self.canvas.itemconfigure(self.ring, outline=_mix(_DOT, _BG, phase))
+
+
+def _rgb(color):
+    return tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _mix(a, b, amount):
+    """Color `amount` (0-1) of the way from a to b."""
+    ra, rb = _rgb(a), _rgb(b)
+    return "#%02x%02x%02x" % tuple(round(x + (y - x) * amount) for x, y in zip(ra, rb))
+
+
+def gradient_color(pos):
+    """The GRADIENT color at pos 0-1."""
+    pos = min(1.0, max(0.0, pos)) * (len(GRADIENT) - 1)
+    i = min(int(pos), len(GRADIENT) - 2)
+    return _mix(GRADIENT[i], GRADIENT[i + 1], pos - i)
 
 
 _pill = None

@@ -18,6 +18,20 @@ All notable changes to Talkative (formerly Sumit Speak) are recorded here.
   General).
 - Feedback can include an image (a screenshot, up to 5 MB): Settings >
   About > Feedback > Attach image.
+- A new look: Settings has a colored header and navy-tinted light and
+  dark themes with an indigo accent, and the listening pill's bars are a
+  blue-to-pink wave that ripples out from the middle as you speak, with
+  a pulsing recording dot.
+
+### Fixed
+
+- Switching microphones no longer needs a restart: a microphone you plug
+  in, unplug or make the Windows default is used from the next
+  dictation. Windows tells Talkative when this happens, so nothing runs
+  in the background to watch for it. A recording that comes back
+  completely silent also makes Talkative check its microphones again.
+- The listening pill no longer keeps redrawing while hidden, roughly
+  halving Talkative's background CPU use between dictations.
 
 ## [1.3.17] - 2026-10-25
 
