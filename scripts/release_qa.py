@@ -493,6 +493,8 @@ def main():
                       "cursor_fit_e2e.py", 120)
         _script_check("D28", "Quick continuation joins the sentence; slow one, names, '?' don't",
                       "continuation_e2e.py", 120)
+        _script_check("D41", "Switched windows before the text was ready: it goes where you dictated",
+                      "paste_target_test.py", 90)
     check_corpora()
     if a.grammar:
         check_grammar()

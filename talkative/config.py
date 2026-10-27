@@ -75,6 +75,13 @@ TOGGLE_MAX_SECONDS = 300
 # How long to wait after simulating Ctrl+V before restoring the user's original clipboard.
 CLIPBOARD_RESTORE_DELAY = 0.4
 
+# Pasting into the window dictated into after the user switched away
+# (paste_target.py): pause after switching to it, and again after the
+# paste before switching back; and how long to wait for Alt/Ctrl/Shift/Win
+# to be let go first (a user mid Alt+Tab).
+PASTE_TARGET_SETTLE = 0.12
+PASTE_TARGET_KEYS_WAIT = 2.0
+
 # Turn spoken self-correction detection on/off without touching the trigger list.
 ENABLE_SELF_CORRECTION = True
 

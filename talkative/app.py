@@ -6,7 +6,7 @@ import time
 import numpy as np
 from pynput import keyboard
 
-from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, model_manager, onboarding, pill, screen_context, settings, temp_cleanup, try_it_now, updater
+from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, model_manager, onboarding, paste_target, pill, screen_context, settings, temp_cleanup, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -140,6 +140,8 @@ class TalkativeApp:
         self._finished = set()   # finished early, waiting for earlier ones
         self._job_seq = threading.local()
         self._job_blank = threading.local()  # this dictation's mic sent silence
+        self._job_target = threading.local()  # where this dictation pastes
+        self._target = None  # paste_target.Target captured at the hotkey press
         self._swapping = False  # model swap in progress (update install/undo)
         self._hotkey_pressed = set()  # currently-held keys that are part of HOTKEY or DEV_HOTKEY
         self._chord_active = False  # chord already handled for this press-hold, ignore OS key-repeat
@@ -510,6 +512,7 @@ class TalkativeApp:
         if not is_focus_editable():
             self._no_target_cue()
             return
+        self._target = paste_target.capture()
 
         try:
             self.recorder.preroll = config.PREROLL_SECONDS
@@ -813,14 +816,16 @@ class TalkativeApp:
             target=self._process_audio, daemon=True,
             args=(audio, self._dev_dictation, seq,
                   _audio_summary(audio, config.SAMPLE_RATE, reason), self._context,
-                  self._press),
+                  self._press, paste_target.at_release(self._target)),
         ).start()
         return True
 
-    def _process_audio(self, audio, dev=False, seq=None, info="", context=None, press=None):
+    def _process_audio(self, audio, dev=False, seq=None, info="", context=None, press=None,
+                       target=None):
         with self._order:
             self._jobs += 1
         self._job_seq.value = seq
+        self._job_target.value = target
         try:
             self._job_blank.value = bool(
                 audio.size and float(np.max(np.abs(audio))) < config.BLANK_PEAK)
@@ -1146,7 +1151,27 @@ class TalkativeApp:
                 self._not_typed("No words were heard, so nothing was typed.")
             return
         self._wait_for_turn()
+        # The user may have switched windows since letting go of the key:
+        # paste where they dictated, then give them their window back
+        # (paste_target.py; their choice, 2026-10-27).
+        target = getattr(self._job_target, "value", None)
+        back = None
+        if config.INSERT_MODE != "clipboard":
+            try:
+                back = paste_target.bring_back(target)
+            except paste_target.Lost as exc:
+                logging.getLogger(__name__).info("paste target lost: %s", exc)
+                copy_only(text)
+                self._not_typed("The window you dictated into was closed or couldn't "
+                                "be brought back, so the text is on the clipboard. "
+                                "Click where it goes and press Ctrl+V.")
+                return
+        try:
+            self._insert_here(text, learn, press)
+        finally:
+            paste_target.return_to(back, target)
 
+    def _insert_here(self, text, learn, press):
         if not is_focus_editable():
             # Focus moved while it was processed: keep the words.
             copy_only(text)
