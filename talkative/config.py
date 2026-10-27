@@ -385,6 +385,8 @@ MANIFEST_URL = (
 RELEASES_API_URL = (
     "https://api.github.com/repos/sumitdas76/talkative/releases/latest"
 )
+# Opened by Settings > About's "Read the privacy policy" link.
+PRIVACY_URL = "https://github.com/sumitdas76/talkative/blob/main/PRIVACY.md"
 # The replaced model is kept for undo until this many words have been
 # dictated with the new one (usage-based grace, spec section 7.6).
 UPDATE_GRACE_WORDS = 1000

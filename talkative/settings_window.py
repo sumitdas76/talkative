@@ -13,6 +13,7 @@ ignored.
 import logging
 import os
 import threading
+import webbrowser
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -378,6 +379,9 @@ class _SettingsWindow:
         style.configure("TProgressbar", background=accent, troughcolor=field,
                         bordercolor=border, lightcolor=accent, darkcolor=accent)
         self._accent, self._accent_fg = accent, accent_fg
+        # Text in the accent color was unreadable on dark backgrounds;
+        # links and code samples use the heading color (checked by D38).
+        self._link = title
         self._bg, self._fg, self._field = bg, fg, field
         # Secondary text that must stay readable on this theme's background
         # (plain "grey" is faint on dark and nearly invisible on light).
@@ -789,7 +793,7 @@ class _SettingsWindow:
                  "where id equals five” types SELECT * FROM users WHERE id = 5.",
         ).pack(anchor="w", pady=(6, 0))
         help_link = ttk.Label(code, text="How to say code…", cursor="hand2",
-                              foreground=self._accent)
+                              foreground=self._link)
         help_link.pack(anchor="w", pady=(6, 0))
         help_link.bind("<Button-1>", lambda e: self._show_dev_help())
 
@@ -850,7 +854,7 @@ class _SettingsWindow:
                 cell = ttk.Frame(col)
                 cell.grid(row=r, column=1, sticky="nw")
                 ttk.Label(cell, text=get, font=("Consolas", 10),
-                          foreground=self._accent).pack(side="left")
+                          foreground=self._link).pack(side="left")
                 if note:
                     ttk.Label(cell, text="  " + note, style="Muted.TLabel",
                               font=("Segoe UI", 9)).pack(side="left")
@@ -1358,20 +1362,21 @@ class _SettingsWindow:
         self.check_updates_label.pack(side="left", padx=(10, 0))
         box = ttk.LabelFrame(f, text="Privacy", padding=10)
         box.pack(fill="x")
+        # Short on purpose (2026-10-27, user request); the details --
+        # history, feedback, diagnostics -- are in PRIVACY.md.
         ttk.Label(
             box, wraplength=500,
-            text="By default, Talkative processes your dictation via Cloud: "
-                 "your audio (and the text just before the cursor, to spell "
-                 "names right) is sent to a remote server for transcription "
-                 "and cleanup, then discarded, not stored (unless you turn on "
-                 "diagnostic data below). Switch to "
-                 "Local in the General tab and it runs fully offline "
-                 "instead, with nothing ever leaving this PC. Dictation "
-                 "history, if you turn it on in the Dictation tab, is "
-                 "always stored only on this device, regardless of mode. "
-                 "The one other exception is the Feedback box below: "
-                 "nothing is sent unless you type a message and click Send.",
+            text="Cloud sends your audio, and the text just before the "
+                 "cursor, to a server for processing. Nothing is kept unless "
+                 "you turn on diagnostic data below. Local keeps everything "
+                 "on this PC.",
         ).pack(anchor="w")
+        link = ttk.Label(box, text="Read the privacy policy", cursor="hand2",
+                         foreground=self._link, takefocus=True)
+        link.pack(anchor="w", pady=(4, 0))
+        open_policy = lambda e=None: webbrowser.open(config.PRIVACY_URL)  # noqa: E731
+        for seq in ("<Button-1>", "<Return>", "<space>"):
+            link.bind(seq, open_policy)
 
         diag = ttk.LabelFrame(f, text="Diagnostic data", padding=10)
         diag.pack(fill="x", pady=(10, 0))
