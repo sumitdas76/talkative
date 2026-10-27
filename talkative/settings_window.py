@@ -1194,7 +1194,7 @@ class _SettingsWindow:
         elif status["last_check"]:
             self.update_label.config(text=f"Last checked for updates: {status['last_check']}")
         else:
-            self.update_label.config(text="Updates are checked automatically at startup.")
+            self.update_label.config(text="Updates are checked automatically.")
         grace = status["grace"]
         if grace and not self._undoing:
             self.undo_btn.config(
@@ -1334,7 +1334,17 @@ class _SettingsWindow:
 
     def _tab_about(self, f):
         ttk.Label(f, text=f"“{APP_NAME}”").pack(anchor="w")
-        ttk.Label(f, text=f"Version {__version__}").pack(anchor="w", pady=(0, 10))
+        ttk.Label(f, text=f"Version {__version__}").pack(anchor="w")
+        row = ttk.Frame(f)
+        row.pack(fill="x", pady=(4, 10))
+        self.check_updates_btn = ttk.Button(
+            row, text="Check for updates", command=self._check_updates
+        )
+        self.check_updates_btn.pack(side="left")
+        self.check_updates_label = ttk.Label(
+            row, style="Muted.TLabel", text="", wraplength=360
+        )
+        self.check_updates_label.pack(side="left", padx=(10, 0))
         box = ttk.LabelFrame(f, text="Privacy", padding=10)
         box.pack(fill="x")
         ttk.Label(
@@ -1373,6 +1383,25 @@ class _SettingsWindow:
         ).pack(anchor="w", pady=(4, 0))
 
         self._build_feedback_section(f)
+
+    def _check_updates(self):
+        self.check_updates_btn.config(state="disabled")
+        self.check_updates_label.config(text="Checking…")
+
+        def show(text):
+            if self.check_updates_btn.winfo_exists():
+                self.check_updates_btn.config(state="normal")
+                self.check_updates_label.config(text=text)
+
+        def work():
+            try:
+                text = updater.check_now()
+            except Exception:
+                logging.getLogger(__name__).exception("manual update check failed")
+                text = "Something went wrong while checking. Please try again."
+            self.overlay.build(lambda: show(text))
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _diagnostics_changed(self):
         if config.SEND_DIAGNOSTICS:

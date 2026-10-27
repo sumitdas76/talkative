@@ -5,13 +5,15 @@ Publisher side is one manifest.json in a public GitHub repo (see
 docs/manifest-sample.json); editing it in the browser is the whole
 publishing act. Client side, in this module:
 
-- At startup, if the last successful check was UPDATE_CHECK_HOURS or
-  more ago, the manifest is fetched (a few hundred bytes; offline or
+- At startup, and every hour while the app runs, if the last successful
+  check was UPDATE_CHECK_HOURS or more ago, the manifest is fetched (a few hundred bytes; offline or
   malformed skips -- updates must never break dictation). Hours, not
   calendar days: a check at 00:17 used to hide a release published at
   01:33 until the next day. A check only counts once GitHub has answered:
   a start with no network (or a firewall blocking GitHub) tries again on
-  the next start, and each failure is written to errors.log.
+  the next start, and each failure is written to errors.log. Settings >
+  About has a "Check for updates" button (check_now) that skips the wait
+  and also offers versions the user snoozed.
 - An applicable update shows ONE component-blind dialog ("An improvement
   update is available (X MB)") -- it never names the model. Download /
   Not now. "Not now" snoozes that update for a week; a newer version ends
@@ -64,6 +66,9 @@ MANAGED = {
 _state_lock = threading.Lock()
 _busy = threading.Lock()  # one download/swap/undo at a time
 _downloading = None  # manifest key while a download/swap runs (for the UI)
+_open_prompts = set()  # "app"/"model" while that prompt exists (even hidden)
+_POLL_SECONDS = 3600  # how often a running app looks whether a check is due
+_controller = None  # from start_background_check, for check_now's prompt
 
 
 def state_path():
@@ -135,9 +140,10 @@ def fetch_manifest():
     return _get_json(url, "Model update")
 
 
-def find_update(manifest):
+def find_update(manifest, manual=False):
     """First applicable (key, entry) or None. Applicable: model installed,
-    manifest version differs, not permanently suppressed, not snoozed."""
+    manifest version differs, not permanently suppressed, not snoozed
+    (a manual check ignores the snooze)."""
     state = _load_state()
     today = date.today().isoformat()
     models = manifest.get("models")
@@ -156,7 +162,7 @@ def find_update(manifest):
         tag = f"{key}@{version}"
         if tag in state.get("suppressed", []):
             continue
-        if state.get("snoozed", {}).get(tag, "") >= today:
+        if not manual and state.get("snoozed", {}).get(tag, "") >= today:
             continue
         if MANAGED[key]["kind"] == "grammar" and not entry.get("hf_repo"):
             continue  # not updatable until a repo is published
@@ -229,14 +235,17 @@ def fetch_latest_release():
         return None
 
 
-def find_app_update(release):
-    """The release if it's newer than the running app and not snoozed."""
+def find_app_update(release, manual=False):
+    """The release if it's newer than the running app and not snoozed
+    (a manual check ignores the snooze)."""
     if not release:
         return None
     version = release["version"]
     latest, running = _parse_version(version), _parse_version(__version__)
     if latest is None or running is None or latest <= running:
         return None
+    if manual:
+        return release
     if _load_state().get("snoozed", {}).get(f"app@{version}", "") >= date.today().isoformat():
         return None
     return release
@@ -463,6 +472,15 @@ def undo_last_update(controller):
 # Startup check + dialog
 # ---------------------------------------------------------------------------
 
+def _track(root, key):
+    """Mark an update prompt as open until its window is destroyed, so the
+    hourly re-check never stacks a second prompt on it. A downloading app
+    update only hides its window, so it stays marked until the app exits."""
+    _open_prompts.add(key)
+    root.bind("<Destroy>",
+              lambda e: _open_prompts.discard(key) if e.widget is root else None)
+
+
 def _prompt(text, on_download, on_cancel):
     """Download / Not now prompt. Built as a tk.Toplevel on the shared
     overlay thread (see overlay_thread.py -- multiple independent tk.Tk()
@@ -479,6 +497,7 @@ def _prompt(text, on_download, on_cancel):
             from tkinter import ttk
 
             root = tk.Toplevel(overlay.root)
+            _track(root, "model")
             root.title("Talkative")
             root.configure(bg=overlay_thread.bg_color())
             app_icon.set_window_icon(root)
@@ -611,6 +630,7 @@ def _show_app_dialog(release, controller):
             from tkinter import ttk
 
             root = tk.Toplevel(overlay.root)
+            _track(root, "app")
             root.title("Talkative")
             # Without this the raw Tk background (light grey) shows through
             # around the progress bar in dark mode -- seen live as a white
@@ -652,7 +672,7 @@ def _show_app_dialog(release, controller):
                 else:
                     bar.pack_forget()
                     label["text"] = ("The update couldn't be downloaded. "
-                                     "Talkative will offer it again tomorrow.")
+                                     "Talkative will offer it again later.")
                     ttk.Button(row, text="Close", command=root.destroy).pack(side="right")
                     row.pack(fill="x")
                     root.deiconify()
@@ -696,43 +716,90 @@ def _check_due(state):
     return datetime.now() - last >= timedelta(hours=config.UPDATE_CHECK_HOURS)
 
 
+def _mark_checked():
+    with _state_lock:
+        state = _load_state()
+        state["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _save_state(state)
+
+
+def _offer_model(key, entry, controller):
+    _show_dialog(
+        entry,
+        on_download=lambda: threading.Thread(
+            target=_run_update, args=(key, entry, controller), daemon=True
+        ).start(),
+        on_cancel=lambda: snooze(key, entry),
+    )
+
+
+def _check_once(controller):
+    """One look: skipped while an update prompt is open or a model update
+    runs, or when the last successful check is recent."""
+    if _open_prompts or _busy.locked() or not _check_due(_load_state()):
+        return
+    try:
+        release = find_app_update(fetch_latest_release())
+    except _NoAnswer:
+        return  # not marked as checked: the next look tries again
+    _mark_checked()
+    if release:
+        _show_app_dialog(release, controller)
+    try:
+        manifest = fetch_manifest()
+    except _NoAnswer:
+        return
+    found = find_update(manifest) if manifest else None
+    if found:
+        _offer_model(*found, controller)
+
+
+def check_now():
+    """The "Check for updates" button: checks right away, offers a version
+    the user snoozed earlier, and opens the usual prompt for anything new.
+    Blocks on the network; returns a sentence for Settings to show."""
+    if _controller is None:
+        return "Updates can't be checked yet. Try again in a few seconds."
+    if _open_prompts or _busy.locked():
+        return "An update is already waiting or downloading."
+    try:
+        release = find_app_update(fetch_latest_release(), manual=True)
+    except _NoAnswer:
+        return ("Couldn't reach GitHub to check for updates. "
+                "Check your internet connection and try again.")
+    _mark_checked()
+    if release:
+        _show_app_dialog(release, _controller)
+        return f"Talkative {release['version']} is available."
+    try:
+        manifest = fetch_manifest()
+    except _NoAnswer:
+        manifest = None
+    found = find_update(manifest, manual=True) if manifest else None
+    if found:
+        _offer_model(*found, _controller)
+        return "A model improvement is available."
+    return f"You have the latest version ({__version__})."
+
+
 def start_background_check(controller):
-    """Call once at startup. Waits for things to settle, then does the
-    manifest check if one is due and drives the whole flow."""
+    """Call once at startup. Waits for things to settle, then looks every
+    _POLL_SECONDS whether a check is due, for as long as the app runs."""
+
+    global _controller
+    _controller = controller
 
     def run():
         time.sleep(10)  # let startup settle (spec: appears a few seconds in)
         # The installer a previous one-click update ran from; it's been
         # used by now (or failed and rolled back -- a retry re-downloads).
+        # Startup only: later it could be a download in progress.
         shutil.rmtree(_app_updates_dir(), ignore_errors=True)
-        if not _check_due(_load_state()):
-            return
-        try:
-            release = find_app_update(fetch_latest_release())
-        except _NoAnswer:
-            return  # not marked as checked: the next start tries again
-        with _state_lock:
-            state = _load_state()
-            state["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-            _save_state(state)
-        if release:
-            _show_app_dialog(release, controller)
-        try:
-            manifest = fetch_manifest()
-        except _NoAnswer:
-            return
-        if not manifest:
-            return
-        found = find_update(manifest)
-        if not found:
-            return
-        key, entry = found
-        _show_dialog(
-            entry,
-            on_download=lambda: threading.Thread(
-                target=_run_update, args=(key, entry, controller), daemon=True
-            ).start(),
-            on_cancel=lambda: snooze(key, entry),
-        )
+        while True:
+            try:
+                _check_once(controller)
+            except Exception:
+                logging.getLogger(__name__).exception("update check failed")
+            time.sleep(_POLL_SECONDS)
 
     threading.Thread(target=run, daemon=True).start()
