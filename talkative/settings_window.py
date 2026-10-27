@@ -453,65 +453,57 @@ class _SettingsWindow:
 
         # Cloud and Local as two sections, the local models under Local
         # (2026-10-27, user request: the Models tab folded in here).
-        proc_box = ttk.LabelFrame(f, text="Processing", padding=10)
+        proc_box = ttk.LabelFrame(f, text="Processing", padding=(10, 6))
         proc_box.pack(fill="x", pady=(10, 0))
-        cloud_box = ttk.LabelFrame(proc_box, text="Cloud", padding=10)
+        cloud_box = ttk.LabelFrame(proc_box, text="Cloud", padding=(10, 4))
         cloud_box.pack(fill="x")
-        local_box = ttk.LabelFrame(proc_box, text="Local", padding=10)
-        local_box.pack(fill="x", pady=(10, 0))
+        local_box = ttk.LabelFrame(proc_box, text="Local", padding=(10, 4))
+        local_box.pack(fill="x", pady=(8, 0))
         self.var_processing = tk.StringVar(value=config.PROCESSING_MODE)
-        self.cloud_radio = ttk.Radiobutton(
-            cloud_box, text="Process speech on a remote server. "
-                    "Nothing to download.",
-            variable=self.var_processing, value="cloud",
-            command=self._processing_changed,
-        )
-        self.cloud_radio.pack(anchor="w", pady=2)
-
-        # Cloud's speech-to-text, chosen by accent (2026-10-23, the user's
-        # wording): US English = Groq's Whisper, Indian English = Azure
-        # en-IN via the Worker. Shown only while Cloud is selected.
-        self.accent_frame = ttk.Frame(cloud_box)
         self.var_speech_service = tk.StringVar(value=config.SPEECH_SERVICE)
+        # One choice across both sections (2026-10-27, user request: no
+        # separate "Cloud" button): an accent under Cloud selects Cloud
+        # with that speech service -- US English = Groq's Whisper, Indian
+        # English = Azure en-IN via the Worker -- or Local's own button.
+        self.var_engine = tk.StringVar(
+            value=config.SPEECH_SERVICE if config.PROCESSING_MODE == "cloud" else "local")
         for label, value in (("US English", "us_english"),
                              ("Indian English", "indian_english")):
             ttk.Radiobutton(
-                self.accent_frame, text=label,
-                variable=self.var_speech_service, value=value,
-            ).pack(anchor="w")
+                cloud_box, text=label, variable=self.var_engine, value=value,
+                command=self._engine_changed,
+            ).pack(anchor="w", pady=1)
 
         self.local_radio = ttk.Radiobutton(
-            local_box, text="Process speech on this PC, fully offline. "
-                    "Nothing leaves this device.",
-            variable=self.var_processing, value="local",
-            command=self._processing_changed,
+            local_box, text="Fully offline. Nothing leaves this PC.",
+            variable=self.var_engine, value="local",
+            command=self._engine_changed,
         )
-        self.local_radio.pack(anchor="w", pady=2)
+        self.local_radio.pack(anchor="w", pady=1)
 
         self._local_op = None    # None | "downloading"
         self._local_error = []   # messages appended by the worker, shown by the poll
         local_row = ttk.Frame(local_box)
-        local_row.pack(fill="x", pady=(8, 0))
+        local_row.pack(fill="x")
         self.local_status = ttk.Label(local_row, text="")
-        self.local_status.pack(anchor="w")
         self.local_bar = ttk.Progressbar(local_row, mode="indeterminate", length=240)
         self.local_download_btn = ttk.Button(
             local_row, command=self._download_local_models
         )
-        self.local_download_btn.pack(anchor="w", pady=(4, 0))
 
-        self._processing_changed()
         self._render_local_download()
         models = ttk.Frame(local_box)
-        models.pack(fill="x", pady=(10, 0))
+        models.pack(fill="x", pady=(6, 0))
         self._build_models(models)
 
-    def _processing_changed(self):
-        if self.var_processing.get() == "cloud":
-            self.accent_frame.pack(anchor="w", padx=(24, 0), pady=(0, 6),
-                                  after=self.cloud_radio)
+    def _engine_changed(self):
+        engine = self.var_engine.get()
+        if engine == "local":
+            self.var_processing.set("local")
         else:
-            self.accent_frame.pack_forget()
+            self.var_processing.set("cloud")
+            self.var_speech_service.set(engine)
+        self._render_local_download()
 
     def _download_local_models(self):
         self._local_op = "downloading"
@@ -537,7 +529,8 @@ class _SettingsWindow:
         )
         if self._local_op == "downloading" or grammar_engine.is_downloading():
             self.local_status.config(text="Downloading… this can take a few minutes.")
-            self.local_download_btn.pack(anchor="w", pady=(4, 0))
+            self.local_download_btn.pack(anchor="w", pady=(4, 4))
+            self.local_status.pack(anchor="w", before=self.local_download_btn)
             self.local_bar.pack(anchor="w", pady=(0, 4), before=self.local_download_btn)
             self.local_bar.start(12)
             self.local_download_btn.config(state="disabled", text="Downloading…")
@@ -545,11 +538,9 @@ class _SettingsWindow:
             self.local_bar.stop()
             self.local_bar.pack_forget()
             if installed:
-                self.local_status.config(
-                    text="Local models downloaded." if self.var_processing.get() == "local"
-                    else "Local models downloaded. Select Local to use them."
-                )
-                # The model boxes below say so; no greyed-out button.
+                # The model boxes below say "Downloaded": no status line or
+                # greyed-out button, to keep General short.
+                self.local_status.pack_forget()
                 self.local_download_btn.pack_forget()
             else:
                 self.local_status.config(
@@ -559,7 +550,8 @@ class _SettingsWindow:
                 self.local_download_btn.config(
                     state="normal", text="Download local models (~2 GB)"
                 )
-                self.local_download_btn.pack(anchor="w", pady=(4, 0))
+                self.local_download_btn.pack(anchor="w", pady=(4, 4))
+                self.local_status.pack(anchor="w", before=self.local_download_btn)
         while self._local_error:
             messagebox.showerror(APP_NAME, self._local_error.pop(0), parent=self.root)
 
@@ -980,7 +972,7 @@ class _SettingsWindow:
         self._tiles = {}
 
         tiles_row = ttk.Frame(f)
-        tiles_row.pack(fill="x", pady=(0, 10))
+        tiles_row.pack(fill="x", pady=(0, 6))
         # Column count follows however many tiers exist (just Fast right
         # now, since Accurate was removed) rather than assuming two, so a
         # single tile spans the full width instead of leaving an awkward
@@ -992,16 +984,19 @@ class _SettingsWindow:
             tiles_row.columnconfigure(col, weight=1, uniform="tile")
         for col, (tier, info) in enumerate(model_manager.MODELS.items()):
             box = ttk.LabelFrame(
-                tiles_row, text=f"{info['label']} - {info['tagline']}", padding=10
+                tiles_row, text=f"{info['label']} - {info['tagline']}", padding=(10, 6)
             )
             box.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 12, 0))
             latency = ttk.Label(box, text=info["latency"], style="Muted.TLabel",
-                                 wraplength=220)
+                                 wraplength=225)
             latency.pack(anchor="w")
-            version_label = ttk.Label(box, text="", style="Muted.TLabel")
-            version_label.pack(anchor="w")
-            status = ttk.Label(box, text="")
-            status.pack(anchor="w")
+            # Status and version share a line ("Downloaded.  Version 1").
+            state_row = ttk.Frame(box)
+            state_row.pack(anchor="w")
+            status = ttk.Label(state_row, text="")
+            status.pack(side="left")
+            version_label = ttk.Label(state_row, text="", style="Muted.TLabel")
+            version_label.pack(side="left", padx=(8, 0))
             bar = ttk.Progressbar(box, mode="indeterminate", length=180)
             btn_row = ttk.Frame(box)
             btn_row.pack(anchor="w", pady=(6, 0))
@@ -1020,10 +1015,12 @@ class _SettingsWindow:
         self._build_grammar_section(tiles_row).grid(
             row=0, column=n_tiles, sticky="nsew", padx=(12, 0))
 
-        self.storage_label = ttk.Label(f, style="Muted.TLabel", text="")
-        self.storage_label.pack(anchor="w", pady=(4, 0))
-        self.update_label = ttk.Label(f, style="Muted.TLabel", text="")
-        self.update_label.pack(anchor="w")
+        notes = ttk.Frame(f)
+        notes.pack(anchor="w")
+        self.storage_label = ttk.Label(notes, style="Muted.TLabel", text="")
+        self.storage_label.pack(side="left")
+        self.update_label = ttk.Label(notes, style="Muted.TLabel", text="")
+        self.update_label.pack(side="left", padx=(12, 0))
         self.undo_btn = ttk.Button(
             f, text="Undo last update", command=self._undo_update
         )
@@ -1031,13 +1028,13 @@ class _SettingsWindow:
         self._poll_models()
 
     def _build_grammar_section(self, f):
-        box = ttk.LabelFrame(f, text="Optimize Narration", padding=10)
+        box = ttk.LabelFrame(f, text="Optimize Narration", padding=(10, 6))
         ttk.Label(
             box,
             text="Fix grammar and punctuation",
             style="Muted.TLabel", wraplength=220,
         ).pack(anchor="w")
-        status = ttk.Label(box, text="")
+        status = ttk.Label(box, text="", wraplength=225)
         status.pack(anchor="w")
         bar = ttk.Progressbar(box, mode="indeterminate", length=240)
         btn_row = ttk.Frame(box)
@@ -1200,7 +1197,7 @@ class _SettingsWindow:
         while self._model_errors:
             messagebox.showerror(APP_NAME, self._model_errors.pop(0), parent=self.root)
         self.storage_label.config(
-            text=f"Storage used by models: {model_manager.storage_used_mb():.0f} MB"
+            text=f"Models use {model_manager.storage_used_mb():.0f} MB."
         )
         status = updater.get_status()
         if status["downloading"]:
