@@ -372,13 +372,14 @@ INPUT_DEVICE = None
 # Updates (spec section 7)
 # ---------------------------------------------------------------------------
 # Public manifest describing the current model versions. Empty string
-# disables checking entirely. Fetched at most once a day at startup;
-# offline or malformed is silently ignored.
+# disables checking entirely. Fetched at startup when the last successful
+# check is UPDATE_CHECK_HOURS old; offline or malformed is logged and
+# retried on the next start.
 MANIFEST_URL = (
     "https://raw.githubusercontent.com/sumitdas76/talkative-updates/"
     "main/manifest.json"
 )
-# Latest published app release, checked in the same once-a-day startup pass
+# Latest published app release, checked in the same startup pass
 # as MANIFEST_URL. A newer version than the running one shows a prompt that
 # opens the release page -- it never downloads or installs anything itself.
 # Empty string disables the check.
@@ -388,6 +389,9 @@ RELEASES_API_URL = (
 # The replaced model is kept for undo until this many words have been
 # dictated with the new one (usage-based grace, spec section 7.6).
 UPDATE_GRACE_WORDS = 1000
+# A startup checks for updates when the last successful check is at least
+# this old.
+UPDATE_CHECK_HOURS = 12
 
 # ---------------------------------------------------------------------------
 # Feedback (spec queue #4) -- the app's only outbound data path, and only

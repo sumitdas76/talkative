@@ -5,9 +5,13 @@ Publisher side is one manifest.json in a public GitHub repo (see
 docs/manifest-sample.json); editing it in the browser is the whole
 publishing act. Client side, in this module:
 
-- At most once per day, at startup, the manifest is fetched (a few hundred
-  bytes; offline or malformed silently skips -- updates must never break
-  dictation).
+- At startup, if the last successful check was UPDATE_CHECK_HOURS or
+  more ago, the manifest is fetched (a few hundred bytes; offline or
+  malformed skips -- updates must never break dictation). Hours, not
+  calendar days: a check at 00:17 used to hide a release published at
+  01:33 until the next day. A check only counts once GitHub has answered:
+  a start with no network (or a firewall blocking GitHub) tries again on
+  the next start, and each failure is written to errors.log.
 - An applicable update shows ONE component-blind dialog ("An improvement
   update is available (X MB)") -- it never names the model. Download /
   Not now. "Not now" snoozes that update for a week; a newer version ends
@@ -33,17 +37,18 @@ installer/Talkative.iss). "Not now" snoozes that version for a week, same
 as model updates ("app@<version>" in snoozed).
 
 State lives in %LOCALAPPDATA%\\Talkative\\updater.json:
-{ "last_check": "2026-07-19", "snoozed": {"grammar@2": "2026-07-26"},
+{ "last_check": "2026-07-19 00:17", "snoozed": {"grammar@2": "2026-07-26"},
   "suppressed": ["grammar@2"],
   "grace": {"key": "grammar", "version": "2", "words_left": 640} }
 """
 
 import json
+import logging
 import shutil
 import threading
 import time
 import urllib.request
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from . import __version__, app_icon, config, model_manager, overlay_thread
 
@@ -103,16 +108,31 @@ def installed_version(key):
         return "1"
 
 
+class _NoAnswer(Exception):
+    """An update source couldn't be reached, or didn't answer with JSON."""
+
+
+def _get_json(req, what):
+    """The parsed JSON object at req. Raises _NoAnswer otherwise, after
+    logging why: a blocked office network used to be invisible."""
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("response is not a JSON object")
+        return data
+    except Exception as e:
+        logging.getLogger(__name__).warning("%s check failed: %s", what, e)
+        raise _NoAnswer() from e
+
+
 def fetch_manifest():
+    """The model manifest, or None if none is configured. Raises
+    _NoAnswer if it can't be fetched."""
     url = config.MANIFEST_URL
     if not url:
         return None
-    try:
-        with urllib.request.urlopen(url, timeout=8) as r:
-            data = json.loads(r.read().decode("utf-8"))
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
+    return _get_json(url, "Model update")
 
 
 def find_update(manifest):
@@ -174,19 +194,17 @@ def fetch_latest_release():
     """{'version', 'page', 'installer_url', 'size', 'sha256'} for the latest
     published release, or None. The installer asset must carry GitHub's
     sha256 digest -- without it there's nothing to verify the download
-    against, so no one-click update is offered. Offline, rate-limited, or
-    malformed all silently return None. (GitHub's /releases/latest never
+    against, so no one-click update is offered. A release without that
+    returns None; offline, rate-limited or not JSON raises _NoAnswer.
+    (GitHub's /releases/latest never
     returns drafts or pre-releases, so a pre-release is only reachable by
     pointing releases_api_url at its /releases/tags/<tag> URL -- that's how
     the updater itself is tested without users ever seeing the test.)"""
     url = config.RELEASES_API_URL
     if not url:
         return None
+    data = _get_json(_request(url), "App update")
     try:
-        with urllib.request.urlopen(_request(url), timeout=8) as r:
-            data = json.loads(r.read().decode("utf-8"))
-        if not isinstance(data, dict):
-            return None
         version = str(data.get("tag_name", "")).strip().lstrip("vV")
         page = str(data.get("html_url", "")).strip()
         asset = next(
@@ -668,26 +686,41 @@ def _show_app_dialog(release, controller):
     overlay.build(build)
 
 
+def _check_due(state):
+    """True unless the last successful check was under UPDATE_CHECK_HOURS
+    ago. Older builds saved a bare date, which reads as that midnight."""
+    try:
+        last = datetime.fromisoformat(str(state.get("last_check", "")))
+    except ValueError:
+        return True
+    return datetime.now() - last >= timedelta(hours=config.UPDATE_CHECK_HOURS)
+
+
 def start_background_check(controller):
     """Call once at startup. Waits for things to settle, then does the
-    at-most-once-a-day manifest check and drives the whole flow."""
+    manifest check if one is due and drives the whole flow."""
 
     def run():
         time.sleep(10)  # let startup settle (spec: appears a few seconds in)
         # The installer a previous one-click update ran from; it's been
         # used by now (or failed and rolled back -- a retry re-downloads).
         shutil.rmtree(_app_updates_dir(), ignore_errors=True)
+        if not _check_due(_load_state()):
+            return
+        try:
+            release = find_app_update(fetch_latest_release())
+        except _NoAnswer:
+            return  # not marked as checked: the next start tries again
         with _state_lock:
             state = _load_state()
-            today = date.today().isoformat()
-            if state.get("last_check") == today:
-                return
-            state["last_check"] = today
+            state["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M")
             _save_state(state)
-        release = find_app_update(fetch_latest_release())
         if release:
             _show_app_dialog(release, controller)
-        manifest = fetch_manifest()
+        try:
+            manifest = fetch_manifest()
+        except _NoAnswer:
+            return
         if not manifest:
             return
         found = find_update(manifest)
