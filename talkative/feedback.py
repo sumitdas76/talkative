@@ -60,6 +60,17 @@ def install_id():
     """Random, anonymous per-install id, created once and persisted."""
     if config.INSTALL_ID:
         return config.INSTALL_ID
+    # Code that runs before (or without) settings.load_into_config -- tests
+    # especially -- must not mint a new id over the saved one: that
+    # replaced the real id on the dev PC several times (2026-10-27).
+    try:
+        saved = json.loads(settings.settings_path().read_text(encoding="utf-8-sig"))
+        saved = saved.get("install_id") if isinstance(saved, dict) else None
+    except Exception:
+        saved = None
+    if isinstance(saved, str) and saved:
+        config.INSTALL_ID = saved
+        return saved
     new_id = uuid.uuid4().hex
     config.INSTALL_ID = new_id
     settings.save({"install_id": new_id})
