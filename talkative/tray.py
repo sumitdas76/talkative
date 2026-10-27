@@ -194,7 +194,7 @@ class TrayApp:
         self._mode_label = label
 
     def _mode_prefix(self):
-        return f"{self._mode_label} — " if self._mode_label else ""
+        return f"{self._mode_label}: " if self._mode_label else ""
 
     def _set(self, image, title):
         """Every icon/tooltip change goes through here. pystray isn't

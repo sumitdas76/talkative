@@ -29,9 +29,9 @@ APP_NAME = "Talkative"
 _open_lock = threading.Lock()
 _is_open = False
 
-_EXAMPLE_SPOKEN = "“So um, send the file today — oh sorry, send the file by this evening.”"
+_EXAMPLE_SPOKEN = "“So um, send the file today, oh sorry, send the file by this evening.”"
 _EXAMPLE_CLEAN = "Send the file by this evening."
-_EXAMPLE_ASIS = "So um, send the file today — oh sorry, send the file by this evening."
+_EXAMPLE_ASIS = "So um, send the file today, oh sorry, send the file by this evening."
 
 _CHECKBOX_SIZE = 16  # on-screen box size; drawn at 4x and downscaled for crisp anti-aliasing
 
@@ -211,7 +211,7 @@ class _SettingsWindow:
 
     def build(self):
         self.root = tk.Toplevel(self.overlay.root)
-        self.root.title(f"{APP_NAME} — Settings")
+        self.root.title(f"{APP_NAME} Settings")
         app_icon.set_window_icon(self.root)
         # No explicit .geometry() call -- same fix as onboarding.py's
         # Continue-button clipping (2026-09-19): a hardcoded WxH doesn't
@@ -236,7 +236,6 @@ class _SettingsWindow:
             ("Hotkeys", self._tab_hotkeys),
             ("Audio", self._tab_audio),
             ("Output", self._tab_output),
-            ("Models", self._tab_models),
             ("About", self._tab_about),
         ]:
             frame = ttk.Frame(nb, padding=14)
@@ -452,12 +451,18 @@ class _SettingsWindow:
                 variable=self.var_scheme, value=name, command=self._theme_changed,
             ).pack(side="left", padx=(0, 16))
 
+        # Cloud and Local as two sections, the local models under Local
+        # (2026-10-27, user request: the Models tab folded in here).
         proc_box = ttk.LabelFrame(f, text="Processing", padding=10)
         proc_box.pack(fill="x", pady=(10, 0))
+        cloud_box = ttk.LabelFrame(proc_box, text="Cloud", padding=10)
+        cloud_box.pack(fill="x")
+        local_box = ttk.LabelFrame(proc_box, text="Local", padding=10)
+        local_box.pack(fill="x", pady=(10, 0))
         self.var_processing = tk.StringVar(value=config.PROCESSING_MODE)
         self.cloud_radio = ttk.Radiobutton(
-            proc_box, text="Cloud — nothing to download, processed on a "
-                    "remote server instead of this device.",
+            cloud_box, text="Process speech on a remote server. "
+                    "Nothing to download.",
             variable=self.var_processing, value="cloud",
             command=self._processing_changed,
         )
@@ -466,7 +471,7 @@ class _SettingsWindow:
         # Cloud's speech-to-text, chosen by accent (2026-10-23, the user's
         # wording): US English = Groq's Whisper, Indian English = Azure
         # en-IN via the Worker. Shown only while Cloud is selected.
-        self.accent_frame = ttk.Frame(proc_box)
+        self.accent_frame = ttk.Frame(cloud_box)
         self.var_speech_service = tk.StringVar(value=config.SPEECH_SERVICE)
         for label, value in (("US English", "us_english"),
                              ("Indian English", "indian_english")):
@@ -476,7 +481,8 @@ class _SettingsWindow:
             ).pack(anchor="w")
 
         self.local_radio = ttk.Radiobutton(
-            proc_box, text="Local — fully offline, nothing leaves this device.",
+            local_box, text="Process speech on this PC, fully offline. "
+                    "Nothing leaves this device.",
             variable=self.var_processing, value="local",
             command=self._processing_changed,
         )
@@ -484,7 +490,7 @@ class _SettingsWindow:
 
         self._local_op = None    # None | "downloading"
         self._local_error = []   # messages appended by the worker, shown by the poll
-        local_row = ttk.Frame(proc_box)
+        local_row = ttk.Frame(local_box)
         local_row.pack(fill="x", pady=(8, 0))
         self.local_status = ttk.Label(local_row, text="")
         self.local_status.pack(anchor="w")
@@ -496,6 +502,9 @@ class _SettingsWindow:
 
         self._processing_changed()
         self._render_local_download()
+        models = ttk.Frame(local_box)
+        models.pack(fill="x", pady=(10, 0))
+        self._build_models(models)
 
     def _processing_changed(self):
         if self.var_processing.get() == "cloud":
@@ -528,6 +537,7 @@ class _SettingsWindow:
         )
         if self._local_op == "downloading" or grammar_engine.is_downloading():
             self.local_status.config(text="Downloading… this can take a few minutes.")
+            self.local_download_btn.pack(anchor="w", pady=(4, 0))
             self.local_bar.pack(anchor="w", pady=(0, 4), before=self.local_download_btn)
             self.local_bar.start(12)
             self.local_download_btn.config(state="disabled", text="Downloading…")
@@ -537,9 +547,10 @@ class _SettingsWindow:
             if installed:
                 self.local_status.config(
                     text="Local models downloaded." if self.var_processing.get() == "local"
-                    else "Local models downloaded — select Local to use them."
+                    else "Local models downloaded. Select Local to use them."
                 )
-                self.local_download_btn.config(state="disabled", text="Downloaded")
+                # The model boxes below say so; no greyed-out button.
+                self.local_download_btn.pack_forget()
             else:
                 self.local_status.config(
                     text="Local mode needs the voice and grammar models "
@@ -548,6 +559,7 @@ class _SettingsWindow:
                 self.local_download_btn.config(
                     state="normal", text="Download local models (~2 GB)"
                 )
+                self.local_download_btn.pack(anchor="w", pady=(4, 0))
         while self._local_error:
             messagebox.showerror(APP_NAME, self._local_error.pop(0), parent=self.root)
 
@@ -664,13 +676,13 @@ class _SettingsWindow:
         cleanup_box.pack(fill="x")
         self.var_cleanup = tk.StringVar(value=config.CLEANUP_MODE)
         ttk.Radiobutton(
-            cleanup_box, text="Cleaned up — slips and repetitions removed. "
-                    "Your meaning is never changed.",
+            cleanup_box, text="Cleaned up: removes fillers, slips and "
+                    "repetitions. Keeps the meaning unchanged.",
             variable=self.var_cleanup, value="cleaned_up",
             command=self._update_example,
         ).pack(anchor="w", pady=4)
         ttk.Radiobutton(
-            cleanup_box, text="As spoken — exactly what you said, word for word.",
+            cleanup_box, text="As spoken: types every word exactly as spoken.",
             variable=self.var_cleanup, value="as_spoken",
             command=self._update_example,
         ).pack(anchor="w", pady=4)
@@ -954,15 +966,15 @@ class _SettingsWindow:
                         variable=self.var_enter).pack(anchor="w", pady=2)
         ttk.Label(
             f, wraplength=520, style="Muted.TLabel",
-            text="\nUndo: press Ctrl+Z in the target application — each "
+            text="\nUndo: press Ctrl+Z in the target application. Each "
                  "dictation is inserted as a single edit.",
         ).pack(anchor="w")
 
-    # Models tab. Worker threads only write _model_ops / _model_errors;
+    # Local models (General > Processing > Local). Worker threads only write _model_ops / _model_errors;
     # a ~300ms poll loop on the Tk thread reads them and is the only thing
     # that touches widgets.
 
-    def _tab_models(self, f):
+    def _build_models(self, f):
         self._model_ops = {}     # tier -> "download" | "load" | "delete"
         self._model_errors = []  # messages appended by workers, shown by the poll
         self._tiles = {}
@@ -973,15 +985,16 @@ class _SettingsWindow:
         # now, since Accurate was removed) rather than assuming two, so a
         # single tile spans the full width instead of leaving an awkward
         # empty half.
+        # The grammar model sits in the same row, after the voice models,
+        # to keep General's height down now that the models live there.
         n_tiles = len(model_manager.MODELS)
-        for col in range(max(n_tiles, 1)):
-            tiles_row.columnconfigure(col, weight=1)
+        for col in range(n_tiles + 1):
+            tiles_row.columnconfigure(col, weight=1, uniform="tile")
         for col, (tier, info) in enumerate(model_manager.MODELS.items()):
             box = ttk.LabelFrame(
                 tiles_row, text=f"{info['label']} - {info['tagline']}", padding=10
             )
-            pad = 0 if n_tiles == 1 else ((0, 6) if col == 0 else (6, 0))
-            box.grid(row=0, column=col, sticky="nsew", padx=pad)
+            box.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 12, 0))
             latency = ttk.Label(box, text=info["latency"], style="Muted.TLabel",
                                  wraplength=220)
             latency.pack(anchor="w")
@@ -1004,7 +1017,8 @@ class _SettingsWindow:
                 "action": action, "delete": delete, "state": None,
             }
 
-        self._build_grammar_section(f)
+        self._build_grammar_section(tiles_row).grid(
+            row=0, column=n_tiles, sticky="nsew", padx=(12, 0))
 
         self.storage_label = ttk.Label(f, style="Muted.TLabel", text="")
         self.storage_label.pack(anchor="w", pady=(4, 0))
@@ -1018,11 +1032,10 @@ class _SettingsWindow:
 
     def _build_grammar_section(self, f):
         box = ttk.LabelFrame(f, text="Optimize Narration", padding=10)
-        box.pack(fill="x", pady=(0, 10))
         ttk.Label(
             box,
             text="Fix grammar and punctuation",
-            style="Muted.TLabel", wraplength=500,
+            style="Muted.TLabel", wraplength=220,
         ).pack(anchor="w")
         status = ttk.Label(box, text="")
         status.pack(anchor="w")
@@ -1038,6 +1051,7 @@ class _SettingsWindow:
             "download": download, "delete": delete, "state": None,
         }
         self._grammar_op = None
+        return box
 
     def _model_tile_state(self, tier, size):
         op = self._model_ops.get(tier)

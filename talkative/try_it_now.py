@@ -64,7 +64,7 @@ def _build(overlay):
         key = friendly(config.HOTKEY)
         ttk.Label(
             root, padding=(16, 14, 16, 4), font=("Segoe UI", 11, "bold"),
-            text="You're all set — try it now",
+            text="You're all set. Try it now",
         ).pack(anchor="w")
         ttk.Label(
             root, padding=(16, 0, 16, 8), wraplength=420,
@@ -79,7 +79,7 @@ def _build(overlay):
         bar.pack(fill="x")
         ttk.Label(
             bar, style="Muted.TLabel",
-            text="This works in any app — documents, chats, browsers.",
+            text="This works in any app: documents, chats, browsers.",
         ).pack(side="left")
 
         def close():

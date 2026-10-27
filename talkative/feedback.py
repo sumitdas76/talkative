@@ -2,7 +2,8 @@
 for the user to send a message to Sumit and later see the reply, with no
 app-owned backend.
 
-Send: POST to FormSubmit.co's AJAX endpoint -- no signup, no API key.
+Send: POST to FormSubmit.co -- its AJAX endpoint for text, its plain form
+endpoint when an image is attached -- no signup, no API key.
 Sumit's very first submission needs a one-time confirmation click in Gmail
 before FormSubmit starts forwarding; every Send after that just works.
 This is the app's only outbound network path, and only ever runs when the
@@ -26,6 +27,16 @@ from pathlib import Path
 from . import config, settings
 
 FORM_ENDPOINT = "https://formsubmit.co/ajax/sumitdas76@gmail.com"
+# The AJAX endpoint answers "success" to a send with a file and then drops
+# the file (every image sent with 1.3.18 arrived without it). The plain
+# form endpoint delivers it as an email attachment, so sends with an image
+# go there; it answers with a "thank you" HTML page, not JSON.
+FORM_ENDPOINT_FILES = "https://formsubmit.co/sumitdas76@gmail.com"
+# Formats sent as they are; anything else (WebP, BMP) is converted to PNG
+# first, so the email shows an image every mail app can open.
+_SENT_AS_IS = (".png", ".jpg", ".jpeg", ".gif")
+# What FormSubmit's page says after a send it accepted (seen 2026-10-27).
+_THANKS = "The form was submitted successfully"
 # FormSubmit's AJAX endpoint sits behind Cloudflare and rejects requests
 # two ways that only showed up against the real endpoint, not in any local
 # test: (1) Cloudflare bans Python's default urllib User-Agent outright, so
@@ -70,6 +81,26 @@ def image_problem(path):
     return None
 
 
+def _image_part(path):
+    """(filename, mime type, bytes) to attach for the image at `path`."""
+    path = Path(path)
+    if path.suffix.lower() in _SENT_AS_IS:
+        return path.name, config.FEEDBACK_IMAGE_TYPES[path.suffix.lower()], path.read_bytes()
+    import io
+
+    from PIL import Image
+
+    with Image.open(path) as img:
+        img.load()
+        buf = io.BytesIO()
+        img.save(buf, "PNG", optimize=True)
+        if buf.tell() <= config.FEEDBACK_IMAGE_MAX_BYTES:
+            return path.stem + ".png", "image/png", buf.getvalue()
+        buf = io.BytesIO()  # a big photo: JPEG keeps it under the limit
+        img.convert("RGB").save(buf, "JPEG", quality=85)
+        return path.stem + ".jpg", "image/jpeg", buf.getvalue()
+
+
 def _multipart(fields, image):
     """A multipart/form-data body (FormSubmit's way of taking a file) and
     its Content-Type header."""
@@ -80,13 +111,12 @@ def _multipart(fields, image):
             f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"'
             f"\r\n\r\n{value}\r\n".encode("utf-8")
         )
-    image = Path(image)
-    filename = image.name.replace('"', "")
-    mime = config.FEEDBACK_IMAGE_TYPES[image.suffix.lower()]
+    filename, mime, data = _image_part(image)
+    filename = filename.replace('"', "")
     parts.append(
         f'--{boundary}\r\nContent-Disposition: form-data; name="attachment"; '
         f'filename="{filename}"\r\nContent-Type: {mime}\r\n\r\n'.encode("utf-8")
-        + image.read_bytes() + b"\r\n"
+        + data + b"\r\n"
     )
     parts.append(f"--{boundary}--\r\n".encode("utf-8"))
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
@@ -111,18 +141,23 @@ def send(message, on_done=None, image=None):
                 problem = image_problem(image)
                 if problem:
                     raise ValueError(problem)
+                fields["_captcha"] = "false"  # no human to solve it
                 body, headers["Content-Type"] = _multipart(fields, image)
+                headers["Accept"] = "text/html"
                 # Measured 2026-10-26: FormSubmit took 40 s to answer a
                 # send with a 2 KB image (under 1 s without one).
-                timeout = 120
+                req = urllib.request.Request(FORM_ENDPOINT_FILES, data=body, headers=headers)
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    page = r.read().decode("utf-8", "replace")
+                if _THANKS not in page:
+                    raise ValueError("send failed")
             else:
                 body = json.dumps(fields).encode("utf-8")
-                timeout = 10
-            req = urllib.request.Request(FORM_ENDPOINT, data=body, headers=headers)
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                result = json.loads(r.read().decode("utf-8"))
-            if str(result.get("success", "")).lower() != "true":
-                raise ValueError(result.get("message", "send failed"))
+                req = urllib.request.Request(FORM_ENDPOINT, data=body, headers=headers)
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    result = json.loads(r.read().decode("utf-8"))
+                if str(result.get("success", "")).lower() != "true":
+                    raise ValueError(result.get("message", "send failed"))
             ok = True
         except Exception as exc:
             error = str(exc)

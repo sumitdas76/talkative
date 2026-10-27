@@ -25,7 +25,7 @@ publishing act. Client side, in this module:
   ends up without a working model.
 - The replaced version is kept in <models>/previous until the user has
   dictated UPDATE_GRACE_WORDS words with the new one (usage-based, then
-  purged silently). While it exists, the Models tab shows "Undo last
+  purged silently). While it exists, Settings (General > Local) shows "Undo last
   update" with a word countdown; using it restores the old version and
   permanently suppresses that update. Only one step back is ever kept.
 
@@ -260,7 +260,7 @@ def snooze_app(version):
 
 
 def get_status():
-    """For the Models tab: {'last_check', 'downloading', 'grace'}."""
+    """For the local models in Settings: {'last_check', 'downloading', 'grace'}."""
     state = _load_state()
     return {
         "last_check": state.get("last_check"),

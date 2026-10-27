@@ -352,7 +352,7 @@ class TalkativeApp:
         self.transcriber = None
         self._no_model = True
         gc.collect()
-        self.tray.set_loading("no model — open Settings, then Models")
+        self.tray.set_loading("no model: open Settings, then General")
 
     def updater_controller(self):
         """The narrow surface updater.py drives a model swap through.
@@ -485,7 +485,7 @@ class TalkativeApp:
         self._dev_dictation = dev
 
         if self._swapping:
-            self.tray.notify("Updating — ready in a moment.")
+            self.tray.notify("Updating. Ready in a moment.")
             return
 
         # Nothing is recorded (so nothing is sent to Cloud) until the user
@@ -501,7 +501,7 @@ class TalkativeApp:
             if self._no_model:
                 self.tray.notify(
                     "No speech model is installed. Open Settings, then the "
-                    "Models tab, to download one."
+                    "General tab, to download one under Local."
                 )
             else:
                 self.tray.notify("Still loading the speech model, please wait...")
@@ -906,7 +906,7 @@ class TalkativeApp:
                 why = cloud_client.friendly_error(exc)
             else:
                 why = "The speech model couldn't transcribe it."
-            self._not_typed(f"{why} Nothing was typed — please try again.")
+            self._not_typed(f"{why} Nothing was typed. Please try again.")
             return
         transcribe_secs = time.time() - t0
         saved = _debug_save_audio(audio)
@@ -1187,7 +1187,7 @@ class TalkativeApp:
             history.add(text)
         updater.note_words(len(text.split()))
         if config.INSERT_MODE == "clipboard":
-            self.tray.notify("Copied to clipboard — press Ctrl+V to paste.")
+            self.tray.notify("Copied to clipboard. Press Ctrl+V to paste.")
 
     def _fixes_noticed(self, pairs):
         heard, typed = pairs[0]
