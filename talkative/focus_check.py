@@ -29,16 +29,39 @@ def _ensure_com_initialized():
 
 
 def is_focus_editable():
+    return focus_state()[0]
+
+
+# Why focus_state() said no. "none" and "window" mean UI Automation
+# couldn't name a focused control (or only the window frame): with the
+# same window still in front, app.py treats those as a UIA glitch at
+# paste time, not as the user having moved (2026-10-28: Claude Code's
+# input box intermittently reported this way until Talkative restarted).
+UNSEEN = ("none", "window")
+
+
+def _kind(control):
+    try:
+        return f"{control.ControlTypeName} {control.ClassName!r}"
+    except Exception:
+        return "?"
+
+
+def focus_state():
+    """(editable, why, kind): why is "ok", "inconclusive" (UIA failed --
+    allowed), "none", "window", "disabled" or "readonly"; kind is the
+    focused control's type and class name, for diagnostics."""
     _ensure_com_initialized()
 
     try:
         control = auto.GetFocusedControl()
     except Exception:
         # Can't inspect focus at all -- don't block on an inconclusive check.
-        return True
+        return True, "inconclusive", "?"
 
     if control is None or not control.Exists(0, 0):
-        return False
+        return False, "none", "-"
+    kind = _kind(control)
 
     # When nothing in particular is focused (e.g. the desktop is showing,
     # no app window is active), UIA doesn't report "no control" -- it falls
@@ -49,13 +72,13 @@ def is_focus_editable():
     # land -- with no error shown, since every other signal looked fine.
     try:
         if control.ControlTypeName == "WindowControl":
-            return False
+            return False, "window", kind
     except Exception:
         pass
 
     try:
         if not control.IsEnabled:
-            return False
+            return False, "disabled", kind
     except Exception:
         pass
 
@@ -63,7 +86,9 @@ def is_focus_editable():
     try:
         value_pattern = control.GetValuePattern()
         if value_pattern is not None:
-            return not value_pattern.IsReadOnly
+            if value_pattern.IsReadOnly:
+                return False, "readonly", kind
+            return True, "ok", kind
     except Exception:
         pass
 
@@ -73,11 +98,11 @@ def is_focus_editable():
         if legacy is not None:
             state = legacy.State or 0
             if state & _READONLY_STATE_FLAG:
-                return False
+                return False, "readonly", kind
     except Exception:
         pass
 
     # No pattern told us anything definitive either way -- assume editable
     # rather than blocking, so custom-rendered controls (WhatsApp, some
     # Electron/React Native apps) still get dictated text.
-    return True
+    return True, "ok", kind

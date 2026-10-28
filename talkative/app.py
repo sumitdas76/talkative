@@ -13,6 +13,7 @@ from .cleanup import collapse_repeats, finish_sentence, remove_fillers
 from .bullets import BULLET, format_bullets
 from .numbers import format_numbers, restore_spoken_point
 from .dictionary import apply_dictionary, vocabulary_prompt
+from . import focus_check
 from .focus_check import is_focus_editable
 from .keynames import friendly as friendly_key
 from .self_correction import apply_self_corrections
@@ -141,6 +142,7 @@ class TalkativeApp:
         self._job_seq = threading.local()
         self._job_blank = threading.local()  # this dictation's mic sent silence
         self._job_target = threading.local()  # where this dictation pastes
+        self._job_report = threading.local()  # diagnostics, sent once the outcome is known
         self._target = None  # paste_target.Target captured at the hotkey press
         self._swapping = False  # model swap in progress (update install/undo)
         self._hotkey_pressed = set()  # currently-held keys that are part of HOTKEY or DEV_HOTKEY
@@ -826,6 +828,7 @@ class TalkativeApp:
             self._jobs += 1
         self._job_seq.value = seq
         self._job_target.value = target
+        self._job_report.value = None
         try:
             self._job_blank.value = bool(
                 audio.size and float(np.max(np.abs(audio))) < config.BLANK_PEAK)
@@ -847,6 +850,7 @@ class TalkativeApp:
                             "The details are in errors.log.")
         finally:
             slow.cancel()
+            self._report("finished without a paste")
             with self._order:
                 self._jobs -= 1
                 idle = self._jobs == 0
@@ -863,6 +867,7 @@ class TalkativeApp:
         """A dictation that won't be typed says why, near the cursor, long
         enough to read -- never silently, never a blocking popup."""
         _debug_log(not_typed=reason)
+        self._report("not typed: " + reason)
         error_toast.show(reason, seconds=config.NOT_TYPED_SECONDS)
 
     def _wait_for_turn(self):
@@ -1054,7 +1059,20 @@ class TalkativeApp:
         turned on Send diagnostic data, to Talkative's server."""
         stages["audio"] = stages.pop("audio_info")
         _debug_log(**stages)
-        diagnostics.send(audio, self._cloud_active(), stages)
+        # Sent by _report once the paste is done or refused, so the report
+        # says what happened to the text (2026-10-28: a user's failed
+        # pastes were invisible in their reports).
+        self._job_report.value = (audio, self._cloud_active(), stages)
+
+    def _report(self, outcome):
+        """Send this dictation's diagnostic report (once) with `outcome`."""
+        pending = getattr(self._job_report, "value", None)
+        if pending is None:
+            return
+        self._job_report.value = None
+        audio, cloud, stages = pending
+        stages["paste"] = outcome
+        diagnostics.send(audio, cloud, stages)
 
     def _cloud_transcribe(self, audio, prompt, dev=False):
         """Cloud transcription that doesn't lose the dictation when Cloud
@@ -1171,10 +1189,34 @@ class TalkativeApp:
         finally:
             paste_target.return_to(back, target)
 
+    def _still_in_target(self):
+        """The window this dictation was spoken into, checked editable at
+        the press, is the one in front. A target without its control is a
+        window the user moved to while speaking (paste_target.at_release):
+        never checked, so not trusted."""
+        target = getattr(self._job_target, "value", None)
+        try:
+            return bool(target is not None and target.hwnd and target.control is not None
+                        and paste_target.user32.GetForegroundWindow() == target.hwnd)
+        except Exception:
+            return False
+
     def _insert_here(self, text, learn, press):
-        if not is_focus_editable():
+        editable, why, kind = focus_check.focus_state()
+        trusted = False
+        if not editable and why in focus_check.UNSEEN and self._still_in_target():
+            # UIA can't see the focused control, but the window the user
+            # dictated into (checked editable at the press) is still in
+            # front: a UIA glitch, not a move. Seen 2026-10-28 in Claude
+            # Code's input box, repeatedly, until Talkative was restarted.
+            # A warning so errors.log shows how often this happens.
+            logging.warning("Focus check said %s (%s) in the dictation's own window; "
+                            "pasting anyway", why, kind)
+            editable = trusted = True
+        if not editable:
             # Focus moved while it was processed: keep the words.
             copy_only(text)
+            self._report(f"not typed: no text box ({why}: {kind})")
             self._not_typed("No text box was selected, so the text is on the "
                             "clipboard. Click where it goes and press Ctrl+V.")
             return
@@ -1203,6 +1245,12 @@ class TalkativeApp:
                     _debug_log(cursor=f"{around[0][-20:]!r} | {around[1][:20]!r} -> {fitted!r}")
                 text = fitted
         insert_text(text, take_back=take_back, append_space=space)
+        if config.INSERT_MODE == "clipboard":
+            self._report("copied (clipboard mode)")
+        else:
+            self._report(f"pasted into {kind}"
+                         + (f" (focus check said {why}; same window, pasted anyway)"
+                            if trusted else ""))
         if config.INSERT_MODE != "clipboard":
             appended = config.APPEND_SPACE if space is None else space
             continuation.note_paste(text + (" " if appended else ""))

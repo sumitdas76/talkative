@@ -5,13 +5,15 @@ can share what actually happened).
 
 Off by default (config.SEND_DIAGNOSTICS). When on, each dictation sends one
 report to Talkative's server (cloud/worker.js /diagnostics): what
-speech-to-text heard, each cleanup step, the final text, timings, the
-settings that shape the result, and the recording (up to
+speech-to-text heard, each cleanup step, the final text, timings, what
+happened to the text ("paste": pasted into which kind of control, or why
+not -- app._report), the settings that shape the result, and the
+recording (up to
 MAX_AUDIO_SECONDS). The text before the cursor (screen_context.py) is
 never included, only its length. The server keeps reports 30 days, for
 the maintainer only (PRIVACY.md).
 
-Sent on its own thread after the text is typed, so it never delays a
+Sent on its own thread after the paste attempt, so it never delays a
 dictation, and any failure is only logged.
 """
 

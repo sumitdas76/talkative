@@ -113,6 +113,9 @@ While it's on, every dictation sends Talkative's server, in either mode:
 - the recording of that dictation (up to 55 seconds),
 - what speech-to-text heard, the text after each cleanup step, and the
   text that was typed,
+- whether it was pasted, and if not, why, plus the kind of box it went
+  into (for example "a text box in Windows Terminal" -- the type of
+  control, never its contents),
 - your Talkative version, Windows version, the settings that affect the
   result (Cloud or Local, cleanup style, speech service), and your
   anonymous install ID (Settings > About shows its first 8 characters
