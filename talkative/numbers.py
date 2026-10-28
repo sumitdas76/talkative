@@ -469,6 +469,9 @@ def _small_digit_to_word(w, i, out):
         return None
     if w.sentence_start(i):
         return None
+    # Glued to letters: a name, not a count ("L2 desk", "FRM2 review").
+    if i > 0 and toks[i - 1][0].isalpha():
+        return None
     if i + 1 >= len(toks) or toks[i + 1] != " ":
         return None  # "3:30", "2.5", "3%", "5," ...
     nj = w.next_word(i)
