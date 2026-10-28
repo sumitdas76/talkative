@@ -3,8 +3,13 @@ Floating on-screen message: errors (e.g. "no editable field focused", why
 a dictation wasn't typed) in red, and notices ("still working on it") in
 a quiet dark style.
 
-A small always-on-top red box that flashes near the cursor and disappears
-on its own after a few seconds -- no click needed, never steals focus.
+A small always-on-top red box that flashes near the text cursor and
+disappears on its own after a few seconds -- no click needed, never steals
+focus. Placed just above the line being typed in (screen_context.
+caret_rect), or, when that can't be found, just above the listening line
+at the bottom of the screen -- not at the mouse pointer, which is often
+parked at the top of the screen (2026-10-28, user report: "Still
+working" showed up where nobody looks).
 A Windows tray balloon can be silently suppressed or routed straight to
 Action Center; this can't be missed the way that can.
 
@@ -30,7 +35,7 @@ import threading
 
 from pynput import keyboard, mouse
 
-from . import overlay_thread
+from . import overlay_thread, pill, screen_context
 
 _WIDTH, _HEIGHT = 360, 60  # grows taller for a longer message
 _DURATION_MS = 1500  # default; reasons a dictation wasn't typed stay longer
@@ -41,11 +46,63 @@ _BG = "#c82828"  # same red as the tray's recording icon (tray.py)
 _FG = "#ffffff"  # 5.5:1 on the red (black was 3.8:1)
 _INFO_BG, _INFO_FG = "#22262e", "#ffffff"  # "still working" notices
 _DISMISS = object()  # sentinel put on the command queue to hide early
+_LOCATE_WAIT = 0.4  # seconds to find the text cursor before using the fallback spot
+_GAP = 12  # pixels between the message and the line it points at
+
+
+class _MonitorInfo(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.wintypes.DWORD), ("rcMonitor", ctypes.wintypes.RECT),
+                ("rcWork", ctypes.wintypes.RECT), ("dwFlags", ctypes.wintypes.DWORD)]
+
+
+def _work_area(x, y):
+    """(left, top, right, bottom) of the work area of the monitor at x, y."""
+    user32 = ctypes.windll.user32
+    user32.MonitorFromPoint.restype = ctypes.c_void_p
+    user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    mon = user32.MonitorFromPoint(ctypes.wintypes.POINT(x, y), 2)  # nearest
+    info = _MonitorInfo(cbSize=ctypes.sizeof(_MonitorInfo))
+    if not mon or not user32.GetMonitorInfoW(mon, ctypes.byref(info)):
+        raise OSError("no monitor info")
+    w = info.rcWork
+    return w.left, w.top, w.right, w.bottom
+
+
+def _locate():
+    """The text cursor's rectangle, or None if not found within _LOCATE_WAIT."""
+    box = []
+    worker = threading.Thread(target=lambda: box.append(screen_context.caret_rect()),
+                              daemon=True)
+    worker.start()
+    worker.join(_LOCATE_WAIT)
+    return box[0] if box else None
+
+
+def place(rect, width, height, screen_w, screen_h, work=None):
+    """Top-left (x, y) for a width x height message: just above `rect` (the
+    text cursor), or below it when there's no room above; with no rect,
+    just above the listening line. Kept inside `work` (the monitor's work
+    area) when given, else the primary screen. Pure, for testing."""
+    if rect is not None:
+        left, top, right, bottom = rect
+        x, y = left - 24, top - height - _GAP
+        wl, wt, wr, wb = work or (0, 0, screen_w, screen_h)
+        if y < wt + 8:
+            y = bottom + _GAP
+    else:
+        x = (screen_w - width) // 2
+        y = screen_h - pill._SCREEN_BOTTOM_MARGIN - pill._HEIGHT - _GAP - height
+        wl, wt, wr, wb = work or (0, 0, screen_w, screen_h)
+    x = max(wl + 8, min(x, wr - width - 8))
+    y = max(wt + 8, min(y, wb - height - 8))
+    return x, y
 
 
 class _Toast:
     def __init__(self):
         self._commands = queue.Queue()
+        self._seq = 0  # order of show() calls; the spot is found off-thread
+        self._seq_lock = threading.Lock()
         self._ready = threading.Event()
         self._failed = False
 
@@ -61,10 +118,21 @@ class _Toast:
     # ---- public, called from any thread ----
 
     def show(self, text, seconds=None, info=False):
-        self._commands.put((text, seconds, info))
-        # The poll loop stops while nothing is shown; the shared overlay
-        # thread (which polls anyway) restarts it.
-        self._overlay.build(self._wake)
+        # Finding the text cursor is a UIA call into another app, which can
+        # take a while: never on the caller's thread (it may be the
+        # keyboard hook) and never on the overlay thread (the listening
+        # line would stall).
+        with self._seq_lock:
+            self._seq += 1
+            seq = self._seq
+
+        def job():
+            self._commands.put((text, seconds, info, _locate(), seq))
+            # The poll loop stops while nothing is shown; the shared overlay
+            # thread (which polls anyway) restarts it.
+            self._overlay.build(self._wake)
+
+        threading.Thread(target=job, daemon=True).start()
 
     # ---- overlay thread ----
 
@@ -98,6 +166,7 @@ class _Toast:
             self._key_listener = None
             self._polling = False
             self._height = _HEIGHT
+            self._shown_seq = 0
             self._ready.set()
         except Exception:
             self._failed = True
@@ -114,26 +183,27 @@ class _Toast:
         except Exception:
             pass
 
-    def _place_near_cursor(self):
-        height = self._height
-        try:
-            point = ctypes.wintypes.POINT()
-            ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
-            x, y = point.x - _WIDTH // 2, point.y - height - 24
-        except Exception:
-            x = y = 200
+    def _place(self, rect):
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
-        x = max(8, min(x, screen_w - _WIDTH - 8))
-        y = max(8, min(y, screen_h - height - 8))
-        self.root.geometry(f"{_WIDTH}x{height}+{x}+{y}")
+        work = None
+        if rect is not None:
+            try:
+                work = _work_area(rect[0], rect[1])
+            except Exception:
+                pass
+        x, y = place(rect, _WIDTH, self._height, screen_w, screen_h, work)
+        self.root.geometry(f"{_WIDTH}x{self._height}+{x}+{y}")
 
     def _wake(self):
         if not self._polling:
             self._polling = True
             self._poll()
 
-    def _show(self, text, seconds, info):
+    def _show(self, text, seconds, info, rect=None, seq=0):
+        if seq < self._shown_seq:
+            return  # a newer message is already up (found its spot sooner)
+        self._shown_seq = seq
         bg, fg = (_INFO_BG, _INFO_FG) if info else (_BG, _FG)
         self.canvas.itemconfigure(self.text_id, text=text, fill=fg)
         x0, y0, x1, y1 = self.canvas.bbox(self.text_id)
@@ -142,7 +212,7 @@ class _Toast:
         self.canvas.coords(self.box, 0, 0, _WIDTH, self._height)
         self.canvas.itemconfigure(self.box, fill=bg)
         self.canvas.coords(self.text_id, _WIDTH / 2, self._height / 2)
-        self._place_near_cursor()
+        self._place(rect)
         self.root.deiconify()
         self._no_activate()
         self._start_dismiss_listeners()
@@ -220,7 +290,7 @@ def _get():
 
 def show(text, seconds=None, info=False):
     """Flash `text` in a small topmost, non-activating box near the
-    cursor for `seconds` (default 1.5), red, or dark with info=True.
+    text cursor for `seconds` (default 1.5), red, or dark with info=True.
     Safe from any thread; no-op on failure."""
     try:
         toast = _get()

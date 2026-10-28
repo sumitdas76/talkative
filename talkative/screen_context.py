@@ -14,11 +14,16 @@ one dictation; nothing is stored.
 Whether it's used: config.CONTEXT_LOCAL (it never leaves the PC) and
 config.CONTEXT_CLOUD (the text goes to the speech service along with the
 audio, PRIVACY.md). Both on, and not settings since 2026-10-26.
+
+caret_rect() reads only where the cursor is (never text), to put
+on-screen messages next to it (error_toast).
 """
 
+import ctypes
 import logging
 import re
 import threading
+from ctypes import wintypes
 
 import pythoncom
 import uiautomation as auto
@@ -142,6 +147,109 @@ def capture(limit=None):
     except Exception:
         log.debug("screen context unavailable", exc_info=True)
         return ""
+
+
+class _GUIThreadInfo(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD),
+                ("hwndActive", wintypes.HWND), ("hwndFocus", wintypes.HWND),
+                ("hwndCapture", wintypes.HWND), ("hwndMenuOwner", wintypes.HWND),
+                ("hwndMoveSize", wintypes.HWND), ("hwndCaret", wintypes.HWND),
+                ("rcCaret", wintypes.RECT)]
+
+
+# A focused control this short is an input box: its own rectangle is a
+# good enough "where the text goes". Taller is a whole document or pane
+# (a terminal's view), whose top can be far from the caret.
+_INPUT_BOX_MAX_HEIGHT = 200
+
+
+def _uia_caret(control):
+    pattern = control.GetPattern(auto.PatternId.TextPattern)
+    if pattern is None:
+        return None
+    selection = pattern.GetSelection()
+    if not selection:
+        return None
+    rng = selection[0].Clone()
+    start, end = auto.TextPatternRangeEndpoint.Start, auto.TextPatternRangeEndpoint.End
+    rng.MoveEndpointByRange(end, rng, start, waitTime=0)
+    rects = rng.GetBoundingRectangles()
+    if not rects:
+        # A collapsed caret often has no rectangle; the character at it does.
+        rng.ExpandToEnclosingUnit(auto.TextUnit.Character, waitTime=0)
+        rects = rng.GetBoundingRectangles()
+    if not rects:
+        return None
+    r = rects[0]
+    return r.left, r.top, r.right, r.bottom
+
+
+def _win32_caret():
+    user32 = ctypes.windll.user32
+    fg = user32.GetForegroundWindow()
+    info = _GUIThreadInfo(cbSize=ctypes.sizeof(_GUIThreadInfo))
+    if not fg or not user32.GetGUIThreadInfo(
+            user32.GetWindowThreadProcessId(fg, None), ctypes.byref(info)):
+        return None
+    if not info.hwndCaret:
+        return None
+    rc = info.rcCaret
+    top_left = wintypes.POINT(rc.left, rc.top)
+    bottom_right = wintypes.POINT(rc.right, rc.bottom)
+    user32.ClientToScreen(info.hwndCaret, ctypes.byref(top_left))
+    user32.ClientToScreen(info.hwndCaret, ctypes.byref(bottom_right))
+    return top_left.x, top_left.y, bottom_right.x, bottom_right.y
+
+
+def _inside_foreground(rect):
+    """The rect's centre is inside the foreground window. Guards against
+    coordinates in another scale (this process isn't DPI-aware; on a
+    scaled screen a provider may report physical pixels) -- better the
+    fallback spot than a message somewhere unrelated."""
+    user32 = ctypes.windll.user32
+    win = wintypes.RECT()
+    if not user32.GetWindowRect(user32.GetForegroundWindow(), ctypes.byref(win)):
+        return False
+    x, y = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+    return win.left <= x <= win.right and win.top <= y <= win.bottom
+
+
+def caret_rect():
+    """Screen rectangle (left, top, right, bottom) of the text cursor in the
+    focused control -- or of the focused input box when the cursor itself
+    can't be found -- or None. For placing on-screen messages where the
+    user is looking (error_toast). Reads positions only, never text.
+    Never raises; can be slow in a busy app, so callers cap the wait."""
+    try:
+        pythoncom.CoInitialize()
+    except Exception:
+        pass
+    found = None
+    control = None
+    try:
+        control = auto.GetFocusedControl()
+        if control is not None:
+            found = _uia_caret(control)
+    except Exception:
+        log.debug("UIA caret unavailable", exc_info=True)
+    if found is None:
+        try:
+            found = _win32_caret()
+        except Exception:
+            log.debug("Win32 caret unavailable", exc_info=True)
+    if found is None and control is not None:
+        try:
+            r = control.BoundingRectangle
+            if 0 < r.bottom - r.top <= _INPUT_BOX_MAX_HEIGHT and r.right > r.left:
+                found = r.left, r.top, r.right, r.bottom
+        except Exception:
+            pass
+    try:
+        if found is not None and _inside_foreground(found):
+            return found
+    except Exception:
+        pass
+    return None
 
 
 class Pending:
