@@ -23,6 +23,7 @@ import ctypes
 import logging
 import re
 import threading
+import unicodedata
 from ctypes import wintypes
 
 import pythoncom
@@ -43,6 +44,16 @@ _MAX_TOKENS = 120
 def _tokens(text):
     ascii_chars = sum(c < "\x80" for c in text)
     return ascii_chars / 4 + (len(text) - ascii_chars)
+
+
+def _words_only(text):
+    """`text` without icon and line-drawing characters, or "" when no letter is left.
+    A terminal app's empty input box (Claude Code) has only its border
+    line before the cursor: a prompt of nothing but "────" made Cloud's
+    Whisper return no words at all, on two PCs (2026-10-28/29)."""
+    text = "".join(" " if unicodedata.category(c) == "So" or unicodedata.category(c)[0] == "C"
+                   else c for c in text or "")
+    return text if any(c.isalpha() for c in text) else ""
 
 
 def _tail(text, limit):
@@ -119,9 +130,11 @@ def around_caret(limit=80):
         return None
 
 
-def capture(limit=None):
+def capture(limit=None, for_prompt=False):
     """The text before the cursor in the focused control ("" when there is
-    none, it's a password field, or it can't be read). Never raises."""
+    none, it's a password field, or it can't be read). Never raises.
+    `for_prompt`: for the speech prompt, without icons and line drawing
+    (_words_only); continuation compares the text as typed, so not there."""
     limit = limit or config.CONTEXT_MAX_CHARS
     try:
         pythoncom.CoInitialize()
@@ -143,7 +156,7 @@ def capture(limit=None):
                 text = value.Value if value is not None else ""
             except Exception:
                 text = ""
-        return _tail(text, limit)
+        return _tail(_words_only(text) if for_prompt else text, limit)
     except Exception:
         log.debug("screen context unavailable", exc_info=True)
         return ""
@@ -264,7 +277,7 @@ class Pending:
 
     def _run(self):
         try:
-            self._text = capture()
+            self._text = capture(for_prompt=True)
         finally:
             self._done.set()
 
