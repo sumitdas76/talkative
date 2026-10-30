@@ -918,6 +918,13 @@ class TalkativeApp:
                 why = "The speech model couldn't transcribe it."
             self._not_typed(f"{why} Nothing was typed. Please try again.")
             return
+        if on_screen and screen_context.suspect(text, len(audio) / config.SAMPLE_RATE):
+            text, retried = self._retry_without_context(
+                audio, text, " ".join(p for p in (base_prompt, vocabulary_prompt()) if p),
+                dev, transcriber)
+            if retried:
+                info = f"{info}, retried without screen context" if info else \
+                    "retried without screen context"
         transcribe_secs = time.time() - t0
         saved = _debug_save_audio(audio)
         if saved:
@@ -1073,6 +1080,25 @@ class TalkativeApp:
         audio, cloud, stages = pending
         stages["paste"] = outcome
         diagnostics.send(audio, cloud, stages)
+
+    def _retry_without_context(self, audio, text, prompt, dev, transcriber):
+        """A transcript made with screen context looked broken
+        (screen_context.suspect): transcribe the same audio once more
+        without it and keep whichever has more words. Returns (text,
+        whether the retry's text was used). A failed retry keeps the
+        first result -- it already counted as a success."""
+        try:
+            if self._cloud_active():
+                again = self._cloud_transcribe(audio, prompt or None, dev)
+            else:
+                again = transcriber.transcribe(audio, config.SAMPLE_RATE,
+                                               initial_prompt=prompt or None)
+        except Exception as exc:
+            logging.warning("Retry without screen context failed: %s", exc)
+            return text, False
+        if len((again or "").split()) > len((text or "").split()):
+            return again, True
+        return text, False
 
     def _cloud_transcribe(self, audio, prompt, dev=False):
         """Cloud transcription that doesn't lose the dictation when Cloud

@@ -265,6 +265,32 @@ def caret_rect():
     return None
 
 
+# At least one word per this many seconds of recording (people hold the
+# key a moment before and after a short word), or a result made
+# with screen context is retried without it (see suspect()).
+_SECONDS_PER_WORD = 3.0
+
+
+def suspect(text, seconds):
+    """Whether a transcript made WITH screen context looks like the
+    context broke it, so the same audio is worth one more try without it
+    (app._retry_without_context). On 2026-10-28/29/30 context made Cloud
+    return nothing (15 of 105 on the user's office PC, 10-30), a few
+    words for many seconds of speech, or script no English speaker
+    dictated ("Täggua青", 10-30). Every other result is trusted: an
+    invented sentence of the right length ("I will see you." for "In a
+    reviewer window", 10-29) can't be told apart from real speech."""
+    text = text or ""
+    words = len(text.split())
+    if words == 0:
+        return True
+    if words < seconds / _SECONDS_PER_WORD:
+        return True
+    # CJK and later blocks: English dictation never produces them.
+    return any(ord(ch) >= 0x2E80 and unicodedata.category(ch).startswith("L")
+               for ch in text)
+
+
 class Pending:
     """capture() started on its own thread when the hotkey goes down (UIA
     calls into some apps take a while, and the keyboard hook must not

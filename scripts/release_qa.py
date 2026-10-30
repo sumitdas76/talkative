@@ -288,7 +288,8 @@ def check_text_rules():
     replace only the corrected words."""
     for check_id, script in (("D17", "numbers_test.py"), ("D17", "bullets_test.py"),
                              ("D20", "self_correction_test.py"), ("D29", "you_know_test.py"),
-                             ("D27", "fix_learning_test.py")):
+                             ("D27", "fix_learning_test.py"),
+                             ("D44", "context_symbols_test.py"), ("D44", "context_retry_test.py")):
         code, out = run_py([script], ROOT / "tools", timeout=60)
         last = out.strip().splitlines()[-1] if out.strip() else "no output"
         record(check_id, f"Text rules: {script[:-8]}", "PASS" if code == 0 else "FAIL", last)
