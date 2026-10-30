@@ -1,5 +1,6 @@
 """
-Tabbed settings window (tkinter), opened from the tray menu.
+Settings window (tkinter), opened from the tray menu: a sidebar of
+pages on the left, the chosen page on the right.
 
 Reads current config values, writes settings.json via settings.save, then
 re-applies with settings.load_into_config and notifies the app through the
@@ -119,6 +120,103 @@ def _apply_checkbox_glyphs(style, field, border, accent, accent_fg):
     ])
 
 
+# Toggle switches (2026-10-30, modern Settings): a second custom
+# indicator, same trap and same fix as the checkbox above -- own element
+# name, a layout that references it, created once per interpreter.
+_SWITCH_SIZE = (36, 20)
+_SWITCH_ELEMENT = "SumitSwitch.indicator"
+_switch_images = None  # (off_photo, on_photo) once created
+
+
+def _draw_switch_glyphs(line, accent, accent_fg):
+    """Off: an outlined track with the knob on the left. On: an accent
+    track with the knob on the right."""
+    scale = 4
+    w, h = _SWITCH_SIZE[0] * scale, _SWITCH_SIZE[1] * scale
+    pad = scale  # room for the focus ring around the track
+    knob = h - 2 * pad - 5 * scale
+
+    off = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(off)
+    d.rounded_rectangle((pad, pad, w - pad, h - pad), radius=(h - 2 * pad) // 2,
+                        outline=line, width=round(1.5 * scale))
+    x = pad + 5 * scale // 2
+    d.ellipse((x, (h - knob) // 2, x + knob, (h + knob) // 2), fill=line)
+
+    on = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(on)
+    d.rounded_rectangle((pad, pad, w - pad, h - pad), radius=(h - 2 * pad) // 2, fill=accent)
+    x = w - pad - 5 * scale // 2 - knob
+    d.ellipse((x, (h - knob) // 2, x + knob, (h + knob) // 2), fill=accent_fg)
+
+    return off.resize(_SWITCH_SIZE, Image.LANCZOS), on.resize(_SWITCH_SIZE, Image.LANCZOS)
+
+
+def _apply_switch_glyphs(style, line, accent, accent_fg):
+    global _switch_images
+    off_pil, on_pil = _draw_switch_glyphs(line, accent, accent_fg)
+    if _switch_images is None:
+        off_photo, on_photo = ImageTk.PhotoImage(off_pil), ImageTk.PhotoImage(on_pil)
+        _switch_images = (off_photo, on_photo)
+        style.element_create(_SWITCH_ELEMENT, "image", off_photo, ("selected", on_photo))
+    else:
+        _switch_images[0].paste(off_pil)
+        _switch_images[1].paste(on_pil)
+    # Just the switch inside clam's focus ring; the setting's name is a
+    # separate label to its left (see _setting_row).
+    style.layout("Switch.TCheckbutton", [
+        ("Checkbutton.padding", {"sticky": "nswe", "children": [
+            ("Checkbutton.focus", {"side": "left", "sticky": "w", "children": [
+                (_SWITCH_ELEMENT, {"sticky": ""}),
+            ]}),
+        ]}),
+    ])
+
+
+# Sidebar item backgrounds (2026-10-30, user: highlighted on hover "just
+# like Claude", no lines): rounded rectangles stretched behind the label
+# via the image element's border, plain for normal, a soft fill on hover
+# or keyboard focus, a stronger one for the chosen page. Same create-once
+# rule as the checkbox.
+_NAV_ELEMENT = "SumitNav.background"
+_NAV_IMAGE = (40, 28)
+_nav_images = None  # (normal, hover, chosen) photos once created
+
+
+def _draw_nav_glyphs(sidebar, hover, chosen):
+    scale = 4
+    w, h = _NAV_IMAGE[0] * scale, _NAV_IMAGE[1] * scale
+    out = []
+    for fill in (sidebar, hover, chosen):
+        img = Image.new("RGBA", (w, h), sidebar)
+        ImageDraw.Draw(img).rounded_rectangle((0, 0, w - 1, h - 1), radius=7 * scale, fill=fill)
+        out.append(img.resize(_NAV_IMAGE, Image.LANCZOS))
+    return out
+
+
+def _apply_nav_glyphs(style, sidebar, hover, chosen):
+    global _nav_images
+    pils = _draw_nav_glyphs(sidebar, hover, chosen)
+    if _nav_images is None:
+        _nav_images = tuple(ImageTk.PhotoImage(p) for p in pils)
+        normal, over, picked = _nav_images
+        style.element_create(
+            _NAV_ELEMENT, "image", normal,
+            ("selected", picked), ("active", over), ("focus", over),
+            border=8, sticky="nsew",
+        )
+    else:
+        for photo, pil in zip(_nav_images, pils):
+            photo.paste(pil)
+    style.layout("Nav.TLabel", [
+        (_NAV_ELEMENT, {"sticky": "nswe", "children": [
+            ("Label.padding", {"sticky": "nswe", "children": [
+                ("Label.label", {"sticky": "w"}),
+            ]}),
+        ]}),
+    ])
+
+
 def _swatch(pal):
     """A small rounded chip: the accent, then the listening line's color."""
     scale, w, h = 4, 44, 14
@@ -135,8 +233,18 @@ def _swatch(pal):
     return img.resize((w, h), Image.LANCZOS)
 
 
+# The open window, for test scripts (tools/dev_mode_study/settings_layout.py).
+_window = None
+
+# Sidebar pages, top to bottom; About sits at the bottom of the sidebar.
+# Feedback got its own page on 2026-10-30 (was the bottom of About).
+_PAGES = ["General", "Auto Text", "Dictation", "Hotkeys", "Audio", "Output",
+          "Feedback", "About"]
+
+
 def _on_closed():
-    global _is_open
+    global _is_open, _window
+    _window = None
     # Revert any unsaved preview mutations (e.g. the live theme preview
     # writes config.THEME before Save).
     settings.load_into_config()
@@ -211,6 +319,7 @@ class _SettingsWindow:
         self._capturing = False
 
     def build(self):
+        global _window
         self.root = tk.Toplevel(self.overlay.root)
         self.root.title(f"{APP_NAME} Settings")
         app_icon.set_window_icon(self.root)
@@ -224,34 +333,112 @@ class _SettingsWindow:
         # propagation active, so the window sizes to its actual content
         # and keeps re-sizing correctly as content changes later (e.g. the
         # Models tab's download progress bar appearing).
-        self.root.minsize(520, 420)
+        self.root.minsize(720, 460)
         self._apply_theme()
-        self._build_header()
 
-        nb = ttk.Notebook(self.root)
-        nb.pack(fill="both", expand=True, padx=10, pady=(10, 4))
-        for name, builder in [
-            ("General", self._tab_general),
-            ("Auto Text", self._tab_dictionary),
-            ("Dictation", self._tab_dictation),
-            ("Hotkeys", self._tab_hotkeys),
-            ("Audio", self._tab_audio),
-            ("Output", self._tab_output),
-            ("About", self._tab_about),
-        ]:
-            frame = ttk.Frame(nb, padding=14)
-            nb.add(frame, text=name)
-            builder(frame)
+        # Sidebar of pages on the left, the chosen page on the right
+        # (2026-10-30: the top tab strip read as "Windows XP"). Every page
+        # is gridded into the same cell and raised when chosen, so the
+        # window sizes to the largest page and doesn't jump on a switch.
+        self._build_sidebar()
+        content = ttk.Frame(self.root)
+        content.pack(side="left", fill="both", expand=True)
+        area = ttk.Frame(content)
+        area.pack(fill="both", expand=True)
+        area.columnconfigure(0, weight=1)
+        area.rowconfigure(0, weight=1)
+        builders = {
+            "General": self._tab_general,
+            "Auto Text": self._tab_dictionary,
+            "Dictation": self._tab_dictation,
+            "Hotkeys": self._tab_hotkeys,
+            "Audio": self._tab_audio,
+            "Output": self._tab_output,
+            "Feedback": self._build_feedback_section,
+            "About": self._tab_about,
+        }
+        self._pages = {}
+        for name in _PAGES:
+            page = ttk.Frame(area, padding=(28, 20, 28, 8))
+            page.grid(row=0, column=0, sticky="nsew")
+            ttk.Label(page, text=name, style="PageTitle.TLabel").pack(anchor="w", pady=(0, 12))
+            body = ttk.Frame(page)
+            body.pack(fill="both", expand=True)
+            builders[name](body)
+            self._pages[name] = page
 
-        bar = ttk.Frame(self.root, padding=(10, 4, 10, 10))
+        ttk.Separator(content).pack(fill="x")
+        bar = ttk.Frame(content, padding=(28, 10, 28, 12))
         bar.pack(fill="x")
         self.saved_label = ttk.Label(bar, text="")
         self.saved_label.pack(side="left")
         ttk.Button(bar, text="Close", command=self._close).pack(side="right")
         ttk.Button(bar, text="Save and apply", command=self._save,
-                   style="Accent.TButton").pack(side="right", padx=6)
+                   style="Accent.TButton").pack(side="right", padx=8)
 
+        self.select_page("General")
         self.root.protocol("WM_DELETE_WINDOW", self._close)
+        _window = self
+
+    def _build_sidebar(self):
+        # The side padding is the margin around each item's highlight
+        # (2026-10-30, user: highlights "less wide").
+        side = ttk.Frame(self.root, style="Sidebar.TFrame", padding=(16, 18, 16, 12))
+        side.pack(side="left", fill="y")
+        ttk.Label(side, text=APP_NAME, style="SidebarTitle.TLabel").pack(
+            anchor="w", padx=(12, 32))
+        ttk.Label(side, text="Settings", style="SidebarMuted.TLabel").pack(
+            anchor="w", padx=12, pady=(0, 16))
+        self._nav = {}
+        for name in _PAGES:
+            label = ttk.Label(side, text=name, style="Nav.TLabel", takefocus=True)
+            label.pack(side="bottom" if name == "About" else "top", fill="x", pady=1)
+            pick = lambda e, n=name: self.select_page(n)
+            label.bind("<Button-1>", pick)
+            label.bind("<Return>", pick)
+            label.bind("<space>", pick)
+            # Up/Down move through the pages, as in Windows' own Settings.
+            label.bind("<Up>", lambda e, n=name: self._nav_step(n, -1))
+            label.bind("<Down>", lambda e, n=name: self._nav_step(n, 1))
+            for event, state in (("<Enter>", "active"), ("<Leave>", "!active"),
+                                 ("<FocusIn>", "focus"), ("<FocusOut>", "!focus")):
+                label.bind(event, lambda e, l=label, s=state: l.state([s]))
+            self._nav[name] = label
+
+    def _nav_step(self, name, step):
+        i = min(max(_PAGES.index(name) + step, 0), len(_PAGES) - 1)
+        self.select_page(_PAGES[i])
+        self._nav[_PAGES[i]].focus_set()
+        return "break"
+
+    def select_page(self, name):
+        self._pages[name].tkraise()
+        for n, label in self._nav.items():
+            label.state(["selected" if n == name else "!selected"])
+        self.page = name
+
+    def _section(self, parent, title, first=False):
+        """A page section: a divider (not above the first), a colored
+        heading, and the frame its settings go in."""
+        if not first:
+            ttk.Separator(parent).pack(fill="x", pady=(14, 12))
+        ttk.Label(parent, text=title, style="Section.TLabel").pack(anchor="w", pady=(0, 6))
+        body = ttk.Frame(parent)
+        body.pack(fill="x")
+        return body
+
+    def _setting_row(self, parent, title, desc=None):
+        """A row with the setting's name (and a muted line under it) on
+        the left; the caller grids its control at column 1, on the right."""
+        row = ttk.Frame(parent)
+        row.pack(fill="x", pady=3)
+        row.columnconfigure(0, weight=1)
+        text = ttk.Frame(row)
+        text.grid(row=0, column=0, sticky="w")
+        ttk.Label(text, text=title).pack(anchor="w")
+        if desc:
+            ttk.Label(text, text=desc, style="Muted.TLabel").pack(anchor="w")
+        return row
 
     def _close(self):
         self.root.destroy()
@@ -287,38 +474,57 @@ class _SettingsWindow:
         border, hover, title = m["border"], m["hover"], m["title"]
         accent, accent_fg, accent_hover = pal["accent"], pal["accent_fg"], pal["accent_hover"]
 
+        muted = m["muted"]
+        # The sidebar sits between the page and the raised color; the
+        # chosen page's item is raised, hover halfway to it.
+        sidebar = pill._mix(bg, raised, 0.5)
+        nav_hover = pill._mix(sidebar, raised, 0.45)
+
         self.root.configure(bg=bg)
         style.configure(".", background=bg, foreground=fg,
                         fieldbackground=field, bordercolor=border,
-                        lightcolor=bg, darkcolor=bg)
-        # The selected tab: accent color, white bold label, slightly taller.
-        style.configure("TNotebook.Tab", background=raised, foreground=fg,
-                        padding=(12, 5), font=("Segoe UI", 9))
-        style.map(
-            "TNotebook.Tab",
-            background=[("selected", accent), ("active", hover)],
-            foreground=[("selected", accent_fg)],
-            font=[("selected", ("Segoe UI", 9, "bold"))],
-            expand=[("selected", (1, 1, 1, 0))],
-        )
-        style.configure("TButton", background=raised)
+                        lightcolor=bg, darkcolor=bg, font=("Segoe UI", 10))
+        style.configure("Sidebar.TFrame", background=sidebar)
+        style.configure("SidebarTitle.TLabel", background=sidebar, foreground=fg,
+                        font=("Segoe UI Semibold", 14))
+        style.configure("SidebarMuted.TLabel", background=sidebar, foreground=muted)
+        style.configure("Nav.TLabel", foreground=fg, padding=(12, 6))
+        _apply_nav_glyphs(style, sidebar, nav_hover, pill._mix(raised, hover, 0.5))
+        style.configure("PageTitle.TLabel", font=("Segoe UI Semibold", 18))
+        style.configure("Section.TLabel", foreground=title, font=("Segoe UI Semibold", 11))
+        style.configure("Sub.TLabel", font=("Segoe UI Semibold", 10))
+        style.configure("TSeparator", background=border)
+        # Cards (the model boxes): a field-colored panel with a thin border.
+        style.configure("Card.TFrame", background=field, bordercolor=border,
+                        lightcolor=border, darkcolor=border, relief="solid", borderwidth=1)
+        style.configure("CardBody.TFrame", background=field)
+        style.configure("Card.TLabel", background=field)
+        style.configure("CardTitle.TLabel", background=field, font=("Segoe UI Semibold", 10))
+        style.configure("CardMuted.TLabel", background=field, foreground=muted)
+        # Flat buttons: clam's light/dark edge colors set to the face
+        # color remove its bevel.
+        style.configure("TButton", background=raised, lightcolor=raised, darkcolor=raised,
+                        bordercolor=border, padding=(14, 4))
         style.map(
             "TButton",
             background=[("disabled", raised), ("active", hover)],
+            lightcolor=[("active", hover)], darkcolor=[("active", hover)],
             foreground=[("disabled", border)],
         )
         # The main action ("Save and apply") in the accent color.
         style.configure("Accent.TButton", background=accent, foreground=accent_fg,
-                        bordercolor=accent, font=("Segoe UI", 9, "bold"))
+                        bordercolor=accent, lightcolor=accent, darkcolor=accent,
+                        font=("Segoe UI Semibold", 10))
         style.map(
             "Accent.TButton",
             background=[("disabled", raised), ("active", accent_hover)],
+            lightcolor=[("active", accent_hover)], darkcolor=[("active", accent_hover)],
             foreground=[("disabled", border)],
         )
         # Section titles ("Dictation style", "Feedback"...) in color.
         style.configure("TLabelframe", background=bg, bordercolor=border)
         style.configure("TLabelframe.Label", background=bg, foreground=title,
-                        font=("Segoe UI", 9, "bold"))
+                        font=("Segoe UI Semibold", 10))
         # Radiobutton/checkbutton row background was never mapped for the
         # "active" (hover) state, so clam's built-in light default painted
         # every row white on hover regardless of theme.
@@ -330,6 +536,7 @@ class _SettingsWindow:
             foreground=[("disabled", border)],
         )
         _apply_checkbox_glyphs(style, field, border, accent, accent_fg)
+        _apply_switch_glyphs(style, muted, accent, accent_fg)
         style.map(
             "TRadiobutton",
             background=[("active", bg)],
@@ -347,10 +554,18 @@ class _SettingsWindow:
             indicatorbackground=[("pressed", hover), ("selected", field)],
             indicatorforeground=[("disabled", border), ("selected", title)],
         )
+        # Flat tables: taller rows for 10pt text, headings without bevels.
         style.configure("Treeview", background=field, foreground=fg,
-                        fieldbackground=field)
-        style.configure("Treeview.Heading", background=raised, foreground=fg)
-        style.map("Treeview.Heading", background=[("active", hover)])
+                        fieldbackground=field, rowheight=26, bordercolor=border,
+                        lightcolor=field, darkcolor=field)
+        style.configure("Treeview.Heading", background=raised, foreground=fg,
+                        lightcolor=raised, darkcolor=raised, bordercolor=border,
+                        padding=(8, 4), font=("Segoe UI Semibold", 10))
+        style.map("Treeview.Heading", background=[("active", hover)],
+                  lightcolor=[("active", hover)], darkcolor=[("active", hover)])
+        style.configure("TCombobox", lightcolor=field, darkcolor=field, padding=(6, 3),
+                        arrowcolor=fg)
+        style.configure("TEntry", lightcolor=field, darkcolor=field, padding=(6, 3))
         style.map(
             "Treeview",
             background=[("selected", accent)],
@@ -383,6 +598,7 @@ class _SettingsWindow:
         # links and code samples use the heading color (checked by D38).
         self._link = title
         self._bg, self._fg, self._field = bg, fg, field
+        self._border = border
         # Secondary text that must stay readable on this theme's background
         # (plain "grey" is faint on dark and nearly invisible on light).
         self._muted = m["muted"]
@@ -396,56 +612,36 @@ class _SettingsWindow:
             self.feedback_text.configure(
                 bg=field, fg=fg, insertbackground=fg,
                 selectbackground=accent, selectforeground=accent_fg,
+                highlightbackground=border, highlightcolor=title,
             )
 
-    def _build_header(self):
-        """A band across the top in the palette's header colors."""
-        canvas = tk.Canvas(self.root, height=44, highlightthickness=0, bd=0)
-        canvas.pack(fill="x")
-
-        def paint(event=None):
-            pal = palette.get()
-            start, end = pal["header"]
-            width = max(canvas.winfo_width(), 2)
-            row = Image.new("RGB", (width, 1))
-            for x in range(width):
-                row.putpixel((x, 0), pill._rgb(pill._mix(start, end, x / (width - 1))))
-            self._header_image = ImageTk.PhotoImage(row.resize((width, 44)))
-            canvas.delete("all")
-            canvas.create_image(0, 0, anchor="nw", image=self._header_image)
-            canvas.create_text(18, 22, anchor="w", text=APP_NAME, fill=pal["header_fg"],
-                               font=("Segoe UI Semibold", 15))
-            canvas.create_text(width - 18, 22, anchor="e", text="Settings",
-                               fill=pal["header_fg"], font=("Segoe UI", 10))
-
-        canvas.bind("<Configure>", paint)
-        self._paint_header = paint
-
-    # ---------------- tabs ----------------
+    # ---------------- pages ----------------
 
     def _tab_general(self, f):
         self.var_autostart = tk.BooleanVar(value=config.START_WITH_WINDOWS)
         self.var_theme = tk.StringVar(value=config.THEME)
-        ttk.Checkbutton(
-            f, text=f"Start “{APP_NAME}” when Windows starts",
-            variable=self.var_autostart,
-        ).pack(anchor="w", pady=4)
+        start = self._section(f, "Startup", first=True)
+        row = self._setting_row(start, "Start with Windows",
+                                f"Open {APP_NAME} when you sign in to Windows.")
+        ttk.Checkbutton(row, variable=self.var_autostart,
+                        style="Switch.TCheckbutton").grid(row=0, column=1, sticky="e")
 
-        box = ttk.LabelFrame(f, text="Appearance", padding=10)
-        box.pack(fill="x", pady=(10, 0))
-        modes = ttk.Frame(box)
-        modes.pack(anchor="w", pady=(0, 6))
+        look = self._section(f, "Appearance")
+        row = self._setting_row(look, "Theme")
+        modes = ttk.Frame(row)
+        modes.grid(row=0, column=1, sticky="e")
         for label, value in [("Light", "light"), ("Dark", "dark"),
                              ("Follow Windows setting", "system")]:
             ttk.Radiobutton(
                 modes, text=label, variable=self.var_theme, value=value,
                 command=self._theme_changed,
-            ).pack(side="left", padx=(0, 16))
+            ).pack(side="left", padx=(16, 0))
         # Color schemes (2026-10-26: the user chose to let people pick),
         # each shown with a swatch of its accent and pill colors.
         self.var_scheme = tk.StringVar(value=config.COLOR_SCHEME)
-        schemes = ttk.Frame(box)
-        schemes.pack(anchor="w")
+        row = self._setting_row(look, "Color scheme")
+        schemes = ttk.Frame(row)
+        schemes.grid(row=0, column=1, sticky="e")
         self._swatches = []
         for name, pal in palette.PALETTES.items():
             swatch = ImageTk.PhotoImage(_swatch(pal))
@@ -453,16 +649,17 @@ class _SettingsWindow:
             ttk.Radiobutton(
                 schemes, text=pal["label"], image=swatch, compound="left",
                 variable=self.var_scheme, value=name, command=self._theme_changed,
-            ).pack(side="left", padx=(0, 16))
+            ).pack(side="left", padx=(16, 0))
 
-        # Cloud and Local as two sections, the local models under Local
+        # Cloud and Local as two parts, the local models under Local
         # (2026-10-27, user request: the Models tab folded in here).
-        proc_box = ttk.LabelFrame(f, text="Processing", padding=(10, 6))
-        proc_box.pack(fill="x", pady=(10, 0))
-        cloud_box = ttk.LabelFrame(proc_box, text="Cloud", padding=(10, 4))
+        proc = self._section(f, "Processing")
+        ttk.Label(proc, text="Cloud", style="Sub.TLabel").pack(anchor="w")
+        cloud_box = ttk.Frame(proc, padding=(4, 2, 0, 0))
         cloud_box.pack(fill="x")
-        local_box = ttk.LabelFrame(proc_box, text="Local", padding=(10, 4))
-        local_box.pack(fill="x", pady=(8, 0))
+        ttk.Label(proc, text="Local", style="Sub.TLabel").pack(anchor="w", pady=(10, 0))
+        local_box = ttk.Frame(proc, padding=(4, 2, 0, 0))
+        local_box.pack(fill="x")
         self.var_processing = tk.StringVar(value=config.PROCESSING_MODE)
         self.var_speech_service = tk.StringVar(value=config.SPEECH_SERVICE)
         # One choice across both sections (2026-10-27, user request: no
@@ -563,42 +760,41 @@ class _SettingsWindow:
         config.THEME = self.var_theme.get()
         config.COLOR_SCHEME = self.var_scheme.get()
         self._apply_theme()
-        self._paint_header()
 
     def _tab_dictionary(self, f):
+        words = self._section(f, "Your Auto Text", first=True)
         ttk.Label(
-            f, wraplength=520,
+            words, wraplength=560, style="Muted.TLabel",
             text=f"When you say the word on the left, “{APP_NAME}” "
                  "types the text on the right.",
         ).pack(anchor="w")
 
         self.dict_tree = ttk.Treeview(
-            f, columns=("spoken", "typed"), show="headings", height=8
+            words, columns=("spoken", "typed"), show="headings", height=7
         )
         self.dict_tree.heading("spoken", text="Spoken")
         self.dict_tree.heading("typed", text="Typed")
-        self.dict_tree.column("spoken", width=160)
-        self.dict_tree.column("typed", width=300)
+        self.dict_tree.column("spoken", width=180)
+        self.dict_tree.column("typed", width=360)
         self.dict_tree.pack(fill="both", expand=True, pady=8)
         for spoken, typed in config.DICTIONARY.items():
             self.dict_tree.insert("", "end", values=(spoken, typed))
 
-        row = ttk.Frame(f)
+        row = ttk.Frame(words)
         row.pack(fill="x")
         self.dict_spoken = ttk.Entry(row, width=18)
         self.dict_spoken.pack(side="left")
         ttk.Label(row, text=" → ").pack(side="left")
         self.dict_typed = ttk.Entry(row, width=32)
         self.dict_typed.pack(side="left", fill="x", expand=True)
-        ttk.Button(row, text="Add", command=self._dict_add).pack(side="left", padx=6)
+        ttk.Button(row, text="Add", command=self._dict_add).pack(side="left", padx=8)
         ttk.Button(row, text="Remove selected", command=self._dict_remove).pack(side="left")
 
         # Pairs fix_learning.py noticed the user correcting. Add puts one in
         # the table above (saved with Save, like a typed entry).
-        box = ttk.LabelFrame(f, text="Suggested from your corrections", padding=10)
-        box.pack(fill="x", pady=(12, 0))
+        box = self._section(f, "Suggested from your corrections")
         self.fix_empty = ttk.Label(
-            box, style="Muted.TLabel", wraplength=500,
+            box, style="Muted.TLabel", wraplength=560,
             text="None yet. When you correct a name or term Talkative typed, "
                  "it's suggested here.",
         )
@@ -608,14 +804,14 @@ class _SettingsWindow:
         self.fix_tree.heading("heard", text="Typed as")
         self.fix_tree.heading("typed", text="You corrected it to")
         self.fix_tree.heading("times", text="Times")
-        self.fix_tree.column("heard", width=170)
-        self.fix_tree.column("typed", width=230)
-        self.fix_tree.column("times", width=50, anchor="center")
+        self.fix_tree.column("heard", width=190)
+        self.fix_tree.column("typed", width=270)
+        self.fix_tree.column("times", width=60, anchor="center")
         self.fix_buttons = ttk.Frame(box)
         ttk.Button(self.fix_buttons, text="Add to Auto Text",
                    command=self._fix_add).pack(side="left")
         ttk.Button(self.fix_buttons, text="Dismiss",
-                   command=self._fix_dismiss).pack(side="left", padx=6)
+                   command=self._fix_dismiss).pack(side="left", padx=8)
         self._fix_render()
 
     def _dict_add(self):
@@ -668,45 +864,42 @@ class _SettingsWindow:
         self._fix_render()
 
     def _tab_dictation(self, f):
-        cleanup_box = ttk.LabelFrame(f, text="Dictation style", padding=10)
-        cleanup_box.pack(fill="x")
+        cleanup_box = self._section(f, "Dictation style", first=True)
         self.var_cleanup = tk.StringVar(value=config.CLEANUP_MODE)
         ttk.Radiobutton(
             cleanup_box, text="Cleaned up: removes fillers, slips and "
                     "repetitions. Keeps the meaning unchanged.",
             variable=self.var_cleanup, value="cleaned_up",
             command=self._update_example,
-        ).pack(anchor="w", pady=4)
+        ).pack(anchor="w", pady=2)
         ttk.Radiobutton(
             cleanup_box, text="As spoken: types every word exactly as spoken.",
             variable=self.var_cleanup, value="as_spoken",
             command=self._update_example,
-        ).pack(anchor="w", pady=4)
+        ).pack(anchor="w", pady=2)
 
-        example_box = ttk.LabelFrame(cleanup_box, text="Example", padding=10)
-        example_box.pack(fill="x", pady=(8, 0))
-        ttk.Label(example_box, text="You said:").pack(anchor="w")
-        ttk.Label(example_box, text=_EXAMPLE_SPOKEN, wraplength=480,
-                  style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
-        ttk.Label(example_box, text="Appears on screen:").pack(anchor="w")
-        self.example_label = ttk.Label(example_box, text="", wraplength=480)
+        example_box = ttk.Frame(cleanup_box, style="Card.TFrame", padding=(14, 10))
+        example_box.pack(fill="x", pady=(10, 0))
+        ttk.Label(example_box, text="Example", style="CardTitle.TLabel").pack(
+            anchor="w", pady=(0, 4))
+        ttk.Label(example_box, text="You said:", style="Card.TLabel").pack(anchor="w")
+        ttk.Label(example_box, text=_EXAMPLE_SPOKEN, wraplength=520,
+                  style="CardMuted.TLabel").pack(anchor="w", pady=(0, 6))
+        ttk.Label(example_box, text="Appears on screen:", style="Card.TLabel").pack(anchor="w")
+        self.example_label = ttk.Label(example_box, text="", wraplength=520,
+                                       style="Card.TLabel")
         self.example_label.pack(anchor="w")
         self._update_example()
 
-        history_box = ttk.LabelFrame(f, text="History", padding=10)
-        history_box.pack(fill="x", pady=(16, 0))
+        history_box = self._section(f, "History")
         self.var_history = tk.BooleanVar(value=config.ENABLE_HISTORY)
-        ttk.Checkbutton(
-            history_box, text="Keep a history of what I've dictated",
-            variable=self.var_history,
-        ).pack(anchor="w")
-        ttk.Label(
-            history_box, style="Muted.TLabel",
-            text="Saved only on this device. Nothing is sent anywhere.",
-        ).pack(anchor="w", pady=(2, 8))
+        row = self._setting_row(history_box, "Keep a history of what I've dictated",
+                                "Saved only on this device. Nothing is sent anywhere.")
+        ttk.Checkbutton(row, variable=self.var_history,
+                        style="Switch.TCheckbutton").grid(row=0, column=1, sticky="e")
         ttk.Button(
             history_box, text="View history…", command=self._open_history_viewer,
-        ).pack(anchor="w")
+        ).pack(anchor="w", pady=(8, 0))
 
     def _update_example(self):
         clean = self.var_cleanup.get() == "cleaned_up"
@@ -758,62 +951,53 @@ class _SettingsWindow:
         ttk.Button(bar, text="Close", command=win.destroy).pack(side="right")
 
     def _tab_hotkeys(self, f):
-        # Two keys, two sections: which key you hold picks the kind of
-        # dictation, every time -- no mode to switch or turn off.
-        normal = ttk.LabelFrame(f, text="Regular dictation", padding=10)
-        normal.pack(fill="x")
-        row = ttk.Frame(normal)
-        row.pack(anchor="w")
+        # Two keys: which one you hold picks the kind of dictation, every
+        # time -- no mode to switch or turn off.
+        keys = self._section(f, "Keys", first=True)
+        ttk.Label(keys, style="Muted.TLabel",
+                  text="Click a key to change it, then hold the key(s) you want.").pack(
+            anchor="w", pady=(0, 4))
+        row = self._setting_row(keys, "Regular dictation",
+                                "For emails, messages and anything in sentences.")
         self.hotkey_btn = ttk.Button(
             row, text=_hotkey_display(config.HOTKEY), command=self._capture_hotkey
         )
-        self.hotkey_btn.pack(side="left")
-        ttk.Label(row, text="  Click to change, then hold the key(s) you want.",
-                  style="Muted.TLabel").pack(side="left")
-        ttk.Label(
-            normal, wraplength=500, style="Muted.TLabel",
-            text="For emails, messages and anything in sentences.",
-        ).pack(anchor="w", pady=(6, 0))
-
-        code = ttk.LabelFrame(f, text="Code dictation", padding=10)
-        code.pack(fill="x", pady=(12, 0))
-        dev_row = ttk.Frame(code)
-        dev_row.pack(anchor="w")
+        self.hotkey_btn.grid(row=0, column=1, sticky="e")
+        row = self._setting_row(keys, "Code dictation",
+                                "For SQL, terminal commands and code.")
         self.dev_hotkey_btn = ttk.Button(
-            dev_row,
+            row,
             text=_hotkey_display(config.DEV_HOTKEY) if config.DEV_HOTKEY else "Not set",
             command=lambda: self._capture_hotkey("dev"),
         )
-        self.dev_hotkey_btn.pack(side="left")
-        ttk.Label(dev_row, text="  Click to change, then hold the key(s) you want.",
-                  style="Muted.TLabel").pack(side="left")
+        self.dev_hotkey_btn.grid(row=0, column=1, sticky="e")
         ttk.Label(
-            code, wraplength=500, style="Muted.TLabel",
-            text="For SQL, terminal commands and code: “select star from users "
-                 "where id equals five” types SELECT * FROM users WHERE id = 5.",
-        ).pack(anchor="w", pady=(6, 0))
-        help_link = ttk.Label(code, text="How to say code…", cursor="hand2",
-                              foreground=self._link)
-        help_link.pack(anchor="w", pady=(6, 0))
-        help_link.bind("<Button-1>", lambda e: self._show_dev_help())
+            keys, wraplength=560, style="Muted.TLabel",
+            text="“select star from users where id equals five” types "
+                 "SELECT * FROM users WHERE id = 5.",
+        ).pack(anchor="w", pady=(4, 0))
+        help_link = ttk.Label(keys, text="How to say code…", cursor="hand2",
+                              foreground=self._link, takefocus=True)
+        help_link.pack(anchor="w", pady=(4, 0))
+        for seq in ("<Button-1>", "<Return>", "<space>"):
+            help_link.bind(seq, lambda e: self._show_dev_help())
 
         # Applies to both hotkeys. Toggle is for long dictations where
         # holding a key the whole time gets tiring.
-        style_box = ttk.LabelFrame(f, text="How the hotkeys work", padding=10)
-        style_box.pack(fill="x", pady=(12, 0))
+        style_box = self._section(f, "How the hotkeys work")
         self.var_hotkey_mode = tk.StringVar(
             value="toggle" if config.HOTKEY_MODE == "toggle" else "hold"
         )
         ttk.Radiobutton(
             style_box, variable=self.var_hotkey_mode, value="hold",
             text="Hold to talk: hold the key while speaking, release to insert",
-        ).pack(anchor="w")
+        ).pack(anchor="w", pady=2)
         ttk.Radiobutton(
             style_box, variable=self.var_hotkey_mode, value="toggle",
             text="Tap to start, tap again to stop and insert",
-        ).pack(anchor="w", pady=(4, 0))
+        ).pack(anchor="w", pady=2)
         ttk.Label(
-            style_box, wraplength=500, style="Muted.TLabel",
+            style_box, wraplength=560, style="Muted.TLabel",
             text="Holding still works in tap mode. Listening stops by itself "
                  f"after {config.TOGGLE_MAX_SECONDS // 60} minutes. Press Esc "
                  "to cancel a dictation without typing it.",
@@ -913,7 +1097,7 @@ class _SettingsWindow:
         keyboard.Listener(on_press=on_press, on_release=on_release).start()
 
     def _tab_audio(self, f):
-        ttk.Label(f, text="Microphone:").pack(anchor="w")
+        mic = self._section(f, "Microphone", first=True)
         self._audio_values = [None]
         names = ["System default"]
         try:
@@ -930,14 +1114,14 @@ class _SettingsWindow:
         except Exception:
             pass
 
-        self.audio_combo = ttk.Combobox(f, values=names, state="readonly", width=48)
+        self.audio_combo = ttk.Combobox(mic, values=names, state="readonly", width=52)
         try:
             self.audio_combo.current(self._audio_values.index(config.INPUT_DEVICE))
         except ValueError:
             self.audio_combo.current(0)
-        self.audio_combo.pack(anchor="w", pady=6)
+        self.audio_combo.pack(anchor="w", pady=(2, 6))
         ttk.Label(
-            f, wraplength=520, style="Muted.TLabel",
+            mic, wraplength=560, style="Muted.TLabel",
             text="If dictation hears nothing, the wrong microphone is "
                  "selected. Takes effect from the next dictation.",
         ).pack(anchor="w")
@@ -947,24 +1131,23 @@ class _SettingsWindow:
         self.var_space = tk.BooleanVar(value=config.APPEND_SPACE)
         self.var_enter = tk.BooleanVar(value=config.PRESS_ENTER_AFTER)
 
-        box1 = ttk.LabelFrame(f, text="Destination", padding=10)
-        box1.pack(fill="x", pady=(0, 10))
+        box1 = self._section(f, "Destination", first=True)
         ttk.Radiobutton(box1, text="Type into the active application",
                         variable=self.var_insert, value="type").pack(anchor="w", pady=2)
         ttk.Radiobutton(box1, text="Copy to clipboard only",
                         variable=self.var_insert, value="clipboard").pack(anchor="w", pady=2)
 
-        box2 = ttk.LabelFrame(f, text="After dictation", padding=10)
-        box2.pack(fill="x")
-        ttk.Checkbutton(box2, text="Add a space after the inserted text",
-                        variable=self.var_space).pack(anchor="w", pady=2)
-        ttk.Checkbutton(box2, text="Press Enter after inserting the text",
-                        variable=self.var_enter).pack(anchor="w", pady=2)
+        box2 = self._section(f, "After dictation")
+        for text, var in (("Add a space after the inserted text", self.var_space),
+                          ("Press Enter after inserting the text", self.var_enter)):
+            row = self._setting_row(box2, text)
+            ttk.Checkbutton(row, variable=var,
+                            style="Switch.TCheckbutton").grid(row=0, column=1, sticky="e")
         ttk.Label(
-            f, wraplength=520, style="Muted.TLabel",
-            text="\nUndo: press Ctrl+Z in the target application. Each "
+            box2, wraplength=560, style="Muted.TLabel",
+            text="Undo: press Ctrl+Z in the target application. Each "
                  "dictation is inserted as a single edit.",
-        ).pack(anchor="w")
+        ).pack(anchor="w", pady=(10, 0))
 
     # Local models (General > Processing > Local). Worker threads only write _model_ops / _model_errors;
     # a ~300ms poll loop on the Tk thread reads them and is the only thing
@@ -976,7 +1159,7 @@ class _SettingsWindow:
         self._tiles = {}
 
         tiles_row = ttk.Frame(f)
-        tiles_row.pack(fill="x", pady=(0, 6))
+        tiles_row.pack(fill="x", pady=(2, 6))
         # Column count follows however many tiers exist (just Fast right
         # now, since Accurate was removed) rather than assuming two, so a
         # single tile spans the full width instead of leaving an awkward
@@ -987,22 +1170,22 @@ class _SettingsWindow:
         for col in range(n_tiles + 1):
             tiles_row.columnconfigure(col, weight=1, uniform="tile")
         for col, (tier, info) in enumerate(model_manager.MODELS.items()):
-            box = ttk.LabelFrame(
-                tiles_row, text=f"{info['label']} - {info['tagline']}", padding=(10, 6)
-            )
+            box = ttk.Frame(tiles_row, style="Card.TFrame", padding=(12, 10))
             box.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 12, 0))
-            latency = ttk.Label(box, text=info["latency"], style="Muted.TLabel",
+            ttk.Label(box, text=f"{info['label']} - {info['tagline']}",
+                      style="CardTitle.TLabel").pack(anchor="w")
+            latency = ttk.Label(box, text=info["latency"], style="CardMuted.TLabel",
                                  wraplength=225)
             latency.pack(anchor="w")
             # Status and version share a line ("Downloaded.  Version 1").
-            state_row = ttk.Frame(box)
+            state_row = ttk.Frame(box, style="CardBody.TFrame")
             state_row.pack(anchor="w")
-            status = ttk.Label(state_row, text="")
+            status = ttk.Label(state_row, text="", style="Card.TLabel")
             status.pack(side="left")
-            version_label = ttk.Label(state_row, text="", style="Muted.TLabel")
+            version_label = ttk.Label(state_row, text="", style="CardMuted.TLabel")
             version_label.pack(side="left", padx=(8, 0))
             bar = ttk.Progressbar(box, mode="indeterminate", length=180)
-            btn_row = ttk.Frame(box)
+            btn_row = ttk.Frame(box, style="CardBody.TFrame")
             btn_row.pack(anchor="w", pady=(6, 0))
             action = ttk.Button(btn_row)
             delete = ttk.Button(
@@ -1032,16 +1215,17 @@ class _SettingsWindow:
         self._poll_models()
 
     def _build_grammar_section(self, f):
-        box = ttk.LabelFrame(f, text="Optimize Narration", padding=(10, 6))
+        box = ttk.Frame(f, style="Card.TFrame", padding=(12, 10))
+        ttk.Label(box, text="Optimize Narration", style="CardTitle.TLabel").pack(anchor="w")
         ttk.Label(
             box,
             text="Fix grammar and punctuation",
-            style="Muted.TLabel", wraplength=220,
+            style="CardMuted.TLabel", wraplength=220,
         ).pack(anchor="w")
-        status = ttk.Label(box, text="", wraplength=225)
+        status = ttk.Label(box, text="", wraplength=225, style="Card.TLabel")
         status.pack(anchor="w")
         bar = ttk.Progressbar(box, mode="indeterminate", length=240)
-        btn_row = ttk.Frame(box)
+        btn_row = ttk.Frame(box, style="CardBody.TFrame")
         btn_row.pack(anchor="w", pady=(6, 0))
         download = ttk.Button(
             btn_row, text="Download", command=self._grammar_download
@@ -1348,24 +1532,27 @@ class _SettingsWindow:
             self._model_delete_worker(tier, size)
 
     def _tab_about(self, f):
-        ttk.Label(f, text=f"“{APP_NAME}”").pack(anchor="w")
-        ttk.Label(f, text=f"Version {__version__}").pack(anchor="w")
-        row = ttk.Frame(f)
-        row.pack(fill="x", pady=(4, 10))
+        ver = self._section(f, "Version", first=True)
+        row = ttk.Frame(ver)
+        row.pack(fill="x")
+        row.columnconfigure(0, weight=1)
+        text = ttk.Frame(row)
+        text.grid(row=0, column=0, sticky="w")
+        ttk.Label(text, text=f"{APP_NAME} {__version__}").pack(anchor="w")
+        self.check_updates_label = ttk.Label(
+            text, style="Muted.TLabel", text="", wraplength=380
+        )
+        self.check_updates_label.pack(anchor="w")
         self.check_updates_btn = ttk.Button(
             row, text="Check for updates", command=self._check_updates
         )
-        self.check_updates_btn.pack(side="left")
-        self.check_updates_label = ttk.Label(
-            row, style="Muted.TLabel", text="", wraplength=360
-        )
-        self.check_updates_label.pack(side="left", padx=(10, 0))
-        box = ttk.LabelFrame(f, text="Privacy", padding=10)
-        box.pack(fill="x")
+        self.check_updates_btn.grid(row=0, column=1, sticky="e")
+
+        box = self._section(f, "Privacy")
         # Short on purpose (2026-10-27, user request); the details --
         # history, feedback, diagnostics -- are in PRIVACY.md.
         ttk.Label(
-            box, wraplength=500,
+            box, wraplength=560,
             text="Cloud sends your audio, and the text just before the "
                  "cursor, to a server for processing. Nothing is kept unless "
                  "you turn on diagnostic data below. Local keeps everything "
@@ -1378,27 +1565,24 @@ class _SettingsWindow:
         for seq in ("<Button-1>", "<Return>", "<space>"):
             link.bind(seq, open_policy)
 
-        diag = ttk.LabelFrame(f, text="Diagnostic data", padding=10)
-        diag.pack(fill="x", pady=(10, 0))
+        diag = self._section(f, "Diagnostic data")
         self.var_diagnostics = tk.BooleanVar(value=config.SEND_DIAGNOSTICS)
         ttk.Radiobutton(
             diag, text="Send diagnostic data to help fix problems",
             variable=self.var_diagnostics, value=True,
             command=self._diagnostics_changed,
-        ).pack(anchor="w")
+        ).pack(anchor="w", pady=2)
         ttk.Radiobutton(
             diag, text="Don't send diagnostic data",
             variable=self.var_diagnostics, value=False,
-        ).pack(anchor="w")
+        ).pack(anchor="w", pady=2)
         ttk.Label(
-            diag, wraplength=500, style="Muted.TLabel",
+            diag, wraplength=560, style="Muted.TLabel",
             text="Diagnostic data is what you said, what was typed, and the "
                  "recording of each dictation. It goes to Sumit only, is "
                  "kept for 30 days, then deleted. Your diagnostic ID: "
                  + feedback.install_id()[:8],
         ).pack(anchor="w", pady=(4, 0))
-
-        self._build_feedback_section(f)
 
     def _check_updates(self):
         self.check_updates_btn.config(state="disabled")
@@ -1439,20 +1623,21 @@ class _SettingsWindow:
             self.var_diagnostics.set(False)
 
     def _build_feedback_section(self, f):
-        box = ttk.LabelFrame(f, text="Feedback", padding=10)
-        box.pack(fill="x", pady=(10, 0))
+        box = f
         ttk.Label(
             box, wraplength=500, style="Muted.TLabel",
             text="Send a message straight to Sumit. A reply, if there is "
                  "one, will show up here.",
         ).pack(anchor="w")
         self.feedback_text = tk.Text(
-            box, height=4, wrap="word", font=("Segoe UI", 9),
+            box, height=8, wrap="word", font=("Segoe UI", 10),
             bg=self._field, fg=self._fg, insertbackground=self._fg,
             selectbackground=self._accent, selectforeground=self._accent_fg,
-            relief="solid", borderwidth=1,
+            relief="flat", borderwidth=0, padx=8, pady=6,
+            highlightthickness=1, highlightbackground=self._border,
+            highlightcolor=self._link,
         )
-        self.feedback_text.pack(fill="x", pady=(6, 4))
+        self.feedback_text.pack(fill="x", pady=(8, 8))
         row = ttk.Frame(box)
         row.pack(anchor="w")
         self.feedback_send_btn = ttk.Button(
@@ -1481,7 +1666,7 @@ class _SettingsWindow:
             reply_box = ttk.Frame(box)
             reply_box.pack(fill="x", pady=(10, 0))
             ttk.Label(reply_box, text="Sumit replied:",
-                      font=("Segoe UI", 9, "bold")).pack(anchor="w")
+                      style="Sub.TLabel").pack(anchor="w")
             ttk.Label(reply_box, text=config.FEEDBACK_LAST_REPLY,
                       wraplength=500).pack(anchor="w")
 
