@@ -145,9 +145,19 @@ def _at_prompt(before):
     return bool(line) and _PROMPT.fullmatch(line) is not None
 
 
+# A hand-typed list marker right before the cursor: "2)", "3.", "1-",
+# and "b)" after a line start or a full stop. (User report 2026-10-31:
+# "...sounds fine. 2) put a remaining first" -- the item came out lowercase.)
+_LIST_MARKER = re.compile(
+    r"(?:^|\s)\d{1,2}[.)]$"
+    r"|(?:^|[\r\n]|[.!?:❯>]\s+)(?:\d{1,2}-|[A-Za-z][.)])$")
+
+
 def _sentence_starts_after(before):
     s = before.rstrip(" \t ")
     if not s or s[-1] in "\r\n":
+        return True
+    if _LIST_MARKER.search(s):
         return True
     s = s.rstrip(_CLOSERS) or s
     return s[-1] in _SENTENCE_END or s.endswith("•")
@@ -191,6 +201,8 @@ def fit_to_cursor(text, before, after):
         text = lowercase_start(text.lstrip())
         if before and not before[-1].isspace() and before[-1] not in _OPENERS:
             text = " " + text
+    elif not is_list and before and _LIST_MARKER.search(before):
+        text = " " + text.lstrip()  # "2)" typed right before the cursor
     if (not is_list and _continues_sentence(after)
             and text.endswith(".") and not text.endswith("..")):
         text = text[:-1]

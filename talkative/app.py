@@ -6,7 +6,7 @@ import time
 import numpy as np
 from pynput import keyboard
 
-from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, model_manager, onboarding, paste_target, pill, screen_context, settings, temp_cleanup, try_it_now, updater
+from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, mic_warmup, model_manager, onboarding, paste_target, pill, screen_context, settings, temp_cleanup, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -74,6 +74,12 @@ def _debug_log(**stages):
                 f.write(f"  {name}: {value!r}\n")
     except Exception:
         pass
+
+
+def _short_mic(name):
+    """'Microphone (Creative Live! Cam' -> 'Creative Live! Cam'."""
+    inner = name.split("(", 1)[1] if "(" in name else name
+    return inner.rstrip(") ").strip() or name
 
 
 def _audio_summary(audio, sample_rate, reason):
@@ -199,12 +205,22 @@ class TalkativeApp:
         """Tray menu -> Microphone. Same effect as Settings -> Audio: saved,
         and used from the next dictation."""
         config.INPUT_DEVICE = index
-        self.recorder.device = index
+        self._use_mic(index)
         settings.save({"input_device": index})
+
+    def _use_mic(self, index):
+        """Switch the recorder to another mic and check how fast that one
+        starts (a stream still open for the old one is closed first)."""
+        if self.recorder.device == index:
+            return
+        self.recorder.device = index
+        if self.recorder.lingering():
+            self.recorder.close()
+        threading.Thread(target=self._probe_mic, daemon=True).start()
 
     def _apply_settings(self):
         sync_autostart()
-        self.recorder.device = config.INPUT_DEVICE
+        self._use_mic(config.INPUT_DEVICE)
         self._hotkey_pressed.clear()
         self._chord_active = False
         self._refresh_hotkey_label()
@@ -683,6 +699,7 @@ class TalkativeApp:
         else:
             wait = config.MIC_CHECK_SECONDS  # fall back to asking
         applied = audio_devices.capture_state()
+        threading.Thread(target=self._probe_mic, daemon=True).start()
         while self._running:
             self._mic_event.wait(wait)
             if not self._running:
@@ -709,8 +726,60 @@ class TalkativeApp:
                     # Renumbered, or gone (None: back to the Windows default).
                     config.INPUT_DEVICE = self.recorder.device
                     settings.save({"input_device": self.recorder.device})
+                if not force:
+                    # A different mic may start differently.
+                    threading.Thread(target=self._probe_mic, daemon=True).start()
             except Exception:
                 logging.getLogger(__name__).exception("microphone reload failed")
+
+    def _observe_mic(self, audio, cold):
+        """Did this dictation show the mic sending silence at first
+        (cut-off first word)? Two of three cold starts that did: slow."""
+        try:
+            if mic_warmup.observe(self.recorder.device, audio, cold, config.SAMPLE_RATE):
+                self._tell_slow_mic()
+        except Exception:
+            logging.getLogger(__name__).exception("slow mic check failed")
+
+    def _probe_mic(self):
+        """Measure how fast the mic Talkative uses starts (mic_warmup):
+        at startup and after a microphone change, never before the user
+        has chosen Cloud or Local (nothing is recorded until then)."""
+        if not config.ONBOARDING_DONE or not self._running:
+            return
+        try:
+            # Another app holding the mic open (or a stream of our own)
+            # makes it look fast, so a fast result is checked once more.
+            for attempt in range(2):
+                if attempt:
+                    time.sleep(config.SLOW_MIC_RECHECK_SECONDS)
+                    if not self._running:
+                        return
+                mic_warmup.probe(
+                    self.recorder.device,
+                    recorder_busy=lambda: self._recording or self.recorder._stream is not None)
+                if mic_warmup.is_slow(self.recorder.device):
+                    self._tell_slow_mic()
+                    return
+        except Exception:
+            logging.getLogger(__name__).exception("microphone start-up check failed")
+
+    def _tell_slow_mic(self):
+        """Say once per microphone that it starts slowly and what
+        Talkative does about it."""
+        name = mic_warmup.device_key(self.recorder.device)
+        if not name or name in config.SLOW_MIC_NOTIFIED:
+            return
+        ms = mic_warmup.slow_ms(self.recorder.device) or config.SLOW_MIC_MS
+        config.SLOW_MIC_NOTIFIED = list(config.SLOW_MIC_NOTIFIED) + [name]
+        settings.save({"slow_mic_notified": config.SLOW_MIC_NOTIFIED})
+        minutes = round(config.SLOW_MIC_KEEP_SECONDS / 60)
+        self.tray.notify(
+            f"Your microphone ({_short_mic(name)}) takes about {ms / 1000:.1f} s "
+            f"to start, which cut off first words. Talkative now keeps it ready "
+            f"for {minutes} minutes after each dictation. A faster microphone "
+            f"(Settings > Audio, or the tray menu) fixes it fully."
+        )
 
     def _check_blank(self, audio):
         """A recording with no signal at all means the microphone gave
@@ -800,8 +869,17 @@ class TalkativeApp:
         self.tray.set_idle()
         # A dictation that will be typed keeps the mic open for a quick
         # re-press (audio_recorder: the first word of a continuation).
-        audio = self.recorder.stop(linger=config.CONTINUE_SECONDS if process else 0)
+        # A slow-starting mic stays open longer (mic_warmup), so the next
+        # dictation doesn't lose its first word to the mic waking up.
+        cold = getattr(self.recorder, "cold", False)
+        linger = 0
+        if process:
+            slow = mic_warmup.is_slow(getattr(self.recorder, "device", None))
+            linger = config.SLOW_MIC_KEEP_SECONDS if slow else config.CONTINUE_SECONDS
+        audio = self.recorder.stop(linger=linger)
         duration = time.time() - self._record_start_time
+        if process and duration >= config.MIN_RECORDING_SECONDS:
+            self._observe_mic(audio, cold)
 
         if not process or duration < config.MIN_RECORDING_SECONDS:
             pill.hide()

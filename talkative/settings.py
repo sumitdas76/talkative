@@ -75,6 +75,7 @@ _KEYS = {
     # Not in the settings UI: 0.0 turns the mic pre-roll off.
     "preroll_seconds": "PREROLL_SECONDS",
     "fit_to_cursor": "FIT_TO_CURSOR",
+    "slow_mic_notified": "SLOW_MIC_NOTIFIED",
 }
 
 # Keys handled outside the type-checked table.

@@ -132,10 +132,16 @@ def _interfaces():
 
 
 def _friendly_name(device):
-    key = _PROPERTYKEY()
     # PKEY_Device_FriendlyName {a45c254e-df1c-4efd-8020-67d146a850e0}, 14
+    return _device_string(device, 14)
+
+
+def _device_string(device, pid):
+    """A string property from the {a45c254e-...} (PKEY_Device_*) set:
+    14 = friendly name, 24 = enumerator ("USB", "BTHENUM", ...)."""
+    key = _PROPERTYKEY()
     ctypes.memmove(key.fmtid, bytes.fromhex("4e255ca41cdffd4e802067d146a850e0"), 16)
-    key.pid = 14
+    key.pid = pid
     store = device.OpenPropertyStore(0)  # STGM_READ
     var = _PROPVARIANT()
     store.GetValue(byref(key), byref(var))
@@ -190,6 +196,28 @@ def capture_state():
     except Exception:
         logging.warning("Could not read the microphone list", exc_info=True)
         return None
+
+
+def input_is_bluetooth(name):
+    """Is the microphone called `name` (a sounddevice name, which MME cuts
+    at 31 characters; or the sound mapper = the Windows default) connected
+    over Bluetooth? Windows' endpoint says so in its enumerator name
+    (BTHENUM / BTHHFENUM; USB mics say "USB"). False when unsure."""
+    try:
+        com = _interfaces()
+        com["comtypes"].CoInitialize()
+        enum = com["comtypes"].CoCreateInstance(
+            com["enumerator_clsid"], interface=com["IMMDeviceEnumerator"])
+        if "sound mapper" in name.lower() or "primary sound" in name.lower():
+            devices = [enum.GetDefaultAudioEndpoint(_E_CAPTURE, 0)]
+        else:
+            coll = enum.EnumAudioEndpoints(_E_CAPTURE, _DEVICE_STATE_ACTIVE)
+            devices = [coll.Item(i) for i in range(coll.GetCount())]
+            devices = [d for d in devices if _friendly_name(d).startswith(name)]
+        return any(_device_string(d, 24).upper().startswith("BTH") for d in devices)
+    except Exception:
+        logging.warning("Could not tell whether the microphone is Bluetooth", exc_info=True)
+        return False
 
 
 def default_mic_muted():

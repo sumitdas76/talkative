@@ -50,6 +50,9 @@ class AudioRecorder:
         self.chunks = 0
         self.last_chunk = 0.0
         self.peak = 0.0
+        # Did this recording open the microphone from cold? (mic_warmup:
+        # only those say anything about how fast it starts.)
+        self.cold = False
 
     def _callback(self, indata, frames, time_info, status):
         chunk = indata.copy()
@@ -82,6 +85,7 @@ class AudioRecorder:
 
     def start(self):
         self.chunks, self.last_chunk, self.peak = 0, time.monotonic(), 0.0
+        self.cold = False
         with PA_LOCK:
             if self.lingering() and self._stream_device == self.device:
                 self._cancel_close()
@@ -95,6 +99,7 @@ class AudioRecorder:
             self._close_now()
             self._frames = []
             self._recording = True
+            self.cold = True
             self._stream = sd.InputStream(
                 samplerate=self.sample_rate,
                 channels=self.channels,

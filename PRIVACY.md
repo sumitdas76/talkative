@@ -85,6 +85,18 @@ Things that happen in both modes
   mode sent) if you press the hotkey again within the 4 seconds; then it
   becomes the start of that dictation. Otherwise it is discarded when
   the microphone closes. Windows' microphone icon shows this.
+- Some microphones (often webcams) send silence for their first few
+  tenths of a second, which cut off the first word. To find out, when
+  Talkative starts (and when you change microphones) it opens the
+  microphone it will use for about one second and measures how long
+  that silence lasts. The sound itself is thrown away at once; only the
+  measurement is kept, and only in memory. Bluetooth microphones are not
+  checked this way, and nothing is checked before you've picked Cloud or
+  Local. If your microphone starts slowly, it stays open for 5 minutes
+  after each dictation instead of 4 seconds, in the same way as above:
+  only the last three-quarters of a second is kept in memory, and it is
+  only used if you press the hotkey again in that time. Windows'
+  microphone icon shows both.
 
 - Update checks, once a day. Talkative downloads a small public file
   from GitHub to see whether a newer app version or model update

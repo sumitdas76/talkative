@@ -53,6 +53,22 @@ PREROLL_SECONDS = 0.75
 # only, in both modes. Settings key "fit_to_cursor".
 FIT_TO_CURSOR = True
 
+# Slow-starting microphones (mic_warmup.py): some send pure silence for
+# their first few hundred ms, which cut off the first word. One whose
+# start-up silence is at least SLOW_MIC_MS stays open
+# SLOW_MIC_KEEP_SECONDS after each dictation instead of CONTINUE_SECONDS
+# (only PREROLL_SECONDS held in memory, as for a re-press). Checked for
+# SLOW_MIC_PROBE_SECONDS at startup and on microphone changes (audio
+# thrown away). SLOW_MIC_ONSET_RMS: the level that counts as speech in
+# a dictation's first 50 ms of sound. SLOW_MIC_NOTIFIED: microphones the
+# user was already told about (settings key "slow_mic_notified").
+SLOW_MIC_MS = 150.0
+SLOW_MIC_KEEP_SECONDS = 300.0
+SLOW_MIC_PROBE_SECONDS = 1.0
+SLOW_MIC_RECHECK_SECONDS = 15.0
+SLOW_MIC_ONSET_RMS = 0.02
+SLOW_MIC_NOTIFIED = []
+
 # Presses shorter than this are treated as accidental taps and discarded.
 MIN_RECORDING_SECONDS = 0.3
 
