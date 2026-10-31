@@ -199,8 +199,18 @@ def check_fresh_launch(exe):
     crashed = [w for w in wins if "exception" in w.lower()]
     record("B3", "EXE starts without a crash dialog", "FAIL" if crashed or not wins else "PASS",
            crashed[0] if crashed else ("no window within 90 s" if not wins else ""))
-    ok = wins == ["Talkative"] and before == after
-    detail = f"windows {wins}" + ("" if before == after else "; Windows startup list CHANGED")
+    # A fresh launch must never ADD or CHANGE a startup entry. It may remove
+    # an existing "Talkative" value: the isolated LOCALAPPDATA has default
+    # settings (start_with_windows off) and sync_autostart mirrors them into
+    # the shared HKCU Run key. The real copy re-adds it at its next launch.
+    changed = {n for n, v in after.items() if before.get(n) != v}
+    removed = set(before) - set(after)
+    ok = wins == ["Talkative"] and not changed and removed <= {"Talkative"}
+    detail = f"windows {wins}"
+    if changed or removed - {"Talkative"}:
+        detail += f"; Windows startup list CHANGED: {sorted(changed | removed)}"
+    elif removed:
+        detail += "; removed this PC's Talkative startup entry (default settings) -- relaunch the real copy to restore it"
     record("F1", "Fresh launch: exactly one window, startup list untouched", "PASS" if ok else "FAIL", detail)
 
 
