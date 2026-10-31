@@ -77,12 +77,6 @@ def _debug_log(**stages):
         pass
 
 
-def _short_mic(name):
-    """'Microphone (Creative Live! Cam' -> 'Creative Live! Cam'."""
-    inner = name.split("(", 1)[1] if "(" in name else name
-    return inner.rstrip(") ").strip() or name
-
-
 def _ready_note(recorder, cold):
     """debug.log: when a cold microphone first sent sound (the mic-ready
     cue lit up then)."""
@@ -579,6 +573,7 @@ class TalkativeApp:
         self._live_warned = False
         self.tray.set_recording()
         pill.show(lambda: self.recorder.level, getattr(self.recorder, "is_ready", None))
+        self._slow_mic_hint()
         threading.Thread(target=self._check_mute, args=(self._recording_id,),
                          daemon=True).start()
         if self._cloud_active():
@@ -779,8 +774,7 @@ class TalkativeApp:
         """Did this dictation show the mic sending silence at first
         (cut-off first word)? Two of three cold starts that did: slow."""
         try:
-            if mic_warmup.observe(self.recorder.device, audio, cold, config.SAMPLE_RATE):
-                self._tell_slow_mic()
+            mic_warmup.observe(self.recorder.device, audio, cold, config.SAMPLE_RATE)
         except Exception:
             logging.getLogger(__name__).exception("slow mic check failed")
 
@@ -802,27 +796,32 @@ class TalkativeApp:
                     self.recorder.device,
                     recorder_busy=lambda: self._recording or self.recorder._stream is not None)
                 if mic_warmup.is_slow(self.recorder.device):
-                    self._tell_slow_mic()
-                    return
+                    return  # said at the next press (_slow_mic_hint)
         except Exception:
             logging.getLogger(__name__).exception("microphone start-up check failed")
 
-    def _tell_slow_mic(self):
-        """Say once per microphone that it starts slowly and what
-        Talkative does about it."""
-        name = mic_warmup.device_key(self.recorder.device)
-        if not name or name in config.SLOW_MIC_NOTIFIED:
-            return
-        ms = mic_warmup.slow_ms(self.recorder.device) or config.SLOW_MIC_MS
-        config.SLOW_MIC_NOTIFIED = list(config.SLOW_MIC_NOTIFIED) + [name]
-        settings.save({"slow_mic_notified": config.SLOW_MIC_NOTIFIED})
-        minutes = round(config.SLOW_MIC_KEEP_SECONDS / 60)
-        self.tray.notify(
-            f"Your microphone ({_short_mic(name)}) takes about {ms / 1000:.1f} s "
-            f"to start, which cut off first words. Talkative now keeps it ready "
-            f"for {minutes} minutes after each dictation. A faster microphone "
-            f"(Settings > Audio & Output, or the tray) fixes it."
-        )
+    def _slow_mic_hint(self):
+        """First press with a microphone found slow: say so right above
+        the listening line, where the user is looking as they start to
+        talk (user request 2026-10-31; was a tray notice when the mic was
+        found slow, easy to miss and away from the moment it matters).
+        Once per microphone. Never breaks the press."""
+        try:
+            device = self.recorder.device
+            if not mic_warmup.is_slow(device):
+                return
+            name = mic_warmup.device_key(device)
+            if not name or name in config.SLOW_MIC_NOTIFIED:
+                return
+            ms = mic_warmup.slow_ms(device) or config.SLOW_MIC_MS
+            config.SLOW_MIC_NOTIFIED = list(config.SLOW_MIC_NOTIFIED) + [name]
+            settings.save({"slow_mic_notified": config.SLOW_MIC_NOTIFIED})
+            error_toast.show(
+                f"This microphone takes {ms / 1000:.1f} s to pick up sound. "
+                "Start speaking when the line below lights up.",
+                seconds=config.SLOW_MIC_HINT_SECONDS, info=True, at_line=True)
+        except Exception:
+            logging.getLogger(__name__).exception("slow mic hint failed")
 
     def _check_blank(self, audio):
         """A recording with no signal at all means the microphone gave
@@ -1310,7 +1309,6 @@ class TalkativeApp:
         gc.collect()  # release the model.bin mapping (updates move the files)
 
     def _insert_final(self, text, learn=True, press=None):
-        try_it_now.note_typed(text or "")  # the test box's "Not what I said"
         if not text:
             if getattr(self._job_blank, "value", False):
                 self._not_typed("No words were heard, so nothing was typed. If you "

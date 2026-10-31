@@ -117,7 +117,7 @@ class _Toast:
 
     # ---- public, called from any thread ----
 
-    def show(self, text, seconds=None, info=False):
+    def show(self, text, seconds=None, info=False, at_line=False):
         # Finding the text cursor is a UIA call into another app, which can
         # take a while: never on the caller's thread (it may be the
         # keyboard hook) and never on the overlay thread (the listening
@@ -127,7 +127,9 @@ class _Toast:
             seq = self._seq
 
         def job():
-            self._commands.put((text, seconds, info, _locate(), seq))
+            # at_line: about the listening line itself (a slow microphone),
+            # so shown just above it, not at the text cursor.
+            self._commands.put((text, seconds, info, None if at_line else _locate(), seq))
             # The poll loop stops while nothing is shown; the shared overlay
             # thread (which polls anyway) restarts it.
             self._overlay.build(self._wake)
@@ -288,14 +290,15 @@ def _get():
         return _toast
 
 
-def show(text, seconds=None, info=False):
+def show(text, seconds=None, info=False, at_line=False):
     """Flash `text` in a small topmost, non-activating box near the
-    text cursor for `seconds` (default 1.5), red, or dark with info=True.
+    text cursor (or, with at_line=True, just above the listening line) for
+    `seconds` (default 1.5), red, or dark with info=True.
     Safe from any thread; no-op on failure."""
     try:
         toast = _get()
         toast._ready.wait(timeout=3)
         if not toast._failed:
-            toast.show(text, seconds, info)
+            toast.show(text, seconds, info, at_line)
     except Exception:
         pass

@@ -117,31 +117,7 @@ def device_key(device):
 def is_slow(device):
     key = device_key(device)
     with _lock:
-        return key is not None and (key in _slow or key in _kept_by_user())
-
-
-def _kept_by_user():
-    v = config.KEEP_READY_MICS
-    return [k for k in v if isinstance(k, str)] if isinstance(v, list) else []
-
-
-def kept_by_user(device):
-    """Did the user report this mic cutting off first words?"""
-    key = device_key(device)
-    return key is not None and key in _kept_by_user()
-
-
-def keep_ready(device):
-    """The user said the start was cut off: keep this mic ready from now
-    on (saved). True if it was newly added."""
-    from . import settings
-    key = device_key(device)
-    if key is None or key in _kept_by_user():
-        return False
-    config.KEEP_READY_MICS = _kept_by_user() + [key]
-    settings.save({"keep_ready_mics": config.KEEP_READY_MICS})
-    log.info("Microphone %r kept ready (user reported a cut-off start)", key)
-    return True
+        return key is not None and key in _slow
 
 
 def slow_ms(device):
