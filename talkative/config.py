@@ -66,7 +66,7 @@ SLOW_MIC_MS = 150.0
 SLOW_MIC_KEEP_SECONDS = 300.0
 SLOW_MIC_PROBE_SECONDS = 1.0
 SLOW_MIC_RECHECK_SECONDS = 15.0
-SLOW_MIC_ONSET_RMS = 0.02
+SLOW_MIC_ONSET_RMS = 0.008
 SLOW_MIC_NOTIFIED = []
 
 # Presses shorter than this are treated as accidental taps and discarded.

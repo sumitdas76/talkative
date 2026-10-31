@@ -48,28 +48,56 @@ _measured = {}  # device key -> last start-up silence measured, any verdict
 _seen = collections.defaultdict(lambda: collections.deque(maxlen=3))
 
 
+def _dead_runs(a, sample_rate, min_ms):
+    """(starts, ends) sample indexes of digital-silence runs >= min_ms."""
+    dead = (np.abs(a) <= ZERO).astype(np.int8)
+    edges = np.diff(np.concatenate(([0], dead, [0])))
+    starts, ends = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
+    keep = (ends - starts) >= sample_rate * min_ms / 1000
+    return starts[keep], ends[keep]
+
+
 def leading_silence_ms(audio, sample_rate=16000):
-    """Milliseconds of exact zeros at the start of `audio`, or None when
-    the whole thing is zeros (can't tell: no sound reached it at all)."""
+    """Where the mic's start-up silence ends, in ms: the end of a run of
+    digital silence (>= 100 ms) that begins in the first 100 ms. 0 when
+    there is none; None when the silence lasts to the end (can't tell: no
+    sound reached it at all). Starting within 100 ms, not at sample 0:
+    the webcam sometimes sends ~40 ms of old buffer first, then ~270 ms
+    of silence (2026-10-31: "Can I go now..." -> "I go now...")."""
     a = np.asarray(audio).reshape(-1)
-    if not a.size:
+    if not a.size or not np.any(np.abs(a) > ZERO):
         return None
-    nz = np.flatnonzero(np.abs(a) > ZERO)
-    if not nz.size:
+    starts, ends = _dead_runs(a, sample_rate, 100)
+    early = np.flatnonzero(starts <= sample_rate * 0.1)
+    if not early.size:
+        return 0.0
+    end = ends[early[0]]
+    if end >= a.size:
         return None
-    return nz[0] * 1000.0 / sample_rate
+    return end * 1000.0 / sample_rate
 
 
 def loud_onset(audio, sample_rate=16000):
-    """Does the sound right after the leading zeros start at speaking
+    """Does the sound right after the start-up silence begin at speaking
     level? A mic that was simply quiet ramps up from room noise; one that
     cut the speaker off starts mid-word."""
     a = np.asarray(audio).reshape(-1)
-    nz = np.flatnonzero(np.abs(a) > ZERO)
-    if not nz.size:
+    ms = leading_silence_ms(a, sample_rate)
+    if ms is None:
         return False
-    win = a[nz[0]:nz[0] + int(sample_rate * 0.05)]
-    return float(np.sqrt(np.mean(win ** 2))) >= config.SLOW_MIC_ONSET_RMS
+    start = int(ms * sample_rate / 1000)
+    win = a[start:start + int(sample_rate * 0.05)]
+    return bool(win.size) and float(np.sqrt(np.mean(win ** 2))) >= config.SLOW_MIC_ONSET_RMS
+
+
+def silent_later(audio, sample_rate=16000):
+    """Digital silence (>= 150 ms) after the start-up silence too? Then
+    the mic sends silence whenever nobody speaks (noise-suppressing
+    headsets like the Logi H340 do) and a silent start says nothing."""
+    a = np.asarray(audio).reshape(-1)
+    ms = leading_silence_ms(a, sample_rate) or 0.0
+    starts, _ = _dead_runs(a, sample_rate, 150)
+    return bool(np.any(starts > ms * sample_rate / 1000))
 
 
 def device_key(device):
@@ -178,6 +206,8 @@ def observe(device, audio, cold, sample_rate=16000):
     if ms >= config.SLOW_MIC_MS:
         if not loud_onset(audio, sample_rate):
             return False  # quiet start: the user may simply not have spoken yet
+        if silent_later(audio, sample_rate):
+            return False  # a mic that goes silent between words, not a waking one
         verdict = True
     elif ms < config.SLOW_MIC_MS / 3:
         verdict = False
