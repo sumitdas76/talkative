@@ -71,6 +71,19 @@ def _tail(text, limit):
     return text
 
 
+# Chromium (browsers, Electron apps like Claude's) gives the caret a range
+# in the whole page, where every element is one U+FFFC character. Reaching
+# back from an empty message box then read the chat above it, and Whisper
+# typed its first words ("Share MiniLMS. Have you updated...", 2026-10-31).
+_OBJECT = "\ufffc"
+
+
+def _own_field(before, after=""):
+    """`before` from its last embedded object on, `after` up to its first:
+    only the text of the field the caret is in."""
+    return before.rsplit(_OBJECT, 1)[-1], after.split(_OBJECT, 1)[0]
+
+
 def _before_caret(control, limit):
     """Text before the caret via TextPattern, or None if unavailable."""
     try:
@@ -124,7 +137,7 @@ def around_caret(limit=80):
         after = selection[0].Clone()
         after.MoveEndpointByRange(start, after, end, waitTime=0)
         after.MoveEndpointByUnit(end, auto.TextUnit.Character, limit, waitTime=0)
-        return before.GetText(limit + 1), after.GetText(limit + 1)
+        return _own_field(before.GetText(limit + 1), after.GetText(limit + 1))
     except Exception:
         log.debug("caret text unavailable", exc_info=True)
         return None
@@ -156,6 +169,7 @@ def capture(limit=None, for_prompt=False):
                 text = value.Value if value is not None else ""
             except Exception:
                 text = ""
+        text = _own_field(text or "")[0]
         return _tail(_words_only(text) if for_prompt else text, limit)
     except Exception:
         log.debug("screen context unavailable", exc_info=True)
