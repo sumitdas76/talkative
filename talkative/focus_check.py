@@ -19,6 +19,11 @@ import pythoncom
 import uiautomation as auto
 
 _READONLY_STATE_FLAG = 0x40  # STATE_SYSTEM_READONLY
+_NOT_TEXT = frozenset({
+    "ListControl", "ListItemControl", "TreeControl", "TreeItemControl",
+    "ButtonControl", "SplitButtonControl", "CheckBoxControl", "RadioButtonControl",
+    "MenuControl", "MenuBarControl", "MenuItemControl", "TabControl", "TabItemControl",
+})
 
 
 def _ensure_com_initialized():
@@ -73,6 +78,18 @@ def focus_state():
     try:
         if control.ControlTypeName == "WindowControl":
             return False, "window", kind
+    except Exception:
+        pass
+
+    # Controls nobody types text into, whatever patterns they expose: File
+    # Explorer's focused file is a ListItem with a writable ValuePattern
+    # (its name, for renaming), so it passed as editable and dictation
+    # pasted into nothing (user report 2026-10-31). Only types where Ctrl+V
+    # can't insert text -- not Pane/Group/Custom/DataItem, which real text
+    # boxes in custom-drawn apps (WhatsApp, Excel cells) can report as.
+    try:
+        if control.ControlTypeName in _NOT_TEXT:
+            return False, "not_text", kind
     except Exception:
         pass
 
