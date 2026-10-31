@@ -5,6 +5,8 @@ import time
 import numpy as np
 import sounddevice as sd
 
+from . import config
+
 # PortAudio's API isn't thread-safe: opening, starting, stopping or
 # closing streams from two threads at once corrupts its heap. Talkative
 # did exactly that -- the start/stop beep opened an output stream on its
@@ -14,6 +16,10 @@ import sounddevice as sd
 # every PortAudio call (recording here, Settings' device list) still
 # goes through this lock, so a future sound can't bring the crash back.
 PA_LOCK = threading.RLock()
+
+# |sample| at or below this is digital silence (a waking mic's zeros,
+# dithered by one 16-bit step) -- same value as mic_warmup.ZERO.
+ZERO = 1.5 / 32768
 
 
 class AudioRecorder:
@@ -53,6 +59,15 @@ class AudioRecorder:
         # Did this recording open the microphone from cold? (mic_warmup:
         # only those say anything about how fast it starts.)
         self.cold = False
+        # Mic-ready cue: when real sound first arrived in this recording
+        # (seconds after start, None = not yet). A warm start is ready at 0.
+        self._started = 0.0
+        self.ready_after = 0.0
+
+    def is_ready(self):
+        """Is the microphone delivering sound yet? (pill.py's dim line.)"""
+        return (self.ready_after is not None
+                or time.monotonic() - self._started >= config.MIC_READY_MAX_SECONDS)
 
     def _callback(self, indata, frames, time_info, status):
         chunk = indata.copy()
@@ -69,7 +84,12 @@ class AudioRecorder:
             self.level = float(np.sqrt(np.mean(indata ** 2)))
             self.chunks += 1
             self.last_chunk = time.monotonic()
-            self.peak = max(self.peak, float(np.max(np.abs(indata))))
+            peak = float(np.max(np.abs(indata)))
+            self.peak = max(self.peak, peak)
+            if self.ready_after is None and peak > ZERO:
+                waited = time.monotonic() - self._started
+                if waited >= config.MIC_READY_MIN_SECONDS:
+                    self.ready_after = waited
 
     def lingering(self):
         """True while a stream is open between dictations."""
@@ -86,6 +106,7 @@ class AudioRecorder:
     def start(self):
         self.chunks, self.last_chunk, self.peak = 0, time.monotonic(), 0.0
         self.cold = False
+        self._started, self.ready_after = time.monotonic(), 0.0
         with PA_LOCK:
             if self.lingering() and self._stream_device == self.device:
                 self._cancel_close()
@@ -100,6 +121,7 @@ class AudioRecorder:
             self._frames = []
             self._recording = True
             self.cold = True
+            self._started, self.ready_after = time.monotonic(), None
             self._stream = sd.InputStream(
                 samplerate=self.sample_rate,
                 channels=self.channels,

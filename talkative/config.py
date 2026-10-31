@@ -68,6 +68,13 @@ SLOW_MIC_PROBE_SECONDS = 1.0
 SLOW_MIC_RECHECK_SECONDS = 15.0
 SLOW_MIC_ONSET_RMS = 0.008
 SLOW_MIC_NOTIFIED = []
+# Mic-ready cue (pill.py): after a press that opened the mic from cold,
+# the listening line stays dim until real sound arrives -- at least
+# MIC_READY_MIN_SECONDS in (a waking webcam can send ~40 ms of old buffer
+# before its silence), at most MIC_READY_MAX_SECONDS (a headset that sends
+# silence until someone speaks). Recording runs the whole time either way.
+MIC_READY_MIN_SECONDS = 0.06
+MIC_READY_MAX_SECONDS = 1.0
 
 # Presses shorter than this are treated as accidental taps and discarded.
 MIN_RECORDING_SECONDS = 0.3

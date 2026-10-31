@@ -82,6 +82,15 @@ def _short_mic(name):
     return inner.rstrip(") ").strip() or name
 
 
+def _ready_note(recorder, cold):
+    """debug.log: when a cold microphone first sent sound (the mic-ready
+    cue lit up then)."""
+    if not cold:
+        return ""
+    ready = getattr(recorder, "ready_after", None)
+    return ", mic sound after " + ("?" if ready is None else f"{ready * 1000:.0f} ms")
+
+
 def _audio_summary(audio, sample_rate, reason):
     """One debug.log line about the recording itself: length, speech level
     (90th-percentile 30 ms RMS) and what stopped it. Added 2026-10-20 for
@@ -554,7 +563,7 @@ class TalkativeApp:
         self._record_start_time = time.time()
         self._live_warned = False
         self.tray.set_recording()
-        pill.show(lambda: self.recorder.level)
+        pill.show(lambda: self.recorder.level, getattr(self.recorder, "is_ready", None))
         threading.Thread(target=self._check_mute, args=(self._recording_id,),
                          daemon=True).start()
         if self._cloud_active():
@@ -895,7 +904,8 @@ class TalkativeApp:
         threading.Thread(
             target=self._process_audio, daemon=True,
             args=(audio, self._dev_dictation, seq,
-                  _audio_summary(audio, config.SAMPLE_RATE, reason), self._context,
+                  _audio_summary(audio, config.SAMPLE_RATE, reason)
+                  + _ready_note(self.recorder, cold), self._context,
                   self._press, paste_target.at_release(self._target)),
         ).start()
         return True

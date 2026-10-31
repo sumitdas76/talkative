@@ -11,6 +11,10 @@ as a dimmed flat line with a bright streak sweeping along it while the
 dictation is processed (busy()), and goes when the text is typed or the
 reason it wasn't has been shown (done()) -- added 2026-10-27, user
 report: up to 10 s and more with nothing on screen.
+Mic-ready cue (2026-10-31): while a microphone that was just opened is
+still waking up (sending silence), the listening line is dimmed; it
+lights up once real sound arrives (ready_source), so the user knows when
+to start talking -- slow webcams cut off first words.
 It must never steal keyboard focus (the user is mid-dictation into
 another window) -- the window gets WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
 no taskbar entry, and is never focused.
@@ -54,6 +58,7 @@ class _Pill:
     def __init__(self):
         self._commands = queue.Queue()
         self._level_source = None
+        self._ready_source = None
         self._ready = threading.Event()
         self._failed = False
 
@@ -68,8 +73,9 @@ class _Pill:
 
     # ---- public, called from any thread ----
 
-    def show(self, level_source):
+    def show(self, level_source, ready_source=None):
         self._level_source = level_source
+        self._ready_source = ready_source
         self._commands.put("show")
         # The drawing loop stops while hidden; the shared overlay thread
         # (which polls anyway) restarts it.
@@ -117,6 +123,7 @@ class _Pill:
                 0, 0, 0, 0, width=_LINE_WIDTH + 1, capstyle="round", state="hidden")
             self._mode = "listen"
             self._alert = False
+            self._mic_ready = True
             self._recolor()
             self._wave = [0.0] * _POINTS
             self._level = 0.0
@@ -151,13 +158,13 @@ class _Pill:
         """Colors from the current scheme; re-read on every show, so a
         scheme picked in Settings applies from the next dictation."""
         pal = palette.get()
-        busy = self._mode == "busy"
+        busy = self._mode == "busy" or not self._mic_ready
         color = _ALERT if self._alert else pal["line"]
         self.canvas.itemconfigure(
             self.line, fill=_mix(color, pal["line_halo"], 0.55) if busy else color)
         self.canvas.itemconfigure(self.halo, fill=pal["line_halo"])
         self.canvas.itemconfigure(self.sweep, fill=_mix(pal["line"], "#ffffff", 0.35),
-                                  state="normal" if busy else "hidden")
+                                  state="normal" if self._mode == "busy" else "hidden")
 
     def _flat(self):
         step = (_WIDTH - 2 * _EDGE) / (_POINTS - 1)
@@ -189,6 +196,7 @@ class _Pill:
                         self._wave = [0.0] * _POINTS
                         self._level = 0.0
                         self._shown_at = time.time()
+                        self._mic_ready = mode == "busy" or self._is_mic_ready()
                         self._recolor()
                     if not self._visible:
                         self._place_bottom_center()
@@ -214,6 +222,9 @@ class _Pill:
         if self._mode == "busy":
             self._draw_busy(t)
             return
+        if not self._mic_ready and self._is_mic_ready():
+            self._mic_ready = True
+            self._recolor()
         source = self._level_source
         target = 0.0
         if source is not None:
@@ -246,6 +257,15 @@ class _Pill:
         self.canvas.coords(self.halo, *coords)
         self.canvas.coords(self.line, *coords)
 
+
+    def _is_mic_ready(self):
+        source = self._ready_source
+        if source is None:
+            return True
+        try:
+            return bool(source())
+        except Exception:
+            return True
 
     def _draw_busy(self, t):
         """Flat line, a bright streak sweeping left to right about once a
@@ -284,14 +304,16 @@ def _get():
         return _pill
 
 
-def show(level_source):
+def show(level_source, ready_source=None):
     """Show the line; level_source is a zero-arg callable returning the
-    current input RMS. Safe from any thread; no-op on failure."""
+    current input RMS, ready_source one returning whether the microphone
+    is delivering sound yet (dim line until then). Safe from any thread;
+    no-op on failure."""
     try:
         pill = _get()
         pill._ready.wait(timeout=3)
         if not pill._failed:
-            pill.show(level_source)
+            pill.show(level_source, ready_source)
     except Exception:
         pass
 
