@@ -21,7 +21,7 @@ from tkinter import filedialog, messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, config, dev_mode, feedback, fix_learning, grammar_engine, history, model_manager, overlay_thread, palette, pill, settings, updater
+from . import __version__, app_icon, audio_devices, config, dev_mode, feedback, fix_learning, grammar_engine, history, mic_warmup, model_manager, overlay_thread, palette, pill, settings, updater
 from .keynames import friendly as _friendly_key_name
 
 log = logging.getLogger(__name__)
@@ -238,7 +238,9 @@ _window = None
 
 # Sidebar pages, top to bottom; About sits at the bottom of the sidebar.
 # Feedback got its own page on 2026-10-30 (was the bottom of About).
-_PAGES = ["General", "Auto Text", "Dictation", "Hotkeys", "Audio", "Output",
+# Audio and Output share one page since 2026-10-31 (user request), which
+# also shows the devices in use.
+_PAGES = ["General", "Auto Text", "Dictation", "Hotkeys", "Audio & Output",
           "Feedback", "About"]
 
 
@@ -352,8 +354,7 @@ class _SettingsWindow:
             "Auto Text": self._tab_dictionary,
             "Dictation": self._tab_dictation,
             "Hotkeys": self._tab_hotkeys,
-            "Audio": self._tab_audio,
-            "Output": self._tab_output,
+            "Audio & Output": self._tab_audio_output,
             "Feedback": self._build_feedback_section,
             "About": self._tab_about,
         }
@@ -1096,42 +1097,99 @@ class _SettingsWindow:
 
         keyboard.Listener(on_press=on_press, on_release=on_release).start()
 
+    def _tab_audio_output(self, f):
+        self._tab_audio(f)
+        self._tab_output(f)
+        self._refresh_devices()
+
     def _tab_audio(self, f):
         mic = self._section(f, "Microphone", first=True)
+        # One entry per microphone (audio_devices.inputs, as in the tray
+        # menu), not one per Windows audio system.
         self._audio_values = [None]
         names = ["System default"]
-        try:
-            import sounddevice as sd
-
-            from .audio_recorder import PA_LOCK
-
-            with PA_LOCK:  # PortAudio isn't thread-safe; see audio_recorder
-                devices = sd.query_devices()
-            for index, dev in enumerate(devices):
-                if dev.get("max_input_channels", 0) > 0:
-                    self._audio_values.append(index)
-                    names.append(f"{dev['name']}")
-        except Exception:
-            pass
+        for index, name in audio_devices.inputs():
+            self._audio_values.append(index)
+            names.append(name)
+        if config.INPUT_DEVICE not in self._audio_values:
+            # Saved from an older list (another audio system): keep it.
+            self._audio_values.append(config.INPUT_DEVICE)
+            names.append(mic_warmup.device_key(config.INPUT_DEVICE) or str(config.INPUT_DEVICE))
 
         self.audio_combo = ttk.Combobox(mic, values=names, state="readonly", width=52)
-        try:
-            self.audio_combo.current(self._audio_values.index(config.INPUT_DEVICE))
-        except ValueError:
-            self.audio_combo.current(0)
-        self.audio_combo.pack(anchor="w", pady=(2, 6))
+        self.audio_combo.current(self._audio_values.index(config.INPUT_DEVICE))
+        self.audio_combo.pack(anchor="w", pady=(2, 4))
+        self.mic_in_use = ttk.Label(mic, wraplength=560, text="")
+        self.mic_in_use.pack(anchor="w", pady=(0, 2))
         ttk.Label(
             mic, wraplength=560, style="Muted.TLabel",
             text="If dictation hears nothing, the wrong microphone is "
                  "selected. Takes effect from the next dictation.",
         ).pack(anchor="w")
 
+        out = self._section(f, "Headphones")
+        self._output_devices = audio_devices.outputs()
+        self.output_combo = ttk.Combobox(
+            out, values=[n for _, n, _ in self._output_devices] or ["No playback devices found"],
+            state="readonly", width=52)
+        current = next((i for i, d in enumerate(self._output_devices) if d[2]), 0)
+        self.output_combo.current(current)
+        self._output_start = current
+        self.output_combo.pack(anchor="w", pady=(2, 4))
+        self.output_in_use = ttk.Label(out, wraplength=560, text="")
+        self.output_in_use.pack(anchor="w", pady=(0, 2))
+        ttk.Label(
+            out, wraplength=560, style="Muted.TLabel",
+            text="Talkative plays no sound. This switches the Windows "
+                 "playback device for every app, like the tray menu.",
+        ).pack(anchor="w")
+
+    def _mic_status(self):
+        """'In use now: <mic> -- starts instantly' (what the recorder uses:
+        the saved choice, or the Windows default)."""
+        device = config.INPUT_DEVICE
+        name = mic_warmup.device_key(device)
+        if name is None:
+            return "In use now: no microphone found"
+        long_names = [n for _, n in audio_devices.inputs()]
+        name = next((n for n in long_names if n.startswith(name)), name)
+        if device is None:
+            name += " (Windows default)"
+        slow = mic_warmup.slow_ms(device)
+        measured = mic_warmup.measured_ms(device)
+        if slow is not None:
+            minutes = round(config.SLOW_MIC_KEEP_SECONDS / 60)
+            speed = (f"starts in {slow / 1000:.1f} s, so Talkative keeps it ready "
+                     f"for {minutes} minutes after each dictation")
+        elif measured is not None:
+            speed = "starts instantly"
+        elif mic_warmup.is_bluetooth(device):
+            speed = "Bluetooth, start-up speed not checked"
+        else:
+            speed = "start-up speed not checked yet"
+        return f"In use now: {name}, {speed}."
+
+    def _refresh_devices(self):
+        """Keep the "In use now" lines current while Settings is open
+        (a mic plugged in, the Windows default changed, the check done)."""
+        try:
+            if not self.root.winfo_exists():
+                return
+            if getattr(self, "page", None) == "Audio & Output":
+                self.mic_in_use.config(text=self._mic_status())
+                default = next((n for _, n, d in audio_devices.outputs() if d), None)
+                self.output_in_use.config(
+                    text=f"In use now: {default}." if default else "In use now: none found.")
+        except Exception:
+            logging.getLogger(__name__).debug("device refresh failed", exc_info=True)
+        self.root.after(2000, self._refresh_devices)
+
     def _tab_output(self, f):
         self.var_insert = tk.StringVar(value=config.INSERT_MODE)
         self.var_space = tk.BooleanVar(value=config.APPEND_SPACE)
         self.var_enter = tk.BooleanVar(value=config.PRESS_ENTER_AFTER)
 
-        box1 = self._section(f, "Destination", first=True)
+        box1 = self._section(f, "Typed text goes")
         ttk.Radiobutton(box1, text="Type into the active application",
                         variable=self.var_insert, value="type").pack(anchor="w", pady=2)
         ttk.Radiobutton(box1, text="Copy to clipboard only",
@@ -1767,6 +1825,16 @@ class _SettingsWindow:
             values["input_device"] = self._audio_values[self.audio_combo.current()]
         except Exception:
             pass
+        try:
+            pick = self.output_combo.current()
+            if self._output_devices and pick != self._output_start:
+                if audio_devices.set_default_output(self._output_devices[pick][0]):
+                    self._output_start = pick
+                else:
+                    messagebox.showwarning(APP_NAME, "Couldn't switch the playback device.",
+                                           parent=self.root)
+        except Exception:
+            logging.getLogger(__name__).exception("playback device switch failed")
 
         settings.save(values)
         settings.load_into_config()

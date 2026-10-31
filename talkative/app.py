@@ -778,7 +778,7 @@ class TalkativeApp:
             f"Your microphone ({_short_mic(name)}) takes about {ms / 1000:.1f} s "
             f"to start, which cut off first words. Talkative now keeps it ready "
             f"for {minutes} minutes after each dictation. A faster microphone "
-            f"(Settings > Audio, or the tray menu) fixes it fully."
+            f"(Settings > Audio & Output, or the tray) fixes it."
         )
 
     def _check_blank(self, audio):

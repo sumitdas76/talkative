@@ -388,7 +388,7 @@ COLOR_SCHEME = "forest"
 # user's request (the listening pill already shows when Talkative is
 # hearing you), and they were what crashed it -- see audio_recorder.PA_LOCK.
 # None = system default input device; otherwise a sounddevice input index
-# (set via the Audio tab in Settings).
+# (set on the Audio & Output page in Settings).
 INPUT_DEVICE = None
 
 # ---------------------------------------------------------------------------

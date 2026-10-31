@@ -44,6 +44,7 @@ FLOOR_RMS = 4e-4
 
 _lock = threading.Lock()
 _slow = {}   # device key -> leading silence in ms, for mics found slow
+_measured = {}  # device key -> last start-up silence measured, any verdict
 _seen = collections.defaultdict(lambda: collections.deque(maxlen=3))
 
 
@@ -97,11 +98,20 @@ def slow_ms(device):
         return _slow.get(key)
 
 
+def measured_ms(device):
+    """The last start-up silence measured for this mic, or None."""
+    key = device_key(device)
+    with _lock:
+        return _measured.get(key)
+
+
 def _mark(key, ms, why, clear=True):
     """Record a verdict; returns True when the mic newly became slow.
     clear=False: a fast result doesn't undo an earlier slow one."""
     with _lock:
         was = key in _slow
+        if ms is not None:
+            _measured[key] = ms
         if ms is not None and ms >= config.SLOW_MIC_MS:
             _slow[key] = ms
         elif clear:
@@ -201,3 +211,4 @@ def reset_for_tests():
     with _lock:
         _slow.clear()
         _seen.clear()
+        _measured.clear()
