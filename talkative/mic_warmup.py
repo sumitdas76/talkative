@@ -126,6 +126,20 @@ def slow_ms(device):
         return _slow.get(key)
 
 
+def update_slow_ms(device, ms):
+    """A cold dictation measured how long a mic already known to be slow
+    took to send sound (audio_recorder.ready_after): keep that as its
+    start-up time, so warnings and Settings show today's figure, not the
+    first probe's. Never makes a mic slow or fast by itself."""
+    key = device_key(device)
+    if key is None or ms is None or ms < config.MIC_READY_MIN_SECONDS * 1000:
+        return
+    with _lock:
+        if key in _slow:
+            _slow[key] = ms
+            _measured[key] = ms
+
+
 def measured_ms(device):
     """The last start-up silence measured for this mic, or None."""
     key = device_key(device)

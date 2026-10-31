@@ -775,6 +775,11 @@ class TalkativeApp:
         (cut-off first word)? Two of three cold starts that did: slow."""
         try:
             mic_warmup.observe(self.recorder.device, audio, cold, config.SAMPLE_RATE)
+            ready = getattr(self.recorder, "ready_after", None)
+            if cold and ready is not None:
+                # Keep the number in the warning current: this webcam's
+                # start-up went from ~0.3 s to ~0.6 s within one day.
+                mic_warmup.update_slow_ms(self.recorder.device, ready * 1000)
         except Exception:
             logging.getLogger(__name__).exception("slow mic check failed")
 
@@ -801,21 +806,19 @@ class TalkativeApp:
             logging.getLogger(__name__).exception("microphone start-up check failed")
 
     def _slow_mic_hint(self):
-        """First press with a microphone found slow: say so right above
-        the listening line, where the user is looking as they start to
-        talk (user request 2026-10-31; was a tray notice when the mic was
-        found slow, easy to miss and away from the moment it matters).
-        Once per microphone. Never breaks the press."""
+        """A press that opened a slow microphone from cold: say so right
+        above the listening line, where the user is looking as they start
+        to talk (user request 2026-10-31; was a tray notice when the mic
+        was found slow, easy to miss and away from the moment it matters).
+        Every cold start, not once per microphone: shown once, it was
+        forgotten and the first words were cut again with no warning (user
+        report 2026-10-31). A warm (kept-ready) mic needs no warning.
+        Never breaks the press."""
         try:
             device = self.recorder.device
-            if not mic_warmup.is_slow(device):
-                return
-            name = mic_warmup.device_key(device)
-            if not name or name in config.SLOW_MIC_NOTIFIED:
+            if not getattr(self.recorder, "cold", False) or not mic_warmup.is_slow(device):
                 return
             ms = mic_warmup.slow_ms(device) or config.SLOW_MIC_MS
-            config.SLOW_MIC_NOTIFIED = list(config.SLOW_MIC_NOTIFIED) + [name]
-            settings.save({"slow_mic_notified": config.SLOW_MIC_NOTIFIED})
             error_toast.show(
                 f"This microphone takes {ms / 1000:.1f} s to pick up sound. "
                 "Start speaking when the line below lights up.",
