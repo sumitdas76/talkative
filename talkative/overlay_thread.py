@@ -110,6 +110,21 @@ def _apply_base_theme(root):
                   indicatorforeground=[("disabled", border), ("selected", m["title"])])
         style.configure("TProgressbar", background=accent, troughcolor=field,
                         bordercolor=border, lightcolor=accent, darkcolor=accent)
+        # The test box's microphone picker (try_it_now, 2026-10-31): clam's
+        # readonly combobox was grey-on-grey in dark mode. Same as Settings.
+        style.configure("TCombobox", lightcolor=field, darkcolor=field, padding=(6, 3),
+                        arrowcolor=fg)
+        style.map("TCombobox",
+                  fieldbackground=[("readonly", field), ("disabled", raised)],
+                  foreground=[("readonly", fg), ("disabled", border)],
+                  selectbackground=[("readonly", field)],
+                  selectforeground=[("readonly", fg)],
+                  background=[("active", hover), ("readonly", field)],
+                  arrowcolor=[("disabled", border)])
+        root.option_add("*TCombobox*Listbox.background", field)
+        root.option_add("*TCombobox*Listbox.foreground", fg)
+        root.option_add("*TCombobox*Listbox.selectBackground", accent)
+        root.option_add("*TCombobox*Listbox.selectForeground", pal.get("accent_fg", "#ffffff"))
     except Exception:
         pass
 

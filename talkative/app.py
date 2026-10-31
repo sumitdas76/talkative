@@ -2,6 +2,7 @@ import datetime
 import logging
 import threading
 import time
+from types import SimpleNamespace
 
 import numpy as np
 from pynput import keyboard
@@ -209,6 +210,13 @@ class TalkativeApp:
             undo_update=lambda: updater.undo_last_update(self.updater_controller()),
         )
         open_settings(on_applied=self._apply_settings, model_controller=controller)
+
+    def _onboarding_done(self, mode):
+        """First-run Cloud/Local choice made: set up that mode, and check
+        how fast the microphone starts now (not allowed before the choice),
+        so the try-it-now box can show it."""
+        self._sync_processing_mode()
+        threading.Thread(target=self._probe_mic, daemon=True).start()
 
     def _set_input_device(self, index):
         """Tray menu -> Microphone. Same effect as Settings -> Audio: saved,
@@ -741,6 +749,25 @@ class TalkativeApp:
             except Exception:
                 logging.getLogger(__name__).exception("microphone reload failed")
 
+    def _test_box_report(self, audio, cold):
+        """The microphone test box is open (first run, or Settings >
+        Test microphone): show what this dictation says about the mic. A
+        cut-off start seen there marks the mic slow at once -- the box
+        already explains it, so no tray notice on top."""
+        try:
+            found = try_it_now.report(audio, config.SAMPLE_RATE, cold)
+            if not found or "cut" not in [kind for kind, _ in found]:
+                return
+            device = self.recorder.device
+            ms = mic_warmup.leading_silence_ms(audio, config.SAMPLE_RATE)
+            mic_warmup.mark_slow(device, ms, "test dictation")
+            name = mic_warmup.device_key(device)
+            if name and name not in config.SLOW_MIC_NOTIFIED:
+                config.SLOW_MIC_NOTIFIED = list(config.SLOW_MIC_NOTIFIED) + [name]
+                settings.save({"slow_mic_notified": config.SLOW_MIC_NOTIFIED})
+        except Exception:
+            logging.getLogger(__name__).exception("microphone test report failed")
+
     def _observe_mic(self, audio, cold):
         """Did this dictation show the mic sending silence at first
         (cut-off first word)? Two of three cold starts that did: slow."""
@@ -888,6 +915,7 @@ class TalkativeApp:
         audio = self.recorder.stop(linger=linger)
         duration = time.time() - self._record_start_time
         if process and duration >= config.MIN_RECORDING_SECONDS:
+            self._test_box_report(audio, cold)
             self._observe_mic(audio, cold)
 
         if not process or duration < config.MIN_RECORDING_SECONDS:
@@ -1397,7 +1425,9 @@ class TalkativeApp:
         # this screen is answered. on_choice re-syncs everything (model
         # loading, grammar source) if the user picks something different
         # from the configured default.
-        onboarding.maybe_show(on_choice=lambda mode: self._sync_processing_mode())
+        try_it_now.controller = SimpleNamespace(
+            get=lambda: self.recorder.device, set=self._set_input_device)
+        onboarding.maybe_show(on_choice=self._onboarding_done)
         # Local setup's background grammar download, if Talkative was
         # closed before it finished (see onboarding.finish_local).
         if config.GRAMMAR_PENDING_DOWNLOAD:

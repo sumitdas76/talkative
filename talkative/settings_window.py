@@ -21,7 +21,7 @@ from tkinter import filedialog, messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, audio_devices, config, dev_mode, feedback, fix_learning, grammar_engine, history, mic_warmup, model_manager, overlay_thread, palette, pill, settings, updater
+from . import __version__, app_icon, audio_devices, config, dev_mode, feedback, fix_learning, grammar_engine, history, mic_warmup, model_manager, overlay_thread, palette, pill, settings, try_it_now, updater
 from .keynames import friendly as _friendly_key_name
 
 log = logging.getLogger(__name__)
@@ -1121,6 +1121,9 @@ class _SettingsWindow:
         self.audio_combo.pack(anchor="w", pady=(2, 4))
         self.mic_in_use = ttk.Label(mic, wraplength=560, text="")
         self.mic_in_use.pack(anchor="w", pady=(0, 2))
+        self._input_seen = config.INPUT_DEVICE
+        ttk.Button(mic, text="Test microphone", command=try_it_now.open_check).pack(
+            anchor="w", pady=(2, 6))
         ttk.Label(
             mic, wraplength=560, style="Muted.TLabel",
             text="If dictation hears nothing, the wrong microphone is "
@@ -1176,6 +1179,12 @@ class _SettingsWindow:
             if not self.root.winfo_exists():
                 return
             if getattr(self, "page", None) == "Audio & Output":
+                if config.INPUT_DEVICE != self._input_seen:
+                    # Changed in the Test microphone box (or the tray):
+                    # follow it, so Save doesn't put the old one back.
+                    self._input_seen = config.INPUT_DEVICE
+                    if config.INPUT_DEVICE in self._audio_values:
+                        self.audio_combo.current(self._audio_values.index(config.INPUT_DEVICE))
                 self.mic_in_use.config(text=self._mic_status())
                 default = next((n for _, n, d in audio_devices.outputs() if d), None)
                 self.output_in_use.config(

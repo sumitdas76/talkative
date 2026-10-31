@@ -152,6 +152,13 @@ def _mark(key, ms, why, clear=True):
     return now and not was
 
 
+def mark_slow(device, ms, why):
+    """A test dictation showed the start cut off: slow now (no need to
+    wait for a second one). True when the mic newly became slow."""
+    key = device_key(device)
+    return key is not None and _mark(key, ms, why, clear=False)
+
+
 def probe(device, recorder_busy=lambda: False):
     """Open `device` for PROBE_SECONDS, measure its start-up silence and
     record the verdict. Returns the ms measured, or None if skipped or
