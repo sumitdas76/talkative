@@ -217,6 +217,13 @@ class TalkativeApp:
         so the try-it-now box can show it."""
         self._sync_processing_mode()
         threading.Thread(target=self._probe_mic, daemon=True).start()
+        # Local opens the box once its model has loaded; Cloud has nothing
+        # to wait for. Before 2026-10-31 Cloud never opened it, so most new
+        # users missed the mic check (found in the 1.3.21 fresh-install
+        # test). Only here, not in _enter_cloud_mode: existing Cloud users
+        # never had the box and shouldn't get it popping up after an update.
+        if self._cloud_active():
+            try_it_now.maybe_show()
 
     def _set_input_device(self, index):
         """Tray menu -> Microphone. Same effect as Settings -> Audio: saved,
