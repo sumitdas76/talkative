@@ -76,6 +76,7 @@ _KEYS = {
     "preroll_seconds": "PREROLL_SECONDS",
     "fit_to_cursor": "FIT_TO_CURSOR",
     "slow_mic_notified": "SLOW_MIC_NOTIFIED",
+    "keep_ready_mics": "KEEP_READY_MICS",
 }
 
 # Keys handled outside the type-checked table.

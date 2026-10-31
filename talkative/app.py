@@ -1303,6 +1303,7 @@ class TalkativeApp:
         gc.collect()  # release the model.bin mapping (updates move the files)
 
     def _insert_final(self, text, learn=True, press=None):
+        try_it_now.note_typed(text or "")  # the test box's "Not what I said"
         if not text:
             if getattr(self._job_blank, "value", False):
                 self._not_typed("No words were heard, so nothing was typed. If you "

@@ -1160,7 +1160,11 @@ class _SettingsWindow:
             name += " (Windows default)"
         slow = mic_warmup.slow_ms(device)
         measured = mic_warmup.measured_ms(device)
-        if slow is not None:
+        if slow is None and mic_warmup.kept_by_user(device):
+            minutes = round(config.SLOW_MIC_KEEP_SECONDS / 60)
+            speed = (f"kept ready for {minutes} minutes after each dictation, "
+                     "since you said the start was cut off")
+        elif slow is not None:
             minutes = round(config.SLOW_MIC_KEEP_SECONDS / 60)
             speed = (f"starts in {slow / 1000:.1f} s, so Talkative keeps it ready "
                      f"for {minutes} minutes after each dictation")

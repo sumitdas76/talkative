@@ -68,6 +68,10 @@ SLOW_MIC_PROBE_SECONDS = 1.0
 SLOW_MIC_RECHECK_SECONDS = 15.0
 SLOW_MIC_ONSET_RMS = 0.008
 SLOW_MIC_NOTIFIED = []
+# Microphones the user said cut off their first words (test box, "Not what
+# I said"): kept ready like a slow one, whatever the start-up check says.
+# Settings key "keep_ready_mics".
+KEEP_READY_MICS = []
 # Mic-ready cue (pill.py): after a press that opened the mic from cold,
 # the listening line stays dim until real sound arrives -- at least
 # MIC_READY_MIN_SECONDS in (a waking webcam can send ~40 ms of old buffer

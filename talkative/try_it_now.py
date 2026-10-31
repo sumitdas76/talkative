@@ -17,6 +17,12 @@ recording says about it (mic_check.analyse: nothing heard, too quiet,
 distorting, noisy, first word cut). Settings > Audio & Output > Test
 microphone opens the same box later (open_check).
 
+"Not what I said" (user request 2026-10-31: "if ... the first few letters
+get cropped off? There is no button that says the typing is incorrect"):
+the user corrects the last dictation's text and mic_check.compare says
+what went wrong; a cut-off start keeps that mic ready from then on
+(mic_warmup.keep_ready), misheard names can go straight into Auto Text.
+
 Built as a tk.Toplevel on the shared overlay thread (see overlay_thread.py
 -- multiple independent tk.Tk() roots across threads caused real
 crashes), not its own Tk instance. Closing it (or clicking "Got it")
@@ -75,6 +81,27 @@ def report(audio, sample_rate, cold):
     except Exception:
         pass
     return found
+
+
+def note_typed(text):
+    """The app typed a dictation (or nothing, ""): remember it for "Not
+    what I said". Any thread; no-op when the box is closed."""
+    if _window is None:
+        return
+    try:
+        overlay_thread.get().build(lambda: _set_last(text))
+    except Exception:
+        pass
+
+
+def _set_last(text):
+    w = _window
+    if w is not None:
+        w["last"] = text
+        w["wrong_btn"].config(state="normal")
+        if w["fix"].winfo_ismapped():
+            w["said"].delete(0, "end")
+            w["said"].insert(0, text)
 
 
 def _mark_done():
@@ -199,6 +226,62 @@ def _build(overlay, first_run):
             else "Change the microphone here or in Settings.",
         ).pack(side="left")
 
+        # "Not what I said": correct the text, Check says what went wrong.
+        fix = ttk.Frame(root, padding=(16, 8, 16, 0))
+        ttk.Label(fix, wraplength=440,
+                  text="What did you say? Correct the text below, then click Check.").pack(anchor="w")
+        said = ttk.Entry(fix, width=58)
+        said.pack(fill="x", pady=(4, 4))
+        fix_bar = ttk.Frame(fix)
+        fix_bar.pack(fill="x")
+        add_btn = ttk.Button(fix_bar, text="Add to Auto Text")
+        fix_result = ttk.Label(fix, wraplength=440, text="")
+        fix_result.pack(anchor="w", pady=(6, 0))
+
+        def check():
+            from . import mic_warmup as warm
+            findings, fixes = mic_check.compare(
+                _window.get("last", ""), said.get(),
+                cloud=config.PROCESSING_MODE == "cloud", accent=config.SPEECH_SERVICE)
+            if fixes["keep_ready"]:
+                try:
+                    warm.keep_ready(_device())
+                except Exception:
+                    logging.getLogger(__name__).exception("keep mic ready failed")
+            _window["pairs"] = fixes["auto_text"]
+            if fixes["auto_text"]:
+                add_btn.config(state="normal", text="Add to Auto Text")
+                add_btn.pack(side="left", padx=(8, 0))
+            else:
+                add_btn.pack_forget()
+            ok = findings[0][0] == "same"
+            fix_result.config(text="\n".join(("✓ " if ok else "• ") + m for _, m in findings),
+                              foreground="" if ok else _window["warn"])
+
+        def add_auto_text():
+            pairs = _window.get("pairs") or []
+            if not pairs:
+                return
+            entries = dict(config.DICTIONARY)
+            for heard, typed in pairs:
+                entries[heard.lower()] = typed
+            config.DICTIONARY = entries
+            settings.save({"dictionary": entries})
+            add_btn.config(state="disabled", text="Added")
+
+        ttk.Button(fix_bar, text="Check", command=check).pack(side="left")
+        add_btn.config(command=add_auto_text)
+        said.bind("<Return>", lambda _e: check())
+
+        def wrong():
+            if fix.winfo_ismapped():
+                return
+            fix.pack(fill="x", before=bar)
+            said.delete(0, "end")
+            said.insert(0, _window.get("last", ""))
+            said.focus_set()
+            said.icursor("end")
+
         def refresh():
             if _window is None:
                 return
@@ -216,8 +299,12 @@ def _build(overlay, first_run):
                 _mark_done()
 
         ttk.Button(bar, text="Got it" if first_run else "Done", command=close).pack(side="right")
+        wrong_btn = ttk.Button(bar, text="Not what I said", command=wrong, state="disabled")
+        wrong_btn.pack(side="right", padx=(0, 8))
         root.protocol("WM_DELETE_WINDOW", close)
-        _window = {"root": root, "result": result, "warn": "#fb923c" if dark else "#c2410c"}
+        _window = {"root": root, "result": result, "warn": "#fb923c" if dark else "#c2410c",
+                   "fix": fix, "said": said, "wrong_btn": wrong_btn, "last": "",
+                   "check": check}
         refresh()
     except Exception:
         logging.getLogger(__name__).exception("try-it-now box failed")
