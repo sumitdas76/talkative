@@ -84,6 +84,17 @@ def _own_field(before, after=""):
     return before.rsplit(_OBJECT, 1)[-1], after.split(_OBJECT, 1)[0]
 
 
+def _text(rng):
+    """All of a range's text. Never GetText(n) on a range reached by
+    moving n characters: a terminal (Windows Terminal) adds a line break
+    where the range wraps across rows, so the text runs longer than n and
+    GetText(n) cuts its END -- the characters right before the caret. A
+    trailing space the user left went missing (2026-11-03: "then " read
+    as "then", so a dictation got a second space), as could a full stop.
+    The ranges are already bounded, so reading all of it is cheap."""
+    return rng.GetText(-1) or ""
+
+
 def _before_caret(control, limit):
     """Text before the caret via TextPattern, or None if unavailable."""
     try:
@@ -104,7 +115,7 @@ def _before_caret(control, limit):
                                 auto.TextPatternRangeEndpoint.Start, waitTime=0)
         rng.MoveEndpointByUnit(auto.TextPatternRangeEndpoint.Start,
                                auto.TextUnit.Character, -2 * limit, waitTime=0)
-        return rng.GetText(2 * limit + 1)
+        return _text(rng)[-2 * limit:]
     except Exception:
         return None
 
@@ -137,7 +148,7 @@ def around_caret(limit=80):
         after = selection[0].Clone()
         after.MoveEndpointByRange(start, after, end, waitTime=0)
         after.MoveEndpointByUnit(end, auto.TextUnit.Character, limit, waitTime=0)
-        return _own_field(before.GetText(limit + 1), after.GetText(limit + 1))
+        return _own_field(_text(before)[-limit:], _text(after)[:limit])
     except Exception:
         log.debug("caret text unavailable", exc_info=True)
         return None
