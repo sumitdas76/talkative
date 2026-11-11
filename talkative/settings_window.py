@@ -311,6 +311,19 @@ def _hotkey_display(key):
     return _friendly_key_name(key)
 
 
+def _card_points(parent, lines):
+    """Short bullet lines for a model card: a frame of '•' + text rows,
+    the text wrapping under itself rather than under the bullet."""
+    box = ttk.Frame(parent, style="CardBody.TFrame")
+    box.columnconfigure(1, weight=1)
+    for row, line in enumerate(lines):
+        ttk.Label(box, text="•", style="CardMuted.TLabel").grid(
+            row=row, column=0, sticky="nw", padx=(0, 6))
+        ttk.Label(box, text=line, style="CardMuted.TLabel", wraplength=185).grid(
+            row=row, column=1, sticky="w")
+    return box
+
+
 class _SettingsWindow:
     def __init__(self, on_applied, model_controller, overlay):
         self.on_applied = on_applied
@@ -506,6 +519,11 @@ class _SettingsWindow:
         # Switch.TCheckbutton, only the background differs.
         style.configure("Card.Switch.TCheckbutton", background=field)
         style.map("Card.Switch.TCheckbutton", background=[("active", field)])
+        # The voice model choice in each card (Fast / Accurate).
+        style.configure("Card.TRadiobutton", background=field,
+                        font=("Segoe UI Semibold", 10))
+        style.map("Card.TRadiobutton", background=[("active", field)],
+                  foreground=[("disabled", muted)])
         # Flat buttons: clam's light/dark edge colors set to the face
         # color remove its bevel.
         style.configure("TButton", background=raised, lightcolor=raised, darkcolor=raised,
@@ -1241,36 +1259,45 @@ class _SettingsWindow:
             row=0, column=0, columnspan=n_tiles, sticky="w", pady=(0, 4))
         ttk.Label(tiles_row, text="Grammar: optional", style="Muted.TLabel").grid(
             row=0, column=n_tiles, sticky="w", padx=(12, 0), pady=(0, 4))
+        # One radio per voice card: picking one switches at once (no Save),
+        # like the grammar switch; disabled until that model is downloaded.
+        self.var_voice = tk.StringVar(
+            value=model_manager.tier_for_size(config.MODEL_SIZE) or "fast")
         for col, (tier, info) in enumerate(model_manager.MODELS.items()):
             box = ttk.Frame(tiles_row, style="Card.TFrame", padding=(12, 10))
             box.grid(row=1, column=col, sticky="nsew", padx=(0 if col == 0 else 12, 0))
-            ttk.Label(box, text=f"{info['label']} - {info['tagline']}",
-                      style="CardTitle.TLabel").pack(anchor="w")
-            latency = ttk.Label(box, text=info["latency"], style="CardMuted.TLabel",
-                                 wraplength=200)
-            latency.pack(anchor="w")
-            ttk.Label(box, text=f"{info['download_gb']} GB download. Uses about "
-                                f"{model_manager.gb(info['ram_mb'])} of RAM.",
-                      style="CardMuted.TLabel", wraplength=200).pack(anchor="w", pady=(4, 0))
+            radio = ttk.Radiobutton(
+                box, text=f"{info['label']} - {info['tagline']}",
+                variable=self.var_voice, value=tier, style="Card.TRadiobutton",
+                command=lambda t=tier, i=info: self._voice_picked(t, i),
+            )
+            radio.pack(anchor="w")
+            points = _card_points(box, info["points"] + [
+                f"{info['download_gb']} GB download",
+                f"Uses about {model_manager.gb(info['ram_mb'])} of RAM"])
+            points.pack(anchor="w", fill="x", pady=(2, 0))
             ttk.Label(box, text=info["advice"], style="Card.TLabel",
-                      wraplength=200).pack(anchor="w", pady=(4, 0))
-            # Status and version share a line ("Downloaded.  Version 1").
+                      wraplength=200).pack(anchor="w", pady=(6, 0))
+            # Status and buttons packed from the bottom: the three cards
+            # stretch to one height, so the buttons line up.
+            btn_row = ttk.Frame(box, style="CardBody.TFrame")
+            btn_row.pack(side="bottom", anchor="w", pady=(6, 0))
+            # Status and version share a line ("In use.  Version 1").
             state_row = ttk.Frame(box, style="CardBody.TFrame")
-            state_row.pack(anchor="w")
-            status = ttk.Label(state_row, text="", style="Card.TLabel")
+            state_row.pack(side="bottom", anchor="w", pady=(8, 0))
+            status = ttk.Label(state_row, text="", style="Card.TLabel", wraplength=200)
             status.pack(side="left")
             version_label = ttk.Label(state_row, text="", style="CardMuted.TLabel")
             version_label.pack(side="left", padx=(8, 0))
             bar = ttk.Progressbar(box, mode="indeterminate", length=180)
-            btn_row = ttk.Frame(box, style="CardBody.TFrame")
-            btn_row.pack(anchor="w", pady=(6, 0))
+            latency = points
             action = ttk.Button(btn_row)
             delete = ttk.Button(
                 btn_row, text="Delete",
                 command=lambda t=tier, i=info: self._model_delete(t, i),
             )
             self._tiles[tier] = {
-                "info": info, "box": box, "latency": latency,
+                "info": info, "box": box, "latency": latency, "radio": radio,
                 "version_label": version_label,
                 "status": status, "bar": bar,
                 "action": action, "delete": delete, "state": None,
@@ -1309,23 +1336,21 @@ class _SettingsWindow:
         switch = ttk.Checkbutton(box, variable=self.var_local_grammar,
                                  style="Card.Switch.TCheckbutton",
                                  command=self._grammar_switched)
-        ttk.Label(
-            box,
-            text="Fixes small grammar slips. Each dictation takes "
-                 "2 to 6 seconds longer.",
-            style="CardMuted.TLabel", wraplength=200,
-        ).grid(row=1, column=0, columnspan=2, sticky="w")
-        ttk.Label(
-            box, text=f"1.5 GB download. Uses about "
-                      f"{model_manager.gb(model_manager.GRAMMAR_RAM_MB)} of RAM.",
-            style="CardMuted.TLabel", wraplength=200,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        _card_points(box, [
+            "Fixes small grammar slips",
+            "Each dictation 2 to 6 seconds slower",
+            "1.5 GB download",
+            f"Uses about {model_manager.gb(model_manager.GRAMMAR_RAM_MB)} of RAM",
+        ]).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 0))
         ttk.Label(
             box, text="Optional. Most dictations don't need it.",
             style="Card.TLabel", wraplength=200,
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        # Row 3 takes the spare height, so status and buttons sit at the
+        # bottom, level with the voice cards'.
+        box.rowconfigure(3, weight=1)
         status = ttk.Label(box, text="", wraplength=200, style="Card.TLabel")
-        status.grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        status.grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
         bar = ttk.Progressbar(box, mode="indeterminate", length=180)
         btn_row = ttk.Frame(box, style="CardBody.TFrame")
         btn_row.grid(row=6, column=0, columnspan=2, sticky="w", pady=(6, 0))
@@ -1412,15 +1437,9 @@ class _SettingsWindow:
         elif state == "in_use":
             status.config(text="In use.")
             delete.pack(side="left")
-        else:  # not_in_use
-            status.config(text="Downloaded, not in use.")
-            action.config(
-                text="Use this model",
-                state="normal" if self.model_controller else "disabled",
-                command=lambda: self._model_use(tier, info),
-            )
-            action.pack(side="left")
-            delete.pack(side="left", padx=6)
+        else:  # not_in_use: picked with the card's radio button
+            status.config(text="Downloaded. Select it above to use it.")
+            delete.pack(side="left")
 
     def _grammar_tile_state(self):
         if self._grammar_op is not None:
@@ -1506,6 +1525,7 @@ class _SettingsWindow:
     def _poll_models(self):
         for tier in self._tiles:
             self._render_model_tile(tier)
+        self._sync_voice_radios()
         self._render_grammar_tile()
         self._render_local_download()
         self._render_ram()
@@ -1591,6 +1611,26 @@ class _SettingsWindow:
                 self._model_ops.pop(tier, None)
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _sync_voice_radios(self):
+        """Radios follow the model actually in use (so a failed switch
+        snaps back), and can only pick a downloaded model while nothing
+        is downloading, loading or deleting."""
+        busy = bool(self._model_ops) or self.model_controller is None
+        if not busy:
+            in_use = model_manager.tier_for_size(config.MODEL_SIZE)
+            if in_use and self.var_voice.get() != in_use:
+                self.var_voice.set(in_use)
+        for tier, tile in self._tiles.items():
+            ok = not busy and model_manager.is_downloaded(tile["info"]["size"])
+            want = "normal" if ok else "disabled"
+            if str(tile["radio"].cget("state")) != want:
+                tile["radio"].config(state=want)
+
+    def _voice_picked(self, tier, info):
+        if info["size"] == config.MODEL_SIZE or self._model_ops:
+            return
+        self._model_use(tier, info)
 
     def _model_use(self, tier, info):
         if self.model_controller is None:

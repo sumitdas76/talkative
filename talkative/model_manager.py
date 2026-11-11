@@ -35,8 +35,8 @@ MODELS = {
         "approx": "about 0.5 GB",
         "download_gb": 0.5,
         "ram_mb": 400,
-        "latency": "Text appears 1–2 seconds after you stop speaking. "
-                   "Less accurate, most of all with accents.",
+        # Card bullets in Settings; download size and RAM are added after.
+        "points": ["Text in 1–2 seconds", "Less accurate, most of all with accents"],
         "advice": "Recommended for most people.",
     },
     "accurate": {
@@ -47,9 +47,8 @@ MODELS = {
         "approx": "about 1.5 GB",
         "download_gb": 1.5,
         "ram_mb": 900,
-        "latency": "Text appears about 5 seconds after you stop speaking, "
-                   "even for a few words. About 25% fewer mistakes, most "
-                   "of all with accents.",
+        "points": ["Text in about 5 seconds, even for a few words",
+                   "About 25% fewer mistakes, most of all with accents"],
         "advice": "Pick this if Fast often mishears you.",
     },
 }
