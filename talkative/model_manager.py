@@ -40,6 +40,8 @@ MODELS = {
         "download_gb": 0.5,
         "download_mb": 464,
         "ram_mb": 400,
+        # Shown while switching to it (load measured 2026-11-11: ~1.5 s / 12 s).
+        "load_note": "a few seconds",
         # Card bullets in Settings; download size and RAM are added after.
         "points": ["Text in 1–2 seconds", "Less accurate, most of all with accents"],
         "advice": "Recommended for most people.",
@@ -53,6 +55,7 @@ MODELS = {
         "download_gb": 1.5,
         "download_mb": 1446,
         "ram_mb": 900,
+        "load_note": "about 10 to 20 seconds",
         "points": ["Text in about 5 seconds, even for a few words",
                    "About 25% fewer mistakes, most of all with accents"],
         "advice": "Pick this if Fast often mishears you.",

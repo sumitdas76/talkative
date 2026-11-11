@@ -1429,6 +1429,16 @@ class _SettingsWindow:
             bar.pack(side="bottom", anchor="w", pady=(4, 0), after=tile["btn_row"])
             self._show_download_progress(tier)
             return
+        if state == "load":
+            # How long a load takes can't be measured as it goes (unlike a
+            # download's bytes), so a moving bar plus the usual time.
+            status.config(text=f"Loading the {info['label']} model… "
+                               f"this takes {info['load_note']}.")
+            bar.config(mode="indeterminate")
+            bar.pack(side="bottom", anchor="w", pady=(4, 0), after=tile["btn_row"])
+            bar.start(12)
+            return
+        bar.stop()
         bar.pack_forget()
 
         if state == "none":
@@ -1438,15 +1448,15 @@ class _SettingsWindow:
                 command=lambda: self._model_download(tier, info),
             )
             action.pack(side="left")
-        elif state == "load":
-            status.config(text="Loading…")
         elif state == "delete":
             status.config(text="Deleting…")
         elif state == "in_use":
             status.config(text="In use.")
             delete.pack(side="left")
         else:  # not_in_use: picked with the card's radio button
-            status.config(text="Downloaded. Select it above to use it.")
+            # Short: it shares a line with "Version N", and a longer text
+            # widened all three cards (window 908 -> 1055 px).
+            status.config(text="Downloaded.")
             delete.pack(side="left")
 
     def _grammar_tile_state(self):
