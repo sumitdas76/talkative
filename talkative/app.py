@@ -11,6 +11,7 @@ from . import audio_devices, cloud_client, cloud_notice, config, continuation, d
 from .audio_recorder import AudioRecorder
 from .autostart import sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
+from .articles import fix_articles
 from .bullets import BULLET, format_bullets
 from .numbers import format_numbers, restore_spoken_point
 from .dictionary import apply_dictionary, vocabulary_prompt
@@ -1136,6 +1137,10 @@ class TalkativeApp:
                     if BULLET in spoken:
                         listed = spoken
                 text = listed
+            if config.ENABLE_ARTICLE_FIX and not dev:
+                # Last, after bullets: a spoken letter bullet ("A always
+                # sleep") is gone by now, and grammar has had its turn.
+                text = fix_articles(text)
         else:
             after_fillers = after_corrections = after_collapse = after_grammar = text
             grammar_secs = 0.0

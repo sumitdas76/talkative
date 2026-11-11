@@ -35,6 +35,7 @@ _KEYS = {
     "enable_repeat_collapse": "ENABLE_REPEAT_COLLAPSE",
     "enable_number_format": "ENABLE_NUMBER_FORMAT",
     "enable_bullets": "ENABLE_BULLETS",
+    "enable_article_fix": "ENABLE_ARTICLE_FIX",
     # Was "enable_grammar_engine" (default on, never in the UI) until
     # 2026-11-11; a new key so every install starts with it off.
     "local_grammar": "ENABLE_GRAMMAR_ENGINE",

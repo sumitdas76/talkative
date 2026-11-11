@@ -297,6 +297,7 @@ def check_text_rules():
     """D17: number formatting and spoken bullets; D20: spoken corrections
     replace only the corrected words."""
     for check_id, script in (("D17", "numbers_test.py"), ("D17", "bullets_test.py"),
+                             ("D17", "articles_test.py"),
                              ("D20", "self_correction_test.py"), ("D29", "you_know_test.py"),
                              ("D27", "fix_learning_test.py"),
                              ("D44", "context_symbols_test.py"), ("D44", "context_retry_test.py"),

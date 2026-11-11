@@ -342,6 +342,10 @@ ENABLE_NUMBER_FORMAT = True
 # Cleaned-up mode only, never for developer English.
 ENABLE_BULLETS = True
 
+# "a"/"an" matched to the next word's sound ("a empty" -> "an empty",
+# articles.py). Cleaned-up mode only, never for developer English.
+ENABLE_ARTICLE_FIX = True
+
 # ---------------------------------------------------------------------------
 # Personal dictionary: spoken -> typed
 # ---------------------------------------------------------------------------
