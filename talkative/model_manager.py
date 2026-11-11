@@ -26,6 +26,10 @@ from .settings import settings_dir
 # itself with no model (UI, hotkey hook, audio).
 APP_RAM_MB = 200
 GRAMMAR_RAM_MB = 1700
+# Bytes on disk once downloaded (MiB, measured 2026-11-11): the progress
+# bar's 100%. A later model update may differ a little, so the bar stops
+# at 99% until the download really ends.
+GRAMMAR_DOWNLOAD_MB = 1486
 
 MODELS = {
     "fast": {
@@ -34,6 +38,7 @@ MODELS = {
         "tagline": "Instant response",
         "approx": "about 0.5 GB",
         "download_gb": 0.5,
+        "download_mb": 464,
         "ram_mb": 400,
         # Card bullets in Settings; download size and RAM are added after.
         "points": ["Text in 1–2 seconds", "Less accurate, most of all with accents"],
@@ -46,6 +51,7 @@ MODELS = {
         "tagline": "Fewer mistakes",
         "approx": "about 1.5 GB",
         "download_gb": 1.5,
+        "download_mb": 1446,
         "ram_mb": 900,
         "points": ["Text in about 5 seconds, even for a few words",
                    "About 25% fewer mistakes, most of all with accents"],
@@ -114,6 +120,37 @@ def delete(size):
     repo = _repo_dir(size)
     if repo is not None:
         shutil.rmtree(repo, ignore_errors=True)
+
+
+def folder_mb(path):
+    """MiB of files under `path` (0 if missing), partial downloads included."""
+    total = 0
+    if path is None or not Path(path).is_dir():
+        return 0.0
+    for p in Path(path).rglob("*"):
+        try:
+            if p.is_file():
+                total += p.stat().st_size
+        except OSError:
+            pass
+    return total / (1024 * 1024)
+
+
+def download_percent(done_mb, needed_mb, finished=False):
+    """0-100 for a progress bar; never 100 before the download ends."""
+    if finished:
+        return 100
+    if needed_mb <= 0:
+        return 0
+    return max(0, min(99, int(done_mb / needed_mb * 100)))
+
+
+def speech_download_mb(size):
+    """MiB of this voice model on disk so far (its Hugging Face cache
+    folder holds the partial files while downloading)."""
+    if "/" in size:
+        return folder_mb(models_dir() / ("models--" + size.replace("/", "--")))
+    return folder_mb(_repo_dir(size))
 
 
 def storage_used_mb():

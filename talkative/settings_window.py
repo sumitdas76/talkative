@@ -747,14 +747,20 @@ class _SettingsWindow:
     def _render_local_download(self):
         installed = model_manager.is_downloaded(config.MODEL_SIZE)
         if self._local_op == "downloading":
-            self.local_status.config(text="Downloading… this can take a few minutes.")
+            info = model_manager.MODELS.get(
+                model_manager.tier_for_size(config.MODEL_SIZE) or "fast",
+                model_manager.MODELS["fast"])
+            done = model_manager.speech_download_mb(config.MODEL_SIZE)
+            pct = model_manager.download_percent(done, info["download_mb"])
+            self.local_status.config(
+                text=f"Downloading… {pct}% ({min(int(done), info['download_mb'])} "
+                     f"of {info['download_mb']} MB)")
             self.local_download_btn.pack(anchor="w", pady=(4, 4))
             self.local_status.pack(anchor="w", before=self.local_download_btn)
+            self.local_bar.config(mode="determinate", maximum=100, value=pct)
             self.local_bar.pack(anchor="w", pady=(0, 4), before=self.local_download_btn)
-            self.local_bar.start(12)
             self.local_download_btn.config(state="disabled", text="Downloading…")
         else:
-            self.local_bar.stop()
             self.local_bar.pack_forget()
             if installed:
                 # The model boxes below say "Downloaded": no status line or
@@ -1298,6 +1304,7 @@ class _SettingsWindow:
             )
             self._tiles[tier] = {
                 "info": info, "box": box, "latency": latency, "radio": radio,
+                "btn_row": btn_row,
                 "version_label": version_label,
                 "status": status, "bar": bar,
                 "action": action, "delete": delete, "state": None,
@@ -1416,11 +1423,12 @@ class _SettingsWindow:
         action.pack_forget()
         delete.pack_forget()
         if state == "download":
-            status.config(text="Downloading… this can take a few minutes.")
-            bar.pack(anchor="w", pady=(4, 0))
-            bar.start(12)
+            bar.config(mode="determinate", maximum=100, value=0)
+            # Packed from the bottom just above the buttons: under the
+            # status line, as in the grammar card.
+            bar.pack(side="bottom", anchor="w", pady=(4, 0), after=tile["btn_row"])
+            self._show_download_progress(tier)
             return
-        bar.stop()
         bar.pack_forget()
 
         if state == "none":
@@ -1462,9 +1470,14 @@ class _SettingsWindow:
         download.pack_forget()
         delete.pack_forget()
         switch.grid_remove()
-        if state in ("download", "delete"):
-            status.config(text="Downloading… you can keep dictating."
-                          if state == "download" else "Deleting…")
+        if state == "download":
+            bar.config(mode="determinate", maximum=100, value=0)
+            bar.grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 0))
+            self._show_download_progress(None)
+            return
+        if state == "delete":
+            status.config(text="Deleting…")
+            bar.config(mode="indeterminate")
             bar.grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 0))
             bar.start(12)
             return
@@ -1525,8 +1538,12 @@ class _SettingsWindow:
     def _poll_models(self):
         for tier in self._tiles:
             self._render_model_tile(tier)
+            if self._tiles[tier]["state"] == "download":
+                self._show_download_progress(tier)
         self._sync_voice_radios()
         self._render_grammar_tile()
+        if self._grammar_tile["state"] == "download":
+            self._show_download_progress(None)
         self._render_local_download()
         self._render_ram()
         while self._model_errors:
@@ -1611,6 +1628,23 @@ class _SettingsWindow:
                 self._model_ops.pop(tier, None)
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _show_download_progress(self, tier):
+        """'Downloading… 37% (530 of 1446 MB)' and the bar's value, for a
+        voice model `tier` or (None) the grammar model. Measured from the
+        model's own folder, so two downloads at once don't mix."""
+        if tier is None:
+            tile = self._grammar_tile
+            done = model_manager.folder_mb(grammar_engine.engine_dir())
+            needed = model_manager.GRAMMAR_DOWNLOAD_MB
+        else:
+            tile = self._tiles[tier]
+            done = model_manager.speech_download_mb(tile["info"]["size"])
+            needed = tile["info"]["download_mb"]
+        pct = model_manager.download_percent(done, needed)
+        tile["bar"].config(value=pct)
+        tile["status"].config(
+            text=f"Downloading… {pct}% ({min(int(done), needed)} of {needed} MB)")
 
     def _sync_voice_radios(self):
         """Radios follow the model actually in use (so a failed switch
