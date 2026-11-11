@@ -474,6 +474,8 @@ def main():
     _script_check("D25", "Cloud silence trim never cuts quiet speech", "cloud_trim_test.py", 180)
     _script_check("W5", "settings.json saved atomically, one save at a time", "settings_save_test.py", 60)
     _script_check("W6", "Local models (General tab) show a background grammar download", "grammar_tile_test.py", 60)
+    _script_check("W9", "Optimize Narration is opt-in: off by default, off = not loaded, used or updated",
+                  "local_grammar_optin_test.py", 60)
     _script_check("D32", "Mic pre-roll: quick re-press keeps the first word, nothing reused, mic closes",
                   "preroll_test.py", 60)
     _script_check("D31", "Diagnostic data: off sends nothing; on never sends screen text",

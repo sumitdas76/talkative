@@ -22,8 +22,8 @@ corrections are cleaned up on the way.
 By default, Talkative processes dictation via Cloud — your audio goes to
 a remote server for transcription and cleanup, then is discarded, not
 stored. Prefer fully offline? Switch to Local in Settings → General any
-time and download the voice and grammar models (~2 GB) — after that,
-your audio and text never leave your PC.
+time and download the voice model (about 0.5 GB). After that, your
+audio and text never leave your PC.
 
 Dictation history, if you turn it on in the Dictation tab, is always
 stored only on your device, regardless of mode. In either mode the app
@@ -49,8 +49,9 @@ click **More info → Run anyway**. No administrator rights are needed.
 - Windows 10 or 11, 64-bit
 - A microphone
 - An internet connection (Cloud mode, the default). Switching to Local
-  needs about 2 GB of free disk space instead, and uses about 2.3 GB of
-  memory while running: 16 GB of RAM recommended, works on 8 GB.
+  needs about 0.5 GB of free disk space instead and uses under 1 GB of
+  memory while running. Local's optional grammar polish (Optimize
+  Narration) needs 1.5 GB more of each.
 
 Talkative works right after installing — nothing to download first. If
 you switch to Local mode, that download takes a couple of minutes; after

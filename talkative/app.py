@@ -279,19 +279,23 @@ class TalkativeApp:
                 gc.collect()  # release the local model.bin mapping, if any
                 self._enter_cloud_mode()
             grammar_engine.unload()  # Cloud never uses the local grammar engine
-        elif self.transcriber is _CLOUD_TRANSCRIBER:
-            self.transcriber = None
-            self._load_model_async()
+        else:
+            if self.transcriber is _CLOUD_TRANSCRIBER:
+                self.transcriber = None
+                self._load_model_async()
+            # Also on a plain save in Local: the Optimize Narration switch
+            # may have changed (load and unload are both idempotent).
             threading.Thread(target=self._load_grammar, daemon=True).start()
 
     def _load_grammar(self):
-        """Load the local grammar engine, then drop it again if the mode
-        changed while it loaded and no longer wants it -- it's ~1.5 GB of
-        memory, which matters on 8 GB laptops."""
+        """Load the local grammar engine when Local mode and its switch
+        want it, else unload it; drop it again if that changed while it
+        loaded -- it's ~1.5 GB of memory, which matters on 8 GB laptops."""
         def wanted():
-            return not self._cloud_active()
+            return not self._cloud_active() and config.ENABLE_GRAMMAR_ENGINE
 
         if not wanted():
+            grammar_engine.unload()
             return
         grammar_engine.load()
         if not wanted():
@@ -1439,7 +1443,7 @@ class TalkativeApp:
         onboarding.maybe_show(on_choice=self._onboarding_done)
         # Local setup's background grammar download, if Talkative was
         # closed before it finished (see onboarding.finish_local).
-        if config.GRAMMAR_PENDING_DOWNLOAD:
+        if config.GRAMMAR_PENDING_DOWNLOAD and config.ENABLE_GRAMMAR_ENGINE:
             grammar_engine.download_in_background()
         updater.start_background_check(self.updater_controller())
         # A minute in, so it never competes with startup or the first

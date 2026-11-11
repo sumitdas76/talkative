@@ -502,6 +502,10 @@ class _SettingsWindow:
         style.configure("Card.TLabel", background=field)
         style.configure("CardTitle.TLabel", background=field, font=("Segoe UI Semibold", 10))
         style.configure("CardMuted.TLabel", background=field, foreground=muted)
+        # A switch inside a card (Optimize Narration): the layout comes from
+        # Switch.TCheckbutton, only the background differs.
+        style.configure("Card.Switch.TCheckbutton", background=field)
+        style.map("Card.Switch.TCheckbutton", background=[("active", field)])
         # Flat buttons: clam's light/dark edge colors set to the face
         # color remove its bevel.
         style.configure("TButton", background=raised, lightcolor=raised, darkcolor=raised,
@@ -712,11 +716,9 @@ class _SettingsWindow:
 
         def work():
             try:
+                # Voice model only: Optimize Narration is opt-in (its card).
                 if not model_manager.is_downloaded(config.MODEL_SIZE):
                     model_manager.download(config.MODEL_SIZE)
-                if not grammar_engine.is_installed():
-                    grammar_engine.download()
-                grammar_engine.load_if_used()
             except Exception as exc:
                 self._local_error.append(f"Could not download local models:\n{exc}")
             finally:
@@ -725,11 +727,8 @@ class _SettingsWindow:
         threading.Thread(target=work, daemon=True).start()
 
     def _render_local_download(self):
-        installed = (
-            model_manager.is_downloaded(config.MODEL_SIZE)
-            and grammar_engine.is_installed()
-        )
-        if self._local_op == "downloading" or grammar_engine.is_downloading():
+        installed = model_manager.is_downloaded(config.MODEL_SIZE)
+        if self._local_op == "downloading":
             self.local_status.config(text="Downloading… this can take a few minutes.")
             self.local_download_btn.pack(anchor="w", pady=(4, 4))
             self.local_status.pack(anchor="w", before=self.local_download_btn)
@@ -746,11 +745,11 @@ class _SettingsWindow:
                 self.local_download_btn.pack_forget()
             else:
                 self.local_status.config(
-                    text="Local mode needs the voice and grammar models "
-                         "downloaded first (about 2 GB total)."
+                    text="Local mode needs the voice model downloaded "
+                         "first (about 0.5 GB)."
                 )
                 self.local_download_btn.config(
-                    state="normal", text="Download local models (~2 GB)"
+                    state="normal", text="Download voice model (0.5 GB)"
                 )
                 self.local_download_btn.pack(anchor="w", pady=(4, 4))
                 self.local_status.pack(anchor="w", before=self.local_download_btn)
@@ -1282,28 +1281,53 @@ class _SettingsWindow:
         self._poll_models()
 
     def _build_grammar_section(self, f):
+        # Opt-in since 2026-11-11 (measured: rarely helps, often more than
+        # half of Local's wait). Like the voice model card, it acts at once
+        # -- the switch doesn't wait for Save -- and it only shows once the
+        # model is downloaded, so it never claims "on" for a missing model.
         box = ttk.Frame(f, style="Card.TFrame", padding=(12, 10))
-        ttk.Label(box, text="Optimize Narration", style="CardTitle.TLabel").pack(anchor="w")
+        box.columnconfigure(0, weight=1)
+        ttk.Label(box, text="Optimize Narration", style="CardTitle.TLabel").grid(
+            row=0, column=0, sticky="w")
+        self.var_local_grammar = tk.BooleanVar(value=config.ENABLE_GRAMMAR_ENGINE)
+        switch = ttk.Checkbutton(box, variable=self.var_local_grammar,
+                                 style="Card.Switch.TCheckbutton",
+                                 command=self._grammar_switched)
         ttk.Label(
             box,
-            text="Fix grammar and punctuation",
+            text="Fixes small grammar slips. Each dictation takes "
+                 "2 to 6 seconds longer.",
             style="CardMuted.TLabel", wraplength=220,
-        ).pack(anchor="w")
+        ).grid(row=1, column=0, columnspan=2, sticky="w")
         status = ttk.Label(box, text="", wraplength=225, style="Card.TLabel")
-        status.pack(anchor="w")
-        bar = ttk.Progressbar(box, mode="indeterminate", length=240)
+        status.grid(row=2, column=0, columnspan=2, sticky="w")
+        bar = ttk.Progressbar(box, mode="indeterminate", length=200)
         btn_row = ttk.Frame(box, style="CardBody.TFrame")
-        btn_row.pack(anchor="w", pady=(6, 0))
+        btn_row.grid(row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
         download = ttk.Button(
-            btn_row, text="Download", command=self._grammar_download
+            btn_row, text="Download and turn on", command=self._grammar_download
         )
         delete = ttk.Button(btn_row, text="Delete", command=self._grammar_delete)
         self._grammar_tile = {
-            "box": box, "status": status, "bar": bar,
+            "box": box, "status": status, "bar": bar, "switch": switch,
             "download": download, "delete": delete, "state": None,
         }
         self._grammar_op = None
         return box
+
+    def _grammar_switched(self):
+        on = self.var_local_grammar.get()
+        config.ENABLE_GRAMMAR_ENGINE = on
+        settings.save({"local_grammar": on})
+        self._grammar_tile["state"] = None  # re-render the status line
+
+        def work():
+            if on:
+                grammar_engine.load_if_used()
+            else:
+                grammar_engine.unload()
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _model_tile_state(self, tier, size):
         op = self._model_ops.get(tier)
@@ -1383,30 +1407,35 @@ class _SettingsWindow:
     def _render_grammar_tile(self):
         tile = self._grammar_tile
         state = self._grammar_tile_state()
+        if state == "installed":
+            state = "on" if config.ENABLE_GRAMMAR_ENGINE else "off"
         if state == tile["state"]:
             return
         tile["state"] = state
 
-        bar, status = tile["bar"], tile["status"]
+        bar, status, switch = tile["bar"], tile["status"], tile["switch"]
         download, delete = tile["download"], tile["delete"]
         download.pack_forget()
         delete.pack_forget()
+        switch.grid_remove()
         if state in ("download", "delete"):
-            status.config(text="Downloading…" if state == "download" else "Deleting…")
-            bar.pack(anchor="w", pady=(4, 0))
+            status.config(text="Downloading… you can keep dictating."
+                          if state == "download" else "Deleting…")
+            bar.grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
             bar.start(12)
             return
         bar.stop()
-        bar.pack_forget()
+        bar.grid_remove()
 
         if state == "none":
-            status.config(
-                text="Not installed. Cleaned-up dictations use basic rules only."
-            )
+            status.config(text="Off. Needs a 1.5 GB download.")
             download.pack(side="left")
-        else:  # installed
-            status.config(text="Installed.")
-            delete.pack(side="left")
+            return
+        self.var_local_grammar.set(state == "on")
+        switch.grid(row=0, column=1, sticky="e")
+        status.config(text="Downloaded." if state == "on" else
+                      "Off. Delete frees 1.5 GB.")
+        delete.pack(side="left")
 
     def _grammar_download(self):
         self._grammar_op = "download"
@@ -1414,10 +1443,13 @@ class _SettingsWindow:
         def work():
             try:
                 grammar_engine.download()
+                # The button says "Download and turn on".
+                config.ENABLE_GRAMMAR_ENGINE = True
+                settings.save({"local_grammar": True})
                 grammar_engine.load_if_used()
             except Exception as exc:
                 self._model_errors.append(
-                    f"Could not download the grammar engine:\n{exc}"
+                    f"Could not download Optimize Narration:\n{exc}"
                 )
             finally:
                 self._grammar_op = None
@@ -1430,7 +1462,7 @@ class _SettingsWindow:
             "Remove the Optimize Narration files?\n\n"
             "This frees about 1.5 GB. “Cleaned up” dictations will keep "
             "working with basic rules only. You can download it again "
-            "any time from this tab.",
+            "any time from here.",
             icon="warning", parent=self.root,
         ):
             return
@@ -1440,6 +1472,8 @@ class _SettingsWindow:
             try:
                 grammar_engine.delete()
             finally:
+                config.ENABLE_GRAMMAR_ENGINE = False
+                settings.save({"local_grammar": False})
                 self._grammar_op = None
 
         threading.Thread(target=work, daemon=True).start()

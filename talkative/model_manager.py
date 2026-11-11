@@ -25,9 +25,9 @@ MODELS = {
         "size": "small.en",
         "label": "Fast",
         "tagline": "Instant response",
-        "approx": "about 244 MB",
-        "latency": "Text appears about 2–3 seconds after you stop speaking. "
-                   "Longer sentences can take a bit more time.",
+        "approx": "about 0.5 GB",
+        "latency": "Text appears 1–2 seconds after you stop speaking. "
+                   "Long dictations take a few seconds more.",
     },
 }
 

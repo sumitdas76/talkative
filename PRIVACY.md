@@ -62,7 +62,8 @@ their own policies, linked above.
 ### Local mode
 
 Speech recognition and cleanup run entirely on your PC. After the
-one-time download of the voice and grammar models (from Hugging Face),
+one-time download of the voice model (and the grammar model, if you turn
+on Optimize Narration) from Hugging Face,
 your audio and text never leave your computer. To spell names and terms
 correctly, Talkative reads up to 400 characters of the text before the
 cursor when you start dictating (never from password boxes); in Local

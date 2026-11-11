@@ -166,10 +166,10 @@ def download_in_background():
 
 
 def load_if_used():
-    """Load the engine when the current mode uses it (Local). Call after
-    any download: a download alone used to leave the new engine unused
-    until the next restart."""
-    if config.PROCESSING_MODE == "local":
+    """Load the engine when the current mode uses it (Local, with the
+    Optimize Narration switch on). Call after any download: a download
+    alone used to leave the new engine unused until the next restart."""
+    if config.PROCESSING_MODE == "local" and config.ENABLE_GRAMMAR_ENGINE:
         load()
 
 
@@ -388,6 +388,16 @@ def _retention_ok(inp, out, strict=False):
     return True
 
 
+def _base(w):
+    """A word without a plain -s/-es/-ed/-ing ending, for short words the
+    4-letter-prefix match can't see: "go"/"goes", "fix"/"fixes" (2026-11-11:
+    "he go" -> "he goes" made the guard throw away a fully correct fix)."""
+    for end, keep in (("ing", 3), ("es", 2), ("ed", 3), ("s", 2)):
+        if w.endswith(end) and len(w) - len(end) >= keep:
+            return w[:-len(end)]
+    return w
+
+
 def _same_words_ok(inp, out):
     """Strict (Local) only: the output's content words must be the input's,
     give or take an ending ("add" -> "adds"): none new, none lost. Catches a
@@ -399,8 +409,10 @@ def _same_words_ok(inp, out):
 
     def covered(words, other):
         stems = {w[:4] for w in other if len(w) >= 4}
+        bases = {_base(w) for w in other}
         return all(w in other or w in _STOPWORDS or w.isdigit()
-                   or (len(w) >= 4 and w[:4] in stems) for w in words)
+                   or (len(w) >= 4 and w[:4] in stems)
+                   or _base(w) in bases for w in words)
 
     return covered(b, a) and covered(a, b)
 
@@ -613,7 +625,9 @@ def apply(text):
     config.GRAMMAR_MAX_SECONDS."""
     global _speed, last_skip
     last_skip = None
-    if not text or _generator is None:
+    # The switch is checked here too: a load that finishes just after the
+    # user turned Optimize Narration off must not still be used.
+    if not text or _generator is None or not config.ENABLE_GRAMMAR_ENGINE:
         return text
     predicted = predicted_seconds(text)
     if predicted is not None and predicted > config.GRAMMAR_MAX_SECONDS:

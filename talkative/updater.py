@@ -166,6 +166,8 @@ def find_update(manifest, manual=False):
             continue
         if MANAGED[key]["kind"] == "grammar" and not entry.get("hf_repo"):
             continue  # not updatable until a repo is published
+        if MANAGED[key]["kind"] == "grammar" and not config.ENABLE_GRAMMAR_ENGINE:
+            continue  # switched off (opt-in since 2026-11-11): no 1.5 GB update
         return key, entry
     return None
 

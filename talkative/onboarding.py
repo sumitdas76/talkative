@@ -8,10 +8,10 @@ and Local instead of silently inheriting config.PROCESSING_MODE's "cloud"
 default. Non-blocking by design: the app starts up under whatever
 PROCESSING_MODE is already configured (Cloud, normally) while this screen
 is open, so dictation works immediately even before the user answers it.
-If they pick Local, both models are downloaded right here (blocking this
-window with a progress bar) so onboarding hands off a fully working
-offline setup, not a half-configured one requiring a second trip to
-Settings for the grammar engine.
+If they pick Local, the voice model is downloaded right here (blocking
+this window with a progress bar) so onboarding hands off a working
+offline setup. The grammar model (Optimize Narration) is opt-in since
+2026-11-11 and lives in Settings > General > Local.
 
 Built as a tk.Toplevel on the shared overlay thread (see overlay_thread.py
 -- multiple independent tk.Tk() roots across threads caused real crashes),
@@ -22,7 +22,7 @@ the app waiting for an answer.
 
 import threading
 
-from . import app_icon, config, grammar_engine, hardware, model_manager, overlay_thread, settings
+from . import app_icon, config, hardware, model_manager, overlay_thread, settings
 
 _opened = False
 _lock = threading.Lock()
@@ -105,12 +105,10 @@ def _build(overlay, on_choice):
         bullets(local_box, [
             "Everything stays private. Your voice and text never leave "
             "this device, and nothing is sent over the internet.",
-            "Ready to dictate after a one-time 0.5 GB download. Optimize "
-            "Narration (1.5 GB more) then finishes downloading in the "
-            "background while you work.",
-            "Uses about 2.3 GB of memory while Talkative runs: best with "
-            "16 GB of RAM, works on 8 GB. No internet is needed after "
-            "the downloads.",
+            "Ready to dictate after a one-time 0.5 GB download. No "
+            "internet is needed after that.",
+            "Uses under 1 GB of memory while Talkative runs, so it works "
+            "well on 8 GB PCs.",
         ])
         ttk.Label(local_box, wraplength=460, text=hardware.local_fit()).pack(
             anchor="w", pady=(8, 0))
@@ -141,12 +139,9 @@ def _build(overlay, on_choice):
                 on_choice(chosen_mode)
 
         def finish_local():
-            if not grammar_engine.is_installed():
-                config.GRAMMAR_PENDING_DOWNLOAD = True
-                settings.save({"grammar_pending_download": True})
+            # Optimize Narration (the 1.5 GB grammar model) is opt-in since
+            # 2026-11-11: Settings > General > Local, not downloaded here.
             finish("local")
-            if config.GRAMMAR_PENDING_DOWNLOAD:
-                grammar_engine.download_in_background()
 
         def on_continue():
             if state["busy"]:
@@ -169,10 +164,8 @@ def _build(overlay, on_choice):
                 finish_local()
                 return
 
-            # Only the voice model is waited for: with it, dictation works
-            # (rules-only cleanup); the 1.5 GB grammar model follows in the
-            # background (finish_local). Minutes sooner for someone who
-            # needs to dictate now (2026-09-27).
+            # Only the voice model is needed: dictation works with it
+            # (rules-only cleanup; the grammar model is opt-in).
             # Approximate size (measured live, 2026-09-19) -- used only as
             # a progress-bar denominator, not for exact accounting. Real
             # per-file byte callbacks would need hooking huggingface_hub's

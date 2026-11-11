@@ -168,10 +168,15 @@ FILLER_WORDS = ["um", "umm", "uh", "uhh", "uhm", "erm"]
 # "Do you know", "you know what I mean", "as you know" stay.
 REMOVE_YOU_KNOW = True
 
-# Grammar engine (invisible stage 2 of cleaned_up mode; see
-# grammar_engine.py). Off means rules-only even when the model is
-# installed. Missing model silently degrades to rules-only regardless.
-ENABLE_GRAMMAR_ENGINE = True
+# Local grammar model ("Optimize Narration", stage 2 of cleaned_up mode in
+# Local; see grammar_engine.py). Opt-in since 2026-11-11 (settings key
+# "local_grammar", a switch on its Settings card): measured on the user's
+# own 29 recordings + the 59 test clips, the strict-leash model left 61 of
+# 88 texts unchanged, made word error rate worse (16.4% -> 18.0%, 0 clips
+# better, 8 worse) and was more than half of Local's wait on long
+# dictations (4-6 s of 7-11 s). Off = rules-only, and the 1.5 GB model is
+# neither downloaded, loaded nor updated. Cloud grammar is unaffected.
+ENABLE_GRAMMAR_ENGINE = False
 # Folder name under the app models dir holding the engine model. Normally
 # "grammar"; the July 2026 A/B audition installs two candidates side by
 # side ("grammar-15" = Qwen2.5-1.5B, "grammar-05" = Qwen2.5-0.5B) switched
@@ -302,8 +307,9 @@ CLOUD_NOTICE_DONE = False
 # to existing installs too, not just fresh ones (deliberate; see
 # CLAUDE.md's onboarding note).
 ONBOARDING_DONE = False
-# Local setup downloads the grammar model (Optimize Narration) in the
-# background after the speech model, so dictation works minutes sooner.
+# Local setup used to download the grammar model (Optimize Narration) in
+# the background after the speech model; since it became opt-in
+# (2026-11-11) a pending download only resumes while it is switched on.
 # True while that download is owed; resumed at the next start if the app
 # was closed mid-way. Only set by the app itself, so a model the user
 # deleted in Settings is never re-downloaded behind their back.
