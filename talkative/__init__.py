@@ -1,4 +1,4 @@
-__version__ = "1.3.22"
+__version__ = "1.3.23"
 import os as _os
 
 # Model downloads over plain HTTPS, not Hugging Face's Xet engine: Xet
