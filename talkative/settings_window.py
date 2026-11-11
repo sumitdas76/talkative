@@ -744,12 +744,16 @@ class _SettingsWindow:
                 self.local_status.pack_forget()
                 self.local_download_btn.pack_forget()
             else:
+                info = model_manager.MODELS.get(
+                    model_manager.tier_for_size(config.MODEL_SIZE) or "fast",
+                    model_manager.MODELS["fast"])
                 self.local_status.config(
                     text="Local mode needs the voice model downloaded "
-                         "first (about 0.5 GB)."
+                         f"first ({info['approx']})."
                 )
                 self.local_download_btn.config(
-                    state="normal", text="Download voice model (0.5 GB)"
+                    state="normal",
+                    text=f"Download voice model ({info['download_gb']} GB)"
                 )
                 self.local_download_btn.pack(anchor="w", pady=(4, 4))
                 self.local_status.pack(anchor="w", before=self.local_download_btn)
@@ -1226,23 +1230,30 @@ class _SettingsWindow:
 
         tiles_row = ttk.Frame(f)
         tiles_row.pack(fill="x", pady=(2, 6))
-        # Column count follows however many tiers exist (just Fast right
-        # now, since Accurate was removed) rather than assuming two, so a
-        # single tile spans the full width instead of leaving an awkward
-        # empty half.
-        # The grammar model sits in the same row, after the voice models,
-        # to keep General's height down now that the models live there.
+        # Voice models on the left (pick one), the grammar model on the
+        # right (optional), each card with its download size, RAM and our
+        # advice (2026-11-11, user request). Column count follows however
+        # many tiers exist.
         n_tiles = len(model_manager.MODELS)
         for col in range(n_tiles + 1):
             tiles_row.columnconfigure(col, weight=1, uniform="tile")
+        ttk.Label(tiles_row, text="Voice model: pick one", style="Muted.TLabel").grid(
+            row=0, column=0, columnspan=n_tiles, sticky="w", pady=(0, 4))
+        ttk.Label(tiles_row, text="Grammar: optional", style="Muted.TLabel").grid(
+            row=0, column=n_tiles, sticky="w", padx=(12, 0), pady=(0, 4))
         for col, (tier, info) in enumerate(model_manager.MODELS.items()):
             box = ttk.Frame(tiles_row, style="Card.TFrame", padding=(12, 10))
-            box.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 12, 0))
+            box.grid(row=1, column=col, sticky="nsew", padx=(0 if col == 0 else 12, 0))
             ttk.Label(box, text=f"{info['label']} - {info['tagline']}",
                       style="CardTitle.TLabel").pack(anchor="w")
             latency = ttk.Label(box, text=info["latency"], style="CardMuted.TLabel",
-                                 wraplength=225)
+                                 wraplength=200)
             latency.pack(anchor="w")
+            ttk.Label(box, text=f"{info['download_gb']} GB download. Uses about "
+                                f"{model_manager.gb(info['ram_mb'])} of RAM.",
+                      style="CardMuted.TLabel", wraplength=200).pack(anchor="w", pady=(4, 0))
+            ttk.Label(box, text=info["advice"], style="Card.TLabel",
+                      wraplength=200).pack(anchor="w", pady=(4, 0))
             # Status and version share a line ("Downloaded.  Version 1").
             state_row = ttk.Frame(box, style="CardBody.TFrame")
             state_row.pack(anchor="w")
@@ -1266,7 +1277,12 @@ class _SettingsWindow:
             }
 
         self._build_grammar_section(tiles_row).grid(
-            row=0, column=n_tiles, sticky="nsew", padx=(12, 0))
+            row=1, column=n_tiles, sticky="nsew", padx=(12, 0))
+
+        # Total for the chosen combination, only while Local is picked
+        # (Cloud keeps no model in memory).
+        self.ram_label = ttk.Label(f, text="", wraplength=640)
+        self._ram_text = None
 
         notes = ttk.Frame(f)
         notes.pack(anchor="w")
@@ -1297,13 +1313,22 @@ class _SettingsWindow:
             box,
             text="Fixes small grammar slips. Each dictation takes "
                  "2 to 6 seconds longer.",
-            style="CardMuted.TLabel", wraplength=220,
+            style="CardMuted.TLabel", wraplength=200,
         ).grid(row=1, column=0, columnspan=2, sticky="w")
-        status = ttk.Label(box, text="", wraplength=225, style="Card.TLabel")
-        status.grid(row=2, column=0, columnspan=2, sticky="w")
-        bar = ttk.Progressbar(box, mode="indeterminate", length=200)
+        ttk.Label(
+            box, text=f"1.5 GB download. Uses about "
+                      f"{model_manager.gb(model_manager.GRAMMAR_RAM_MB)} of RAM.",
+            style="CardMuted.TLabel", wraplength=200,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        ttk.Label(
+            box, text="Optional. Most dictations don't need it.",
+            style="Card.TLabel", wraplength=200,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        status = ttk.Label(box, text="", wraplength=200, style="Card.TLabel")
+        status.grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        bar = ttk.Progressbar(box, mode="indeterminate", length=180)
         btn_row = ttk.Frame(box, style="CardBody.TFrame")
-        btn_row.grid(row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        btn_row.grid(row=6, column=0, columnspan=2, sticky="w", pady=(6, 0))
         download = ttk.Button(
             btn_row, text="Download and turn on", command=self._grammar_download
         )
@@ -1349,8 +1374,10 @@ class _SettingsWindow:
         # Refreshed every poll regardless of whether the overall state
         # changed, so it updates live if a background update swaps the
         # files in without the tile ever passing through "download".
-        if state in ("in_use", "not_in_use"):
-            ver = updater.installed_version(f"speech-{tier}")
+        key = f"speech-{tier}"
+        if state in ("in_use", "not_in_use") and key in updater.MANAGED:
+            # Accurate isn't in the update manifest: fixed Hugging Face repo.
+            ver = updater.installed_version(key)
             tile["version_label"].config(text=f"Version {ver}" if ver else "")
         else:
             tile["version_label"].config(text="")
@@ -1372,7 +1399,7 @@ class _SettingsWindow:
         bar.pack_forget()
 
         if state == "none":
-            status.config(text=f"Not downloaded ({info['approx']}).")
+            status.config(text="Not downloaded.")
             action.config(
                 text="Download",
                 command=lambda: self._model_download(tier, info),
@@ -1383,9 +1410,7 @@ class _SettingsWindow:
         elif state == "delete":
             status.config(text="Deleting…")
         elif state == "in_use":
-            # No "in use" badge/border -- there's only one voice model now,
-            # so highlighting which one is active is meaningless clutter.
-            status.config(text="Downloaded.")
+            status.config(text="In use.")
             delete.pack(side="left")
         else:  # not_in_use
             status.config(text="Downloaded, not in use.")
@@ -1421,19 +1446,19 @@ class _SettingsWindow:
         if state in ("download", "delete"):
             status.config(text="Downloading… you can keep dictating."
                           if state == "download" else "Deleting…")
-            bar.grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
+            bar.grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 0))
             bar.start(12)
             return
         bar.stop()
         bar.grid_remove()
 
         if state == "none":
-            status.config(text="Off. Needs a 1.5 GB download.")
+            status.config(text="Not downloaded. Off.")
             download.pack(side="left")
             return
         self.var_local_grammar.set(state == "on")
         switch.grid(row=0, column=1, sticky="e")
-        status.config(text="Downloaded." if state == "on" else
+        status.config(text="On." if state == "on" else
                       "Off. Delete frees 1.5 GB.")
         delete.pack(side="left")
 
@@ -1483,6 +1508,7 @@ class _SettingsWindow:
             self._render_model_tile(tier)
         self._render_grammar_tile()
         self._render_local_download()
+        self._render_ram()
         while self._model_errors:
             messagebox.showerror(APP_NAME, self._model_errors.pop(0), parent=self.root)
         self.storage_label.config(
@@ -1508,6 +1534,28 @@ class _SettingsWindow:
         else:
             self.undo_btn.pack_forget()
         self.root.after(300, self._poll_models)
+
+    def _render_ram(self):
+        """'With Fast and Optimize Narration on, Talkative uses about 2.3 GB
+        of RAM.' -- for the voice model in use and the grammar switch, shown
+        only while Local is picked."""
+        text = ""
+        if self.var_engine.get() == "local":
+            size = config.MODEL_SIZE
+            tier = model_manager.tier_for_size(size) or "fast"
+            grammar = config.ENABLE_GRAMMAR_ENGINE and grammar_engine.is_installed()
+            label = model_manager.MODELS[tier]["label"]
+            combo = f"{label} voice model and Optimize Narration {'on' if grammar else 'off'}"
+            text = (f"With the {combo}, {APP_NAME} uses about "
+                    f"{model_manager.gb(model_manager.ram_mb(size, grammar))} of RAM.")
+        if text == self._ram_text:
+            return
+        self._ram_text = text
+        if text:
+            self.ram_label.config(text=text)
+            self.ram_label.pack(anchor="w", pady=(0, 4), before=self.storage_label.master)
+        else:
+            self.ram_label.pack_forget()
 
     def _undo_update(self):
         if self._undoing or self.model_controller is None:

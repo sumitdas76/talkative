@@ -1,7 +1,7 @@
 import numpy as np
 from faster_whisper import WhisperModel
 
-from . import config, hardware
+from . import config, hardware, model_manager
 
 
 class Transcriber:
@@ -34,7 +34,7 @@ class Transcriber:
             break
         else:
             raise error
-        self._language = "en" if model_size.endswith(".en") else None
+        self._language = "en" if model_manager.english_only(model_size) else None
 
     def transcribe(self, audio, sample_rate=16000, initial_prompt=None):
         if audio is None or audio.size == 0:

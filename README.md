@@ -50,8 +50,10 @@ click **More info → Run anyway**. No administrator rights are needed.
 - A microphone
 - An internet connection (Cloud mode, the default). Switching to Local
   needs about 0.5 GB of free disk space instead and uses under 1 GB of
-  memory while running. Local's optional grammar polish (Optimize
-  Narration) needs 1.5 GB more of each.
+  memory while running. The optional Accurate voice model (fewer
+  mistakes, about 5 seconds per dictation) needs 1.5 GB of disk and
+  about 1.1 GB of memory instead. Local's optional grammar polish
+  (Optimize Narration) needs 1.5 GB of disk and 1.7 GB of memory more.
 
 Talkative works right after installing — nothing to download first. If
 you switch to Local mode, that download takes a couple of minutes; after

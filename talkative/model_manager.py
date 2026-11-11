@@ -7,11 +7,11 @@ Face cache), so deleting them from the UI can't surprise other tools and
 download helper pointed at this folder; the same folder is passed to
 WhisperModel as download_root at load time.
 
-Fast only. The Accurate tier (large-v3-turbo) was removed 2026-07-20 at
-the user's request, in favor of leaning on the grammar engine for quality
-instead of a slower, larger speech model -- not just uninstalled, the
-option itself no longer exists in the UI. See CLAUDE.md for the full
-rationale and the guard changes that went with it in grammar_engine.py.
+Two tiers. Fast (small.en) is the default. Accurate came back 2026-11-11
+as distil-large-v3.5 (the old large-v3-turbo Accurate tier was removed
+2026-07-20), after tools/grammar_eval/local_stt_bench.py on 59 real clips:
+word errors 16.4% -> 12.4% (Indian English 19% -> 12%), but about 5 s per
+dictation at any length (its large encoder always reads a 30 s window).
 """
 
 import os
@@ -20,14 +20,37 @@ from pathlib import Path
 
 from .settings import settings_dir
 
+# RAM figures shown in Settings > General > Local, measured 2026-11-11 with
+# tools/grammar_eval/ram_probe.py (working set while loaded, 60 s
+# dictation; loading briefly peaks higher). APP_RAM_MB is Talkative
+# itself with no model (UI, hotkey hook, audio).
+APP_RAM_MB = 200
+GRAMMAR_RAM_MB = 1700
+
 MODELS = {
     "fast": {
         "size": "small.en",
         "label": "Fast",
         "tagline": "Instant response",
         "approx": "about 0.5 GB",
+        "download_gb": 0.5,
+        "ram_mb": 400,
         "latency": "Text appears 1–2 seconds after you stop speaking. "
-                   "Long dictations take a few seconds more.",
+                   "Less accurate, most of all with accents.",
+        "advice": "Recommended for most people.",
+    },
+    "accurate": {
+        "size": "distil-whisper/distil-large-v3.5-ct2",
+        "english_only": True,
+        "label": "Accurate",
+        "tagline": "Fewer mistakes",
+        "approx": "about 1.5 GB",
+        "download_gb": 1.5,
+        "ram_mb": 900,
+        "latency": "Text appears about 5 seconds after you stop speaking, "
+                   "even for a few words. About 25% fewer mistakes, most "
+                   "of all with accents.",
+        "advice": "Pick this if Fast often mishears you.",
     },
 }
 
@@ -39,6 +62,25 @@ def tier_for_size(size):
     return None
 
 
+def english_only(size):
+    """True when the model only knows English, so the language is fixed
+    instead of detected (detection costs time and can guess wrong)."""
+    info = MODELS.get(tier_for_size(size) or "", {})
+    return size.endswith(".en") or bool(info.get("english_only"))
+
+
+def ram_mb(size, grammar_on):
+    """About how much RAM Talkative uses in Local mode with this voice
+    model, plus the grammar model when it's switched on."""
+    info = MODELS.get(tier_for_size(size) or "fast", MODELS["fast"])
+    return APP_RAM_MB + info["ram_mb"] + (GRAMMAR_RAM_MB if grammar_on else 0)
+
+
+def gb(mb):
+    """'0.6 GB' style text for a size in MB."""
+    return f"{mb / 1000:.1f} GB"
+
+
 def models_dir():
     d = settings_dir() / "models"
     d.mkdir(parents=True, exist_ok=True)
@@ -47,6 +89,9 @@ def models_dir():
 
 def _repo_dir(size, base=None):
     base = models_dir() if base is None else Path(base)
+    if "/" in size:  # a Hugging Face repo id: "distil-whisper/distil-large-v3.5-ct2"
+        repo = base / ("models--" + size.replace("/", "--"))
+        return repo if repo.is_dir() else None
     return next(base.glob(f"models--*faster-whisper-{size}"), None)
 
 
