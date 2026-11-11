@@ -46,6 +46,7 @@ _BG = "#c82828"  # same red as the tray's recording icon (tray.py)
 _FG = "#ffffff"  # 5.5:1 on the red (black was 3.8:1)
 _INFO_BG, _INFO_FG = "#22262e", "#ffffff"  # "still working" notices
 _DISMISS = object()  # sentinel put on the command queue to hide early
+_HIDE = object()  # (_HIDE, seq): take down that one message (its work is done)
 _LOCATE_WAIT = 0.4  # seconds to find the text cursor before using the fallback spot
 _GAP = 12  # pixels between the message and the line it points at
 
@@ -103,6 +104,7 @@ class _Toast:
         self._commands = queue.Queue()
         self._seq = 0  # order of show() calls; the spot is found off-thread
         self._seq_lock = threading.Lock()
+        self._cancelled = set()  # seqs hidden by hide(); never shown again
         self._ready = threading.Event()
         self._failed = False
 
@@ -127,6 +129,8 @@ class _Toast:
             seq = self._seq
 
         def job():
+            if seq in self._cancelled:
+                return  # hidden before it found its spot
             # at_line: about the listening line itself (a slow microphone),
             # so shown just above it, not at the text cursor.
             self._commands.put((text, seconds, info, None if at_line else _locate(), seq))
@@ -135,6 +139,15 @@ class _Toast:
             self._overlay.build(self._wake)
 
         threading.Thread(target=job, daemon=True).start()
+        return seq
+
+    def hide(self, seq):
+        """Take down message `seq` if it's still the one shown (a newer
+        message stays up), or stop it appearing if it hasn't yet."""
+        with self._seq_lock:
+            self._cancelled.add(seq)
+        self._commands.put((_HIDE, seq))
+        self._overlay.build(self._wake)
 
     # ---- overlay thread ----
 
@@ -203,6 +216,8 @@ class _Toast:
             self._poll()
 
     def _show(self, text, seconds, info, rect=None, seq=0):
+        if seq in self._cancelled:
+            return  # its work finished while it was finding its spot
         if seq < self._shown_seq:
             return  # a newer message is already up (found its spot sooner)
         self._shown_seq = seq
@@ -229,6 +244,11 @@ class _Toast:
                 cmd = self._commands.get_nowait()
                 if cmd is _DISMISS:
                     self._hide()
+                    continue
+                if cmd[0] is _HIDE:
+                    if cmd[1] == self._shown_seq and self._hide_job is not None:
+                        self.root.after_cancel(self._hide_job)
+                        self._hide()
                     continue
                 self._show(*cmd)
         except queue.Empty:
@@ -294,11 +314,28 @@ def show(text, seconds=None, info=False, at_line=False):
     """Flash `text` in a small topmost, non-activating box near the
     text cursor (or, with at_line=True, just above the listening line) for
     `seconds` (default 1.5), red, or dark with info=True.
-    Safe from any thread; no-op on failure."""
+    Safe from any thread; no-op on failure. Returns an id for hide(), or
+    None."""
     try:
         toast = _get()
         toast._ready.wait(timeout=3)
         if not toast._failed:
-            toast.show(text, seconds, info, at_line)
+            return toast.show(text, seconds, info, at_line)
+    except Exception:
+        pass
+    return None
+
+
+def hide(seq):
+    """Take down the message show() returned `seq` for, early -- only if
+    it's still the one on screen, so a newer message stays up. Used when a
+    "still working" notice's dictation finishes (user report 2026-11-11:
+    it stayed up a few seconds after the text appeared)."""
+    if seq is None:
+        return
+    try:
+        toast = _get()
+        if not toast._failed:
+            toast.hide(seq)
     except Exception:
         pass

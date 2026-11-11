@@ -966,10 +966,20 @@ class TalkativeApp:
             self._job_blank.value = False
         # Taking long (Cloud slow, a fallback loading): say so once, so the
         # user isn't left wondering whether anything is happening.
-        slow = threading.Timer(config.SLOW_NOTICE_SECONDS, lambda: error_toast.show(
-            "Still working on it…" + (" Talkative Cloud is slower than usual right now."
-                                      if self._cloud_active() else ""),
-            seconds=4, info=True))
+        notice = []  # the notice's id, to take it down when the text is in
+        notice_lock = threading.Lock()
+        finished = []
+
+        def still_working():
+            with notice_lock:  # not if the dictation finished meanwhile
+                if not finished:
+                    notice.append(error_toast.show(
+                        "Still working on it…"
+                        + (" Talkative Cloud is slower than usual right now."
+                           if self._cloud_active() else ""),
+                        seconds=4, info=True))
+
+        slow = threading.Timer(config.SLOW_NOTICE_SECONDS, still_working)
         slow.daemon = True
         slow.start()
         try:
@@ -980,6 +990,12 @@ class TalkativeApp:
                             "The details are in errors.log.")
         finally:
             slow.cancel()
+            # Done (typed, or a reason shown): the notice goes now, not
+            # after its 4 s. A newer message (why it wasn't typed) stays.
+            with notice_lock:
+                finished.append(True)
+                for seq_id in notice:
+                    error_toast.hide(seq_id)
             self._report("finished without a paste")
             with self._order:
                 self._jobs -= 1
