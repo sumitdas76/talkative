@@ -19,11 +19,17 @@ $ErrorActionPreference = "Stop"
 & $Python scripts\version_info.py
 if ($LASTEXITCODE -ne 0) { throw "version_info.py failed" }
 
-$layout = if ($OneDir) { @("--onedir", "--distpath", "dist\store", "--workpath", "build\store") } else { @("--onefile") }
+# The Store build keeps its .spec under build\store so it never overwrites
+# the tracked Talkative.spec; PyInstaller then reads relative paths from
+# the spec's folder, hence the absolute ones.
+$root = (Resolve-Path .).Path
+$layout = if ($OneDir) {
+    @("--onedir", "--distpath", "$root\dist\store", "--workpath", "$root\build\store", "--specpath", "$root\build\store")
+} else { @("--onefile") }
 
 & $Python -m PyInstaller --noconfirm @layout --windowed `
-    --name Talkative --icon assets\icon.ico `
-    --version-file build\version_info.txt `
+    --name Talkative --icon "$root\assets\icon.ico" `
+    --version-file "$root\build\version_info.txt" `
     --collect-all ctranslate2 --collect-all faster_whisper --collect-all av `
     --collect-all tokenizers --collect-all uiautomation `
     --hidden-import win32timezone main.py
