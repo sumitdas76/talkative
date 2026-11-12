@@ -21,7 +21,7 @@ from tkinter import filedialog, messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, audio_devices, config, dev_mode, feedback, fix_learning, grammar_engine, history, mic_warmup, model_manager, overlay_thread, palette, pill, settings, try_it_now, updater
+from . import __version__, app_icon, audio_devices, config, dev_mode, feedback, fix_learning, grammar_engine, history, mic_warmup, model_manager, overlay_thread, packaging, palette, pill, settings, try_it_now, updater
 from .keynames import friendly as _friendly_key_name
 
 log = logging.getLogger(__name__)
@@ -1773,7 +1773,9 @@ class _SettingsWindow:
         text.grid(row=0, column=0, sticky="w")
         ttk.Label(text, text=f"{APP_NAME} {__version__}").pack(anchor="w")
         self.check_updates_label = ttk.Label(
-            text, style="Muted.TLabel", text="", wraplength=380
+            text, style="Muted.TLabel", wraplength=380,
+            text=("Updates come from the Microsoft Store."
+                  if packaging.is_store_build() else ""),
         )
         self.check_updates_label.pack(anchor="w")
         self.check_updates_btn = ttk.Button(

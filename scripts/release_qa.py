@@ -315,7 +315,8 @@ def check_text_rules():
                              ("D49", "focus_types_test.py"),
                              ("W10", "local_models_test.py"),
                              ("D50", "still_working_test.py"),
-                             ("D51", "single_instance_test.py")):
+                             ("D51", "single_instance_test.py"),
+                             ("D52", "packaging_test.py")):
         code, out = run_py([script], ROOT / "tools", timeout=60)
         last = out.strip().splitlines()[-1] if out.strip() else "no output"
         record(check_id, f"Text rules: {script[:-8]}", "PASS" if code == 0 else "FAIL", last)

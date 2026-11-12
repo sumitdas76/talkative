@@ -39,3 +39,8 @@ tokenizers==0.23.1
 tqdm==4.68.4
 typing_extensions==4.16.0
 uiautomation==2.0.29
+winrt-runtime==4.1.0
+winrt-Windows.ApplicationModel==4!10.0.28000.2957
+winrt-Windows.Foundation==4!10.0.28000.2957
+winrt-Windows.Foundation.Collections==4!10.0.28000.2957
+winrt-Windows.Storage.Streams==4!10.0.28000.2957

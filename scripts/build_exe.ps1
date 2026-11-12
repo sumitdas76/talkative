@@ -4,18 +4,24 @@
 # drift apart. The --collect-all flags are load-bearing -- see CLAUDE.md's
 # "Packaging notes".
 #
-# Usage (from the project root): .\scripts\build_exe.ps1 [-Python <path>]
+# Usage (from the project root): .\scripts\build_exe.ps1 [-Python <path>] [-OneDir]
+#
+# -OneDir: the Microsoft Store build (scripts\build_msix.ps1) -- a folder,
+# dist\store\Talkative\, instead of the single EXE. Inside a package the
+# single EXE would unpack ~250 MB to %TEMP% at every start for nothing.
 # Must run under PowerShell, not Bash -- Bash eats the backslash in
 # assets\icon.ico.
 
-param([string]$Python = ".\.venv\Scripts\python.exe")
+param([string]$Python = ".\.venv\Scripts\python.exe", [switch]$OneDir)
 
 $ErrorActionPreference = "Stop"
 
 & $Python scripts\version_info.py
 if ($LASTEXITCODE -ne 0) { throw "version_info.py failed" }
 
-& $Python -m PyInstaller --noconfirm --onefile --windowed `
+$layout = if ($OneDir) { @("--onedir", "--distpath", "dist\store", "--workpath", "build\store") } else { @("--onefile") }
+
+& $Python -m PyInstaller --noconfirm @layout --windowed `
     --name Talkative --icon assets\icon.ico `
     --version-file build\version_info.txt `
     --collect-all ctranslate2 --collect-all faster_whisper --collect-all av `
