@@ -166,9 +166,15 @@ class TrayApp:
 
     def _toggle_autostart(self, icon, item):
         enabled = not config.START_WITH_WINDOWS
+        result = autostart.sync_autostart(enabled)
+        if enabled and result in (autostart.BLOCKED_BY_USER, autostart.BLOCKED_BY_POLICY):
+            self.notify(autostart.BLOCKED_MESSAGE)
+            return
+        if result == autostart.FAILED:
+            self.notify("Couldn't change the start with Windows setting.")
+            return
         try:
             settings.save({"start_with_windows": enabled})
-            autostart.sync_autostart(enabled)
         except Exception:
             logging.getLogger(__name__).exception("start with Windows toggle failed")
             self.notify("Couldn't change the start with Windows setting.")

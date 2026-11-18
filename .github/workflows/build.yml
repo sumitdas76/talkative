@@ -96,6 +96,19 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\Talkative.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
 
+      - name: Build the Microsoft Store package (unsigned; the Store signs it)
+        # Identity values come from Partner Center (Product identity) and are
+        # stored as repository variables, not secrets: they're printed in
+        # every Store listing anyway. Until they're set, a placeholder
+        # identity is used so the package still builds for checking.
+        env:
+          STORE_IDENTITY_NAME: ${{ vars.STORE_IDENTITY_NAME || 'SumitDas.Talkative.LocalTest' }}
+          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER || 'CN=Talkative Local Test' }}
+          STORE_DISPLAY_NAME: ${{ vars.STORE_DISPLAY_NAME || 'Talkative' }}
+        run: |
+          .\scripts\build_msix.ps1 -Python python -IdentityName $env:STORE_IDENTITY_NAME `
+            -Publisher $env:STORE_PUBLISHER -DisplayName $env:STORE_DISPLAY_NAME
+
       - name: Checksums
         run: |
           Get-FileHash dist\Talkative.exe, installer\Output\TalkativeSetup.exe -Algorithm SHA256 |
@@ -109,6 +122,11 @@ jobs:
             dist/Talkative.exe
             installer/Output/TalkativeSetup.exe
             SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Talkative-${{ env.APP_VERSION }}-store
+          path: dist/Talkative-*.msix
 
       - name: Attach to a draft release (tag builds only)
         if: github.ref_type == 'tag'

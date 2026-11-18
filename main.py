@@ -25,11 +25,16 @@ if not getattr(sys, "frozen", False):
     except Exception:
         pass
 
-from talkative import error_log
+from talkative import error_log, single_instance
 from talkative.app import TalkativeApp
 
 
 def main():
+    # Before anything else starts (hotkey hook, tray icon, mic): a second
+    # copy would dictate every key press twice.
+    if not single_instance.acquire():
+        single_instance.tell_already_running()
+        os._exit(0)
     error_log.install()
     app = TalkativeApp()
     app.run()

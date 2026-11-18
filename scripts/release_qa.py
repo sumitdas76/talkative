@@ -180,6 +180,17 @@ def check_fresh_launch(exe):
     box = Path(tempfile.mkdtemp(prefix="talkative_qa_"))
     copy = box / "Talkative.exe"      # own path, so it can't be mistaken for the real app
     copy.write_bytes(exe.read_bytes())
+    # Only one copy may run per sign-in (single_instance.py): with the real
+    # copy running, the test copy would just show "already running" -- a
+    # window also titled "Talkative", which would pass this check wrongly.
+    # Stop it first (the user's standing OK for tests, 2026-10-13).
+    stopped = subprocess.run(["powershell", "-NoProfile", "-Command",
+                              "Get-Process Talkative -ErrorAction SilentlyContinue | "
+                              "ForEach-Object { $_.Path; Stop-Process -Id $_.Id -Force }"],
+                             capture_output=True, text=True).stdout.split()
+    if stopped:
+        print(f"  stopped the running copy for F1: {sorted(set(stopped))}")
+        time.sleep(2)
     before = _run_values()
     subprocess.Popen([str(copy)], cwd=box, env=dict(os.environ, LOCALAPPDATA=str(box)))
     wins = []
@@ -304,7 +315,9 @@ def check_text_rules():
                              ("D49", "focus_types_test.py"),
                              ("W10", "local_models_test.py"),
                              ("W11", "settings_small_screen_test.py"),
-                             ("D50", "still_working_test.py")):
+                             ("D50", "still_working_test.py"),
+                             ("D51", "single_instance_test.py"),
+                             ("D52", "packaging_test.py")):
         code, out = run_py([script], ROOT / "tools", timeout=60)
         last = out.strip().splitlines()[-1] if out.strip() else "no output"
         record(check_id, f"Text rules: {script[:-8]}", "PASS" if code == 0 else "FAIL", last)

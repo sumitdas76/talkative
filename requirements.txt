@@ -8,3 +8,4 @@ Pillow
 uiautomation
 pywin32
 pyinstaller
+winrt-Windows.ApplicationModel

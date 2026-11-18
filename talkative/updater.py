@@ -52,7 +52,7 @@ import time
 import urllib.request
 from datetime import date, datetime, timedelta
 
-from . import __version__, app_icon, config, model_manager, overlay_thread
+from . import __version__, app_icon, config, model_manager, overlay_thread, packaging
 
 # Manifest key -> what it is locally. "speech" entries update the
 # faster-whisper repo dirs; "grammar" updates the invisible engine.
@@ -209,7 +209,9 @@ def fetch_latest_release():
     pointing releases_api_url at its /releases/tags/<tag> URL -- that's how
     the updater itself is tested without users ever seeing the test.)"""
     url = config.RELEASES_API_URL
-    if not url:
+    # The Store version is updated by the Microsoft Store only (its policy,
+    # and our installer can't replace a packaged app anyway).
+    if not url or packaging.is_store_build():
         return None
     data = _get_json(_request(url), "App update")
     try:
@@ -781,6 +783,9 @@ def check_now():
     if found:
         _offer_model(*found, _controller)
         return "A model improvement is available."
+    if packaging.is_store_build():
+        return ("Your models are up to date. New versions of Talkative "
+                "come from the Microsoft Store.")
     return f"You have the latest version ({__version__})."
 
 

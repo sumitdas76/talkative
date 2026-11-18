@@ -9,7 +9,7 @@ from pynput import keyboard
 
 from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, mic_warmup, model_manager, onboarding, paste_target, pill, screen_context, settings, temp_cleanup, try_it_now, updater
 from .audio_recorder import AudioRecorder
-from .autostart import sync_autostart
+from .autostart import BLOCKED_BY_POLICY, BLOCKED_BY_USER, BLOCKED_MESSAGE, sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
 from .articles import fix_articles
 from .bullets import BULLET, format_bullets
@@ -238,7 +238,7 @@ class TalkativeApp:
         threading.Thread(target=self._probe_mic, daemon=True).start()
 
     def _apply_settings(self):
-        sync_autostart()
+        self._sync_autostart(told=True)
         self._use_mic(config.INPUT_DEVICE)
         self._hotkey_pressed.clear()
         self._chord_active = False
@@ -1445,8 +1445,24 @@ class TalkativeApp:
             f"You corrected “{heard}” to “{typed}”{more}. To fix it every time, "
             "add it in Settings → Auto Text.")
 
+    def _sync_autostart(self, told=False):
+        """Windows' start-up list follows the setting -- except in the Store
+        version when the user (or a policy) switched Talkative off in
+        Windows' own Startup apps list: the app may not undo that, so the
+        setting follows Windows instead, and if the user just turned it on
+        (`told`), they're told where to do it."""
+        result = sync_autostart()
+        if result in (BLOCKED_BY_USER, BLOCKED_BY_POLICY) and config.START_WITH_WINDOWS:
+            config.START_WITH_WINDOWS = False
+            try:
+                settings.save({"start_with_windows": False})
+            except Exception:
+                logging.warning("could not save start_with_windows", exc_info=True)
+            if told:
+                self.tray.notify(BLOCKED_MESSAGE)
+
     def run(self):
-        sync_autostart()
+        self._sync_autostart()
         if self._cloud_active():
             self._enter_cloud_mode()
             grammar_engine.unload()
