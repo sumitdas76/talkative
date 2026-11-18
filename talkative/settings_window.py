@@ -21,7 +21,7 @@ from tkinter import filedialog, messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, audio_devices, config, dev_mode, feedback, fix_learning, grammar_engine, history, mic_warmup, model_manager, overlay_thread, palette, pill, settings, try_it_now, updater
+from . import __version__, app_icon, audio_devices, config, dev_mode, error_toast, feedback, fix_learning, grammar_engine, history, mic_warmup, model_manager, overlay_thread, palette, pill, settings, try_it_now, updater
 from .keynames import friendly as _friendly_key_name
 
 log = logging.getLogger(__name__)
@@ -358,8 +358,32 @@ class _SettingsWindow:
         self._build_sidebar()
         content = ttk.Frame(self.root)
         content.pack(side="left", fill="both", expand=True)
-        area = ttk.Frame(content)
-        area.pack(fill="both", expand=True)
+        self._content = content
+
+        # The Save bar is packed first, at the bottom, so it always shows;
+        # the page above it scrolls when the screen is too short for it
+        # (2026-11-18, user report: on 1366x768 screens Save and Close
+        # were off the bottom -- the General page alone needs ~850 px).
+        bar = ttk.Frame(content, padding=(28, 10, 28, 12))
+        bar.pack(side="bottom", fill="x")
+        ttk.Separator(content).pack(side="bottom", fill="x")
+        self.saved_label = ttk.Label(bar, text="")
+        self.saved_label.pack(side="left")
+        ttk.Button(bar, text="Close", command=self._close).pack(side="right")
+        ttk.Button(bar, text="Save and apply", command=self._save,
+                   style="Accent.TButton").pack(side="right", padx=8)
+
+        viewport = ttk.Frame(content)
+        viewport.pack(fill="both", expand=True)
+        self._scroll_canvas = canvas = tk.Canvas(
+            viewport, bg=self._bg, highlightthickness=0, bd=0, yscrollincrement=20,
+            width=0, height=0)
+        self._scrollbar = ttk.Scrollbar(viewport, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=self._scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        area = ttk.Frame(canvas)
+        self._area = area
+        self._area_item = canvas.create_window(0, 0, window=area, anchor="nw")
         area.columnconfigure(0, weight=1)
         area.rowconfigure(0, weight=1)
         builders = {
@@ -381,18 +405,112 @@ class _SettingsWindow:
             builders[name](body)
             self._pages[name] = page
 
-        ttk.Separator(content).pack(fill="x")
-        bar = ttk.Frame(content, padding=(28, 10, 28, 12))
-        bar.pack(fill="x")
-        self.saved_label = ttk.Label(bar, text="")
-        self.saved_label.pack(side="left")
-        ttk.Button(bar, text="Close", command=self._close).pack(side="right")
-        ttk.Button(bar, text="Save and apply", command=self._save,
-                   style="Accent.TButton").pack(side="right", padx=8)
-
+        self._page_cap = None
+        self.page = "General"
+        canvas.bind("<Configure>", lambda e: self._fit_scroll())
+        # Bound on the window itself, so it covers every widget in it
+        # (each one's bindtags include its toplevel), not the shared root.
+        self.root.bind("<MouseWheel>", self._on_wheel)
+        self.root.bind("<FocusIn>", self._scroll_to_focus)
         self.select_page("General")
+        self._place_on_screen()
+        self._watch_page_size()
         self.root.protocol("WM_DELETE_WINDOW", self._close)
         _window = self
+
+    # ---------------- fitting small screens ----------------
+
+    def _place_on_screen(self):
+        """Cap the page height to the screen's work area (minus the Save
+        bar and the title bar), then put the window where all of it shows."""
+        self.root.update_idletasks()
+        self._fit_scroll()  # page sizes are known only now
+        self.root.update_idletasks()
+        try:
+            x, y = self.root.winfo_pointerxy()
+            left, top, right, bottom = error_toast._work_area(x, y)
+        except Exception:
+            left, top = 0, 0
+            right, bottom = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        # The title bar and frame aren't part of Tk's size; ~40 px on
+        # Windows 11 at any scale (Tk works in the same logical pixels).
+        frame = 40
+        # Everything in the right-hand column that isn't the page: the bar.
+        fixed = self._content.winfo_reqheight() - int(self._scroll_canvas["height"])
+        self._page_cap = max(200, bottom - top - frame - fixed)
+        self._fit_scroll()
+        self.root.update_idletasks()
+        w = self.root.winfo_reqwidth()
+        h = self.root.winfo_reqheight() + frame
+        x = left + max(0, (right - left - w) // 2)
+        y = top + max(0, (bottom - top - h) // 2)
+        self.root.geometry(f"+{x}+{y}")
+
+    def _fit_scroll(self):
+        """Size the page area: as tall as the tallest page (so the window
+        doesn't jump on a page switch) but no taller than the screen
+        allows; a scrollbar shows only when the chosen page doesn't fit."""
+        canvas, area = self._scroll_canvas, self._area
+        page = self._pages[self.page]
+        need = page.winfo_reqheight()
+        want_w = area.winfo_reqwidth()
+        want_h = max(p.winfo_reqheight() for p in self._pages.values())
+        if self._page_cap:
+            want_h = min(want_h, self._page_cap)
+        if int(canvas["width"]) != want_w or int(canvas["height"]) != want_h:
+            canvas.configure(width=want_w, height=want_h)
+        ch = canvas.winfo_height() if canvas.winfo_ismapped() else want_h
+        cw = canvas.winfo_width() if canvas.winfo_ismapped() else want_w
+        h = max(ch, need)
+        canvas.itemconfigure(self._area_item, width=cw, height=h)
+        canvas.configure(scrollregion=(0, 0, cw, h))
+        # Shown while the tallest page doesn't fit, even on a page that
+        # does, so the window's width doesn't jump on a page switch.
+        tallest = max(p.winfo_reqheight() for p in self._pages.values())
+        if tallest > ch + 1:
+            if not self._scrollbar.winfo_ismapped():
+                self._scrollbar.pack(side="right", fill="y")
+        elif self._scrollbar.winfo_ismapped():
+            self._scrollbar.pack_forget()
+            canvas.yview_moveto(0)
+
+    def _watch_page_size(self):
+        # Pages grow and shrink as they change (a download bar appears, a
+        # card's text changes); there's no event for a requested-size
+        # change, so check a few times a second while the window is open.
+        try:
+            if not self.root.winfo_exists():
+                return
+            self._fit_scroll()
+            self.root.after(300, self._watch_page_size)
+        except tk.TclError:
+            pass
+
+    def _on_wheel(self, event):
+        # Tables, text boxes and dropdowns scroll themselves.
+        if event.widget.winfo_class() in ("Treeview", "Text", "TCombobox", "Listbox"):
+            return
+        if not self._scrollbar.winfo_ismapped():
+            return
+        if self._pages[self.page].winfo_reqheight() <= self._scroll_canvas.winfo_height() + 1:
+            return
+        self._scroll_canvas.yview_scroll(int(-event.delta / 120) * 3, "units")
+
+    def _scroll_to_focus(self, event):
+        """Tab onto a control below the fold scrolls it into view."""
+        w, canvas = event.widget, self._scroll_canvas
+        if not self._scrollbar.winfo_ismapped() or not isinstance(w, tk.Misc):
+            return
+        if not str(w).startswith(str(self._area) + "."):
+            return
+        y = w.winfo_rooty() - self._area.winfo_rooty()
+        top = canvas.canvasy(0)
+        view = canvas.winfo_height()
+        total = float(canvas.cget("scrollregion").split()[3])
+        if y < top:
+            canvas.yview_moveto(max(0, y - 12) / total)
+        elif y + w.winfo_height() > top + view:
+            canvas.yview_moveto((y + w.winfo_height() + 12 - view) / total)
 
     def _build_sidebar(self):
         # The side padding is the margin around each item's highlight
@@ -430,6 +548,8 @@ class _SettingsWindow:
         for n, label in self._nav.items():
             label.state(["selected" if n == name else "!selected"])
         self.page = name
+        self._scroll_canvas.yview_moveto(0)
+        self._fit_scroll()
 
     def _section(self, parent, title, first=False):
         """A page section: a divider (not above the first), a colored
@@ -631,6 +751,12 @@ class _SettingsWindow:
         style.configure("Muted.TLabel", foreground=self._muted)
         # feedback_text is a raw tk.Text (not ttk), so it needs its colors
         # reapplied by hand on every theme switch, not just at creation.
+        style.configure("Vertical.TScrollbar", background=border, troughcolor=bg,
+                        bordercolor=bg, lightcolor=border, darkcolor=border,
+                        arrowcolor=muted)
+        style.map("Vertical.TScrollbar", background=[("active", hover)])
+        if hasattr(self, "_scroll_canvas"):
+            self._scroll_canvas.configure(bg=bg)
         if hasattr(self, "feedback_text"):
             self.feedback_text.configure(
                 bg=field, fg=fg, insertbackground=fg,

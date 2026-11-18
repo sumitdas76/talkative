@@ -303,6 +303,7 @@ def check_text_rules():
                              ("D44", "context_symbols_test.py"), ("D44", "context_retry_test.py"),
                              ("D49", "focus_types_test.py"),
                              ("W10", "local_models_test.py"),
+                             ("W11", "settings_small_screen_test.py"),
                              ("D50", "still_working_test.py")):
         code, out = run_py([script], ROOT / "tools", timeout=60)
         last = out.strip().splitlines()[-1] if out.strip() else "no output"
