@@ -112,14 +112,97 @@ def _joins(press, before_cursor):
     return True, f"joined (pressed {gap:+.1f}s after the last paste)"
 
 
-def lowercase_start(text):
-    """`text` with its first letter lowercased, if the first word is a
-    common word (not "I", an acronym or a name)."""
-    m = re.match(r"\s*([A-Za-z][A-Za-z']*)", text)
+# Ordinary words that are also common names, months or product names:
+# their capital at the start of a dictation may be meant, so it stays.
+# (The word list has no names, but "mark", "may" and "word" are words.)
+_NAME_WORDS = frozenset("""
+may june august march april will mark bill rose grace joy hope faith frank
+jack sue pat art dawn summer amber ruby crystal iris lily daisy holly ivy
+jade pearl sandy rusty ray gene guy rob nick max chuck dean earl drew cliff
+glen wade miles owen victor christian don jean bob ken lee sky river penny
+apple amazon android windows word excel teams outlook office edge chrome
+slack zoom notepad visual studio code python java swift rust go ruby
+talkative claude groq azure cloudflare github git whatsapp google meta grok
+whisper docs drive sheets confluence twitter linkedin tableau alt ctrl shift
+enter esc tab
+""".split())
+
+_words = None
+
+
+def _word_list():
+    global _words
+    if _words is None:
+        from . import wordlist
+        _words = wordlist.load()
+    return _words
+
+
+def _stems(w):
+    """`w` and what it may be inflected from: "depicting" -> "depict",
+    "needs" -> "need", "cities" -> "city", "stopped" -> "stop"."""
+    yield w
+    if w.endswith("'s"):
+        w = w[:-2]
+        yield w
+    for end, repl in (("ies", "y"), ("ied", "y"), ("ier", "y"), ("iest", "y"),
+                      ("ily", "y"), ("es", ""), ("s", ""), ("ed", ""),
+                      ("ed", "e"), ("ing", ""), ("ing", "e"), ("ly", ""),
+                      ("er", ""), ("er", "e"), ("ers", ""), ("est", ""),
+                      ("ness", ""), ("ment", ""), ("ments", "")):
+        if w.endswith(end) and len(w) - len(end) >= 3:
+            stem = w[:-len(end)] + repl
+            yield stem
+            if not repl and len(stem) > 3 and stem[-1] == stem[-2]:
+                yield stem[:-1]  # "stopped" -> "stopp" -> "stop"
+
+
+def _ordinary(word):
+    """Is `word` an ordinary lowercase English word (so a capital on it
+    only marks a sentence start)?"""
+    w = word.lower()
+    if w in _COMMON:
+        return True
+    if w in _NAME_WORDS:
+        return False
+    words = _word_list()
+    return any(s in words for s in _stems(w))
+
+
+def _capital_meant(word, before):
+    """Is `word` written with a capital mid-sentence on screen, or as a
+    typed form in the user's Auto Text? Then the capital is meant."""
+    for m in re.finditer(rf"(?<![A-Za-z']){re.escape(word)}(?![A-Za-z'])", before or ""):
+        head = before[:m.start()].rstrip(" \t ").rstrip(_CLOSERS + "(\"“‘")
+        if head and head[-1] not in ".!?:\r\n•" and not _at_prompt(head):
+            return True
+    for typed in (config.DICTIONARY or {}).values():
+        if re.search(rf"(?<![A-Za-z']){re.escape(word)}(?![A-Za-z'])", typed or ""):
+            return True
+    return False
+
+
+def lowercase_start(text, before=""):
+    """`text` with its first letter lowercased, if the first word is an
+    ordinary word: not "I", an acronym, a mixed-case name ("iPhone"), a
+    name, or a word `before` (the text on screen) or Auto Text writes with
+    a capital mid-sentence. Until 1.3.25 only ~300 _COMMON words were
+    lowercased ("...about Reading", "look pretty Jacket", debug.log
+    2026-11-22)."""
+    m = re.match(r"\s*([A-Za-z][A-Za-z']*)(?:[ -]([A-Za-z][A-Za-z']*))?", text)
     if not m:
         return text
-    word = m.group(1)
-    if word.lower() not in _COMMON or word.isupper() and len(word) > 1:
+    word, nxt = m.group(1), m.group(2)
+    if word == "I" or word.startswith("I'"):
+        return text
+    if len(word) > 1 and not word[1:].replace("'", "").islower():
+        return text  # "GPU", "iPhone", "GitHub", "McDonald"
+    # "Harry Potter", "Google Drive", "Provident Fund": a capital on the
+    # next word too means a name made of ordinary words (2026-11-23 scan
+    # of 15,172 saved texts).
+    named = nxt is not None and nxt[0].isupper() and nxt != "I" and not nxt.startswith("I'")
+    if word.lower() not in _COMMON and (
+            named or not _ordinary(word) or _capital_meant(word, before)):
         return text
     i = m.start(1)
     return text[:i] + text[i].lower() + text[i + 1:]
@@ -176,7 +259,11 @@ def _continues_sentence(after):
     word = m.group(0)
     # "The", "Then", "We" capitalized = a new sentence follows; a name, "I",
     # an acronym or a lowercase word = the same sentence carries on.
-    return not (word[0].isupper() and word.lower() in _COMMON and word != "I")
+    if word == "I" or word.startswith("I'") or not word[0].isupper():
+        return True
+    if len(word) > 1 and not word[1:].replace("'", "").islower():
+        return True  # an acronym or a mixed-case name
+    return not _ordinary(word)
 
 
 def fit_to_cursor(text, before, after):
@@ -198,7 +285,7 @@ def fit_to_cursor(text, before, after):
     is_list = "\n" in text or "•" in text
     space = None
     if not is_list and not _sentence_starts_after(before):
-        text = lowercase_start(text.lstrip())
+        text = lowercase_start(text.lstrip(), before)
         if before and not before[-1].isspace() and before[-1] not in _OPENERS:
             text = " " + text
     elif not is_list and before and _LIST_MARKER.search(before):

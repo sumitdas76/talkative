@@ -1401,10 +1401,11 @@ class TalkativeApp:
         # Carrying on the last dictation's sentence (continuation.py). The
         # text before the cursor is read here only to check that what was
         # just typed is still there; it never leaves this PC.
+        before = None
         if (learn and press is not None and config.INSERT_MODE != "clipboard"
-                and continuation.joins(press, screen_context.capture())):
+                and continuation.joins(press, before := screen_context.capture())):
             take_back = continuation.chars_to_delete()
-            text = " " + continuation.lowercase_start(text)
+            text = " " + continuation.lowercase_start(text, before)
         if learn and press is not None and continuation.last_check:
             _debug_log(continuation=continuation.last_check)
             continuation.last_check = None
