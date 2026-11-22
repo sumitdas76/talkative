@@ -1285,7 +1285,8 @@ class TalkativeApp:
         grammar seconds) for the debug record."""
         before = text
         t0 = time.time()
-        if config.CLEANUP_MODE == "cleaned_up" and not self._cloud_down.value:
+        if (config.CLEANUP_MODE == "cleaned_up" and not self._cloud_down.value
+                and languages.grammar_on(language)):
             text = cloud_client.grammar_apply(text, language=language)
         secs = time.time() - t0
         if config.CLEANUP_MODE == "cleaned_up":

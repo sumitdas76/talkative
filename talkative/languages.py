@@ -74,5 +74,17 @@ def stt_prompt(cloud=True, dev=False):
     return _PROMPT.get(config.SPEECH_SERVICE)
 
 
+# Languages typed without Cloud grammar: on 20 FLEURS clips each
+# (tools/lang_eval, 2026-11-23) grammar made Portuguese worse (WER 5.5% ->
+# 7.5%: it merged sentences and dropped words along with real accent
+# fixes). The others were equal or better (es 3.4/3.4, fr 5.8/5.8,
+# de 4.1/4.1, it 3.7/3.4, nl 6.0/5.7).
+NO_GRAMMAR = {"pt"}
+
+
+def grammar_on(language):
+    return language not in NO_GRAMMAR
+
+
 def valid(value):
     return value in IDS
