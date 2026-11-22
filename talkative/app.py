@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 from pynput import keyboard
 
-from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, mic_warmup, model_manager, onboarding, paste_target, pill, screen_context, settings, temp_cleanup, try_it_now, updater
+from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, last_dictation, mic_warmup, model_manager, onboarding, paste_target, pill, screen_context, settings, temp_cleanup, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import BLOCKED_BY_POLICY, BLOCKED_BY_USER, BLOCKED_MESSAGE, sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -20,7 +20,7 @@ from .focus_check import is_focus_editable
 from .keynames import friendly as friendly_key
 from .self_correction import apply_self_corrections
 from .spoken_symbols import apply_spoken_symbols
-from .text_inserter import copy_only, insert_text
+from .text_inserter import copy_only, erase, insert_text
 from .transcriber import Transcriber
 from .tray import TrayApp, show_error_popup
 
@@ -177,6 +177,9 @@ class TalkativeApp:
             on_quit=self.quit, on_settings=self.open_settings,
             hotkey_label=friendly_key(config.HOTKEY),
             on_input_device=self._set_input_device,
+            on_remove_last=self._tray_remove_last,
+            on_retype_last=self._tray_retype_last,
+            has_last=lambda: last_dictation.get() is not None,
         )
         self._refresh_hotkey_label()
 
@@ -706,6 +709,7 @@ class TalkativeApp:
         self._masked = False
         self._chord_engaged = False
         self._latched = False
+        last_dictation.forget()
         self.recorder.reset()
         self._start_listener()
 
@@ -1085,6 +1089,18 @@ class TalkativeApp:
             info = f"{info}, own Groq key" if info else "own Groq key"
 
         raw = text
+        # Only "scratch that" / "type that again", the whole dictation:
+        # take the last one back or type it again (last_dictation.py).
+        what = last_dictation.command(text) if config.INSERT_MODE != "clipboard" else None
+        if what:
+            self._record(audio, audio_info=info, raw=raw, final=f"[{what} the last dictation]",
+                         timing=f"transcribe {transcribe_secs:.1f}s [command]")
+            self._wait_for_turn()
+            if what == last_dictation.REMOVE:
+                self._remove_last()
+            else:
+                self._retype_last()
+            return
         if dev:
             text, is_code = dev_mode.process(text)
             if is_code:
@@ -1361,6 +1377,7 @@ class TalkativeApp:
             except paste_target.Lost as exc:
                 logging.getLogger(__name__).info("paste target lost: %s", exc)
                 copy_only(text)
+                last_dictation.remember(text, "")
                 self._not_typed("The window you dictated into was closed or couldn't "
                                 "be brought back, so the text is on the clipboard. "
                                 "Click where it goes and press Ctrl+V.")
@@ -1383,6 +1400,7 @@ class TalkativeApp:
             return False
 
     def _insert_here(self, text, learn, press):
+        spoken = text
         editable, why, kind = focus_check.focus_state()
         trusted = False
         if not editable and why in focus_check.UNSEEN and self._still_in_target():
@@ -1397,6 +1415,7 @@ class TalkativeApp:
         if not editable:
             # Focus moved while it was processed: keep the words.
             copy_only(text)
+            last_dictation.remember(text, "")
             self._report(f"not typed: no text box ({why}: {kind})")
             self._not_typed("No text box was selected, so the text is on the "
                             "clipboard. Click where it goes and press Ctrl+V.")
@@ -1433,6 +1452,7 @@ class TalkativeApp:
                 # Logged with the control, to find the app (Backlog
                 # missing-space-app, 2026-11-22).
                 _debug_log(cursor=f"caret text unavailable in {kind}, not fitted")
+        taken = continuation.last_text()[-take_back:] if take_back else ""
         insert_text(text, take_back=take_back, append_space=space)
         if config.INSERT_MODE == "clipboard":
             self._report("copied (clipboard mode)")
@@ -1443,6 +1463,8 @@ class TalkativeApp:
         if config.INSERT_MODE != "clipboard":
             appended = config.APPEND_SPACE if space is None else space
             continuation.note_paste(text + (" " if appended else ""))
+            last_dictation.remember(spoken, text + (" " if appended else ""), taken,
+                                    paste_target.capture())
         if learn and config.INSERT_MODE != "clipboard":
             fix_learning.watch(text, on_new=self._fixes_noticed)
         if config.ENABLE_HISTORY:
@@ -1450,6 +1472,58 @@ class TalkativeApp:
         updater.note_words(len(text.split()))
         if config.INSERT_MODE == "clipboard":
             self.tray.notify("Copied to clipboard. Press Ctrl+V to paste.")
+
+    def _say(self, message):
+        """A short message near the cursor (not a dictation outcome)."""
+        _debug_log(message=message)
+        error_toast.show(message, seconds=config.NOT_TYPED_SECONDS)
+
+    def _remove_last(self, from_tray=False):
+        """Take the last dictation back, only where that can be checked
+        (last_dictation.py). From the tray, its window comes back first."""
+        last = last_dictation.get()
+        if from_tray and last is not None:
+            try:
+                paste_target.bring_back(last.target)
+            except paste_target.Lost:
+                self._say("The window the last dictation went into is gone, "
+                          "so nothing was removed.")
+                return
+        read = (screen_context.caret_and_selection(len(last.typed) + 40)
+                if last is not None else None)
+        why = last_dictation.why_not_removable(
+            last, paste_target.user32.GetForegroundWindow(), read)
+        if why:
+            self._report("command: remove refused")
+            self._say(why)
+            return
+        erase(last_dictation.backspaces(last.typed), put_back=last.taken)
+        last_dictation.forget()
+        continuation.forget()
+        self._report("command: removed the last dictation")
+
+    def _retype_last(self):
+        """Type the last dictation again where the cursor is now."""
+        last = last_dictation.get()
+        if last is None:
+            self._report("command: nothing to type again")
+            self._say("There's no recent dictation to type again.")
+            return
+        self._insert_final(last.text)
+
+    def _tray_remove_last(self):
+        threading.Thread(target=self._remove_last, kwargs={"from_tray": True},
+                         daemon=True, name="remove-last").start()
+
+    def _tray_retype_last(self):
+        """From the tray the cursor's window isn't in front (the tray
+        menu is), so the text goes on the clipboard instead."""
+        last = last_dictation.get()
+        if last is None:
+            return
+        copy_only(last.text)
+        self.tray.notify("The last dictation is on the clipboard. Click where it "
+                         "goes and press Ctrl+V.")
 
     def _fixes_noticed(self, pairs):
         heard, typed = pairs[0]

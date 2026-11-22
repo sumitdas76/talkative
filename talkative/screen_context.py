@@ -154,6 +154,39 @@ def around_caret(limit=80):
         return None
 
 
+def caret_and_selection(limit=2000):
+    """(text before the caret or selection, the selected text) in the
+    focused control, raw, at most `limit` characters each (the text before
+    keeps its end, the selection its start); "" for no selection. None when
+    it can't be read (no TextPattern) or it's a password field. Used on
+    this PC only: "scratch that" checks its own text is still right before
+    the caret (last_dictation.py) and that nothing is selected, since a
+    Backspace would delete a selection instead. Never raises."""
+    try:
+        pythoncom.CoInitialize()
+    except Exception:
+        pass
+    try:
+        control = auto.GetFocusedControl()
+        if control is None or control.IsPassword:
+            return None
+        pattern = control.GetPattern(auto.PatternId.TextPattern)
+        if pattern is None:
+            return None
+        selection = pattern.GetSelection()
+        if not selection:
+            return None
+        start, end = auto.TextPatternRangeEndpoint.Start, auto.TextPatternRangeEndpoint.End
+        before = selection[0].Clone()
+        before.MoveEndpointByRange(end, before, start, waitTime=0)
+        before.MoveEndpointByUnit(start, auto.TextUnit.Character, -limit, waitTime=0)
+        before_text, _ = _own_field(_text(before), "")
+        return before_text[-limit:], _text(selection[0])[:limit]
+    except Exception:
+        log.debug("caret text unavailable", exc_info=True)
+        return None
+
+
 def capture(limit=None, for_prompt=False):
     """The text before the cursor in the focused control ("" when there is
     none, it's a password field, or it can't be read). Never raises.

@@ -73,6 +73,17 @@ def note_paste(text):
     _last = (text, time.monotonic(), _foreground())
 
 
+def last_text():
+    """What the last paste typed, or ""."""
+    return _last[0] if _last is not None else ""
+
+
+def forget():
+    """The last paste was taken back ("scratch that"): nothing to join."""
+    global _last
+    _last = None
+
+
 def press_info():
     """When and where the hotkey went down, for joins() later."""
     return time.monotonic(), _foreground()

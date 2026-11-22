@@ -114,6 +114,10 @@ Things that happen in both modes
   only the last three-quarters of a second is kept in memory, and it is
   only used if you press the hotkey again in that time. Windows'
   microphone icon shows both.
+- The last dictation Talkative typed is kept in memory for 30 minutes,
+  so that saying "scratch that" can take it back and "type that again"
+  can type it again. It is never saved, and it is forgotten when the PC
+  sleeps or Talkative closes.
 
 - Update checks, once a day. Talkative downloads a small public file
   from GitHub to see whether a newer app version or model update

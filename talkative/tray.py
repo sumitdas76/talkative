@@ -79,7 +79,8 @@ def _make_icon_image(color):
 
 class TrayApp:
     def __init__(self, on_quit, on_settings=None, hotkey_label="Right Ctrl",
-                 on_input_device=None):
+                 on_input_device=None, on_remove_last=None, on_retype_last=None,
+                 has_last=None):
         self._hotkey_label = hotkey_label
         self._mode_label = ""
         self._lock = threading.RLock()
@@ -101,6 +102,16 @@ class TrayApp:
         if on_input_device is not None:
             menu_items.append(pystray.MenuItem("Microphone", pystray.Menu(self._mic_items)))
         menu_items.append(pystray.MenuItem("Headphones", pystray.Menu(self._output_items)))
+        # Same as saying "scratch that" / "type that again"
+        # (last_dictation.py); greyed out when nothing is kept.
+        if on_remove_last is not None:
+            kept = has_last or (lambda: False)
+            menu_items.append(pystray.MenuItem(
+                "Remove last dictation", lambda icon, item: on_remove_last(),
+                enabled=lambda item: kept()))
+            menu_items.append(pystray.MenuItem(
+                "Copy last dictation", lambda icon, item: on_retype_last(),
+                enabled=lambda item: kept()))
         # Also in Settings > General (2026-10-26, user request).
         menu_items.append(pystray.MenuItem(
             "Start with Windows", self._toggle_autostart,

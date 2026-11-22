@@ -193,3 +193,35 @@ def insert_text(text, take_back=0, append_space=None):
                 _restore_clipboard(previous)
             except Exception:
                 pass
+
+
+def erase(count, put_back=""):
+    """Taking a dictation back ("scratch that", last_dictation.py):
+    `count` Backspaces, then `put_back` pasted as is (no space, no Enter):
+    the full stop a joined dictation had taken back. The caller has
+    checked the text before the caret first."""
+    with _paste_lock:
+        for _ in range(count):
+            _controller.press(Key.backspace)
+            _controller.release(Key.backspace)
+        if not put_back:
+            return
+        time.sleep(0.08)  # see insert_text: Notepad types "v" without it
+        try:
+            previous = _save_clipboard()
+        except Exception:
+            previous = None
+        try:
+            _put_private_text(put_back)
+        except Exception:
+            pyperclip.copy(put_back)
+        _controller.press(Key.ctrl)
+        _controller.press("v")
+        _controller.release("v")
+        _controller.release(Key.ctrl)
+        time.sleep(config.CLIPBOARD_RESTORE_DELAY)
+        if previous is not None:
+            try:
+                _restore_clipboard(previous)
+            except Exception:
+                pass
