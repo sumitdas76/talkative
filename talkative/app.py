@@ -1422,6 +1422,12 @@ class TalkativeApp:
                 if fitted != text or space is not None:
                     _debug_log(cursor=f"{around[0][-20:]!r} | {around[1][:20]!r} -> {fitted!r}")
                 text = fitted
+            else:
+                # Nothing fitted (no space added before a word typed after
+                # a letter): the app doesn't expose the text at the caret.
+                # Logged with the control, to find the app (Backlog
+                # missing-space-app, 2026-11-22).
+                _debug_log(cursor=f"caret text unavailable in {kind}, not fitted")
         insert_text(text, take_back=take_back, append_space=space)
         if config.INSERT_MODE == "clipboard":
             self._report("copied (clipboard mode)")

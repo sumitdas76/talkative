@@ -554,16 +554,28 @@ def _download_installer(release, progress):
     folder.mkdir(parents=True)
     path = folder / f"TalkativeSetup-{release['version']}.exe"
     sha = hashlib.sha256()
+    # Timed and logged: a user's U1 test on 1.3.24 said the download "took
+    # a long time to start", and nothing showed where the wait was
+    # (GitHub's redirect to its file host, or the first bytes).
+    t0 = time.monotonic()
+    first = None
     with urllib.request.urlopen(_request(release["installer_url"]), timeout=30) as r, \
             open(path, "wb") as f:
+        answered = time.monotonic() - t0
         progress["total"] = int(r.headers.get("Content-Length") or release["size"] or 0)
         while True:
             chunk = r.read(256 * 1024)
             if not chunk:
                 break
+            if first is None:
+                first = time.monotonic() - t0
             f.write(chunk)
             sha.update(chunk)
             progress["done"] += len(chunk)
+    log = logging.getLogger(__name__)
+    (log.warning if (first or 0) > 10 else log.info)(
+        "update download: answer after %.1fs, first bytes after %.1fs, %.1f MB in %.1fs",
+        answered, first or 0, progress["done"] / 1048576, time.monotonic() - t0)
     if sha.hexdigest() != release["sha256"]:
         path.unlink(missing_ok=True)
         raise ValueError("installer checksum mismatch")
@@ -661,7 +673,10 @@ def _show_app_dialog(release, controller):
                 state = progress["state"]
                 if state == "downloading":
                     total = progress["total"]
-                    if total:
+                    if total and progress["done"]:
+                        if str(bar["mode"]) == "indeterminate":
+                            bar.stop()
+                            bar["mode"] = "determinate"
                         bar["value"] = 100 * progress["done"] / total
                         label["text"] = (
                             f"Downloading Talkative {version}… "
@@ -674,6 +689,7 @@ def _show_app_dialog(release, controller):
                                      "It will reopen by itself in a moment.")
                     root.after(300, poll)
                 else:
+                    bar.stop()
                     bar.pack_forget()
                     label["text"] = ("The update couldn't be downloaded. "
                                      "Talkative will offer it again later.")
@@ -689,7 +705,11 @@ def _show_app_dialog(release, controller):
                     w.destroy()
                 row.pack_forget()
                 bar.pack(padx=16, pady=(4, 16))
-                label["text"] = f"Downloading Talkative {version}…"
+                # Until the first bytes arrive (GitHub can take several
+                # seconds): a moving bar, so it doesn't look stuck.
+                bar["mode"] = "indeterminate"
+                bar.start(15)
+                label["text"] = f"Connecting to GitHub to download Talkative {version}…"
                 root.protocol("WM_DELETE_WINDOW", root.withdraw)
                 threading.Thread(
                     target=_run_app_update, args=(release, controller, progress),
