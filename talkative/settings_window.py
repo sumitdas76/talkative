@@ -1224,31 +1224,34 @@ class _SettingsWindow:
 
     def _tab_hotkeys(self, f):
         # Two keys: which one you hold picks the kind of dictation, every
-        # time -- no mode to switch or turn off.
-        keys = self._section(f, "Keys", first=True)
-        ttk.Label(keys, style="Muted.TLabel",
-                  text="Click a key to change it, then hold the key(s) you want.").pack(
+        # time -- no mode to switch or turn off. Each in its own section, so
+        # the code example and help link clearly belong to the code key
+        # (user request 2026-11-23: the two looked like one block).
+        regular = self._section(f, "Regular typing", first=True)
+        ttk.Label(regular, wraplength=560, style="Muted.TLabel",
+                  text="For emails, messages and anything in sentences.").pack(
             anchor="w", pady=(0, 4))
-        row = self._setting_row(keys, "Regular dictation",
-                                "For emails, messages and anything in sentences.")
+        row = self._setting_row(regular, "Hotkey",
+                                "Click it, then hold the key(s) you want.")
         self.hotkey_btn = ttk.Button(
             row, text=_hotkey_display(config.HOTKEY), command=self._capture_hotkey
         )
         self.hotkey_btn.grid(row=0, column=1, sticky="e")
-        row = self._setting_row(keys, "Code dictation",
-                                "For SQL, terminal commands and code.")
+
+        code = self._section(f, "Code typing")
+        ttk.Label(code, wraplength=560, style="Muted.TLabel",
+                  text="For SQL, terminal commands and code. “select star from users "
+                       "where id equals five” types SELECT * FROM users WHERE id = 5.").pack(
+            anchor="w", pady=(0, 4))
+        row = self._setting_row(code, "Hotkey",
+                                "Click it, then hold the key(s) you want.")
         self.dev_hotkey_btn = ttk.Button(
             row,
             text=_hotkey_display(config.DEV_HOTKEY) if config.DEV_HOTKEY else "Not set",
             command=lambda: self._capture_hotkey("dev"),
         )
         self.dev_hotkey_btn.grid(row=0, column=1, sticky="e")
-        ttk.Label(
-            keys, wraplength=560, style="Muted.TLabel",
-            text="“select star from users where id equals five” types "
-                 "SELECT * FROM users WHERE id = 5.",
-        ).pack(anchor="w", pady=(4, 0))
-        help_link = ttk.Label(keys, text="How to say code…", cursor="hand2",
+        help_link = ttk.Label(code, text="How to say code…", cursor="hand2",
                               foreground=self._link, takefocus=True)
         help_link.pack(anchor="w", pady=(4, 0))
         for seq in ("<Button-1>", "<Return>", "<space>"):
