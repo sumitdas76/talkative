@@ -567,6 +567,20 @@ def _hedge_ok(inp, out):
     return len(_HEDGE.findall(out)) >= len(_HEDGE.findall(inp))
 
 
+# Forms of one verb that share no prefix: a grammar fix of the last word
+# ("what features does this release has" -> "...have?", 2026-11-22, Cloud;
+# rejected until 1.3.25) is the same word, not an invented ending.
+_VERB_FORMS = (
+    frozenset("has have had".split()),
+    frozenset("is are was were am be been".split()),
+    frozenset("do does did".split()),
+    frozenset("go goes went gone".split()),
+    frozenset("hasn't haven't hadn't".split()),
+    frozenset("isn't aren't wasn't weren't".split()),
+    frozenset("don't doesn't didn't".split()),
+)
+
+
 def _ending_ok(inp, out):
     """No words invented after the end of what was said. A dictation cut
     off mid-sentence (the key released before the thought ended, often to
@@ -590,8 +604,17 @@ def _ending_ok(inp, out):
     last = dst[-1]
 
     def same(a, b):
-        return a == b or (min(len(a), len(b)) >= 3 and (a.startswith(b) or b.startswith(a)))
+        return (a == b or (min(len(a), len(b)) >= 3 and (a.startswith(b) or b.startswith(a)))
+                or any(a in g and b in g for g in _VERB_FORMS)
+                or ("not" in (a, b) and (a + b).endswith("n't")))
 
+    # Nor dropped from it: a dictation cut off mid-sentence must keep its
+    # last word. "...from the downloads page, where we" -> "...from the
+    # downloads page." (office PC, Cloud, 2026-11-20) lost "where we", and
+    # the next dictation carried on after the wrong words.
+    if not re.search(r"[.!?…]['\"”’)\]]*\s*$", inp) and not any(
+            same(src[-1], w) for w in dst[-4:]):
+        return False
     if any(same(last, w) for w in src[-3:]):
         return True
     return last not in _STOPWORDS and last in src[-12:]
