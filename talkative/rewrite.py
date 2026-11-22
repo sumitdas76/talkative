@@ -103,6 +103,13 @@ def read_reply(original, reply):
     m = _TAGS.match(reply)
     if m:
         reply = m.group(1).strip()
+    # gpt-oss likes em dashes ("website work—₹45,000"); the user
+    # chose (2026-11-23) that Talkative never adds one: ", " between words,
+    # "-" as a line's list marker. Kept when the selection already has them.
+    if "—" not in original:
+        reply = re.sub(r"(?m)^(\s*)—\s*", r"\1- ", reply)
+        reply = re.sub(r"\s*—\s*", ", ", reply)
+        reply = re.sub(r",\s*([,.;:!?])", r"\1", reply)
     # gpt-oss ends lines with Markdown's two-space hard break ("Best
     # regards,  \nSumit", every bullet): the spaces would be pasted too.
     reply = "\n".join(line.rstrip() for line in reply.split("\n"))
