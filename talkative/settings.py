@@ -21,7 +21,7 @@ from pathlib import Path
 
 from pynput import keyboard
 
-from . import config
+from . import config, languages
 
 # json key -> config attribute. Only these keys are honored.
 _KEYS = {
@@ -178,7 +178,7 @@ def load_into_config(path=None):
         # user's own key) before the choice became an accent.
         if key == "speech_service":
             value = {"talkative": "us_english", "azure": "indian_english"}.get(value, value)
-            if value not in ("us_english", "indian_english"):
+            if not languages.valid(value):
                 continue
         setattr(config, attr, value)
         applied[key] = value

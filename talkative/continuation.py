@@ -196,13 +196,16 @@ def _capital_meant(word, before):
     return False
 
 
-def lowercase_start(text, before=""):
+def lowercase_start(text, before="", english=True):
     """`text` with its first letter lowercased, if the first word is an
     ordinary word: not "I", an acronym, a mixed-case name ("iPhone"), a
     name, or a word `before` (the text on screen) or Auto Text writes with
     a capital mid-sentence. Until 1.3.25 only ~300 _COMMON words were
     lowercased ("...about Reading", "look pretty Jacket", debug.log
-    2026-11-22)."""
+    2026-11-22). Not for another language (languages.py): its nouns may be
+    English words too ("Hand", "Name" in German)."""
+    if not english:
+        return text
     m = re.match(r"\s*([A-Za-z][A-Za-z']*)(?:[ -]([A-Za-z][A-Za-z']*))?", text)
     if not m:
         return text
@@ -280,7 +283,7 @@ def _continues_sentence(after):
     return not _ordinary(word)
 
 
-def fit_to_cursor(text, before, after):
+def fit_to_cursor(text, before, after, english=True):
     """Fit a dictation typed into the middle of existing text: after a
     mid-sentence word, start in lowercase (and with a space if there isn't
     one); when the same sentence carries on after the cursor, drop the
@@ -299,7 +302,7 @@ def fit_to_cursor(text, before, after):
     is_list = "\n" in text or "•" in text
     space = None
     if not is_list and not _sentence_starts_after(before):
-        text = lowercase_start(text.lstrip(), before)
+        text = lowercase_start(text.lstrip(), before, english)
         if before and not before[-1].isspace() and before[-1] not in _OPENERS:
             text = " " + text
     elif not is_list and before and _LIST_MARKER.search(before):

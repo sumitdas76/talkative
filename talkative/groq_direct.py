@@ -209,7 +209,7 @@ def check_key(candidate, timeout=10.0):
     return None
 
 
-def transcribe(wav_bytes, prompt, timeout):
+def transcribe(wav_bytes, prompt, timeout, language="en"):
     """WAV bytes -> text, with the same request worker.js handleTranscribe
     makes to Groq."""
     boundary = uuid.uuid4().hex
@@ -224,7 +224,7 @@ def transcribe(wav_bytes, prompt, timeout):
     parts.append(wav_bytes)
     parts.append(b"\r\n")
     field("model", STT_MODEL)
-    field("language", "en")
+    field("language", language)
     field("response_format", "json")
     prompt = (prompt or "")[-800:].strip()
     if prompt:
@@ -256,10 +256,10 @@ def _chat(messages, timeout, max_tokens=2048):
     return cloud_prompt.plain_text(out).strip()
 
 
-def grammar(text, timeout=20.0):
+def grammar(text, timeout=20.0, language="en"):
     """Cleaned text from gpt-oss-20b, as worker.js handleGrammar asks for
     it. The caller runs grammar_engine.validate() on it."""
-    return _chat(cloud_prompt.messages(text), timeout)
+    return _chat(cloud_prompt.messages(text, language), timeout)
 
 
 def rewrite(text, instruction, timeout=30.0):

@@ -19,6 +19,7 @@ from . import focus_check
 from .focus_check import is_focus_editable
 from .keynames import friendly as friendly_key
 from .self_correction import apply_self_corrections
+from . import languages
 from .spoken_symbols import apply_spoken_symbols
 from .text_inserter import copy_only, copy_selection, erase, insert_text
 from .transcriber import Transcriber
@@ -1088,7 +1089,10 @@ class TalkativeApp:
                              selection=None):
         # Developer English swaps the sentence-style bias prompt for one
         # that keeps spoken symbols as literal words (see dev_mode.py).
-        base_prompt = dev_mode.STT_PROMPT if dev else config.PUNCTUATION_PROMPT
+        # Another language on Cloud (languages.py) has its own sentence.
+        base_prompt = (dev_mode.STT_PROMPT if dev else
+                       languages.stt_prompt(self._cloud_active(), dev)
+                       or config.PUNCTUATION_PROMPT)
         # The text before the cursor goes last: Whisper reads the prompt as
         # what was said just before, so this dictation continues it
         # (screen_context.py). Re-checked here in case the mode changed
@@ -1184,65 +1188,75 @@ class TalkativeApp:
         # ("settings.py"), and doing it early means the grammar engine's
         # word-retention guard checks against the already-fused text
         # instead of expecting "dot" to survive verbatim.
-        text = apply_spoken_symbols(text)
-        if config.ENABLE_NUMBER_FORMAT and config.CLEANUP_MODE == "cleaned_up":
-            # Before grammar, which would turn ".1" into "0.1".
-            text = restore_spoken_point(text)
-        # Fillers first: "sorry, um, I mean" must become "sorry I mean"
-        # before the correction triggers run.
-        if config.CLEANUP_MODE == "cleaned_up":
-            text = remove_fillers(text)
-            after_fillers = text
-            if config.ENABLE_SELF_CORRECTION:
-                text = apply_self_corrections(text)
-            after_corrections = text
-            text = collapse_repeats(text)
-            after_collapse = text
-            pre_grammar = text
-            t0 = time.time()
-            grammar_used_local = self._grammar_uses_local()
-            if grammar_used_local:
-                text = grammar_engine.apply(text)
-            elif not self._cloud_down.value:
-                # Skipped when Cloud just refused the transcription: it
-                # would most likely refuse this too, maybe after a 20 s
-                # timeout. The rule-based cleanup above still ran.
-                text = self._cloud_grammar(
-                    text, corrected=after_corrections != after_fillers
-                )
-            grammar_secs = time.time() - t0
-            if dev:
-                # The grammar model likes to wrap paths in backticks
-                # ("`/api/v2/users`"); plain text is wanted here.
-                text = dev_mode.capital_i(dev_mode.strip_backticks(text))
+        # Another language on Cloud (languages.py): the rules below read
+        # English words, so only grammar (told the language), the sentence
+        # end and the personal dictionary run.
+        language = languages.code(self._cloud_active(), dev)
+        if language != "en":
+            (text, after_fillers, after_corrections, after_collapse,
+             grammar_secs) = self._other_language(text, language)
             after_grammar = text
-            text = finish_sentence(text)
-            if config.ENABLE_NUMBER_FORMAT and not dev:
-                # After grammar: its digit guard keeps numbers as heard,
-                # and this picks the written form with fixed rules.
-                text = format_numbers(text)
-            if config.ENABLE_BULLETS and not dev:
-                listed = format_bullets(text)
-                if BULLET not in listed:
-                    # The grammar model can fold spoken points into one
-                    # sentence ("...three things: book the hall, send the
-                    # invites, and order the food", Local, QA 2026-10-11).
-                    # If the words as spoken were a list, keep the list.
-                    spoken = finish_sentence(pre_grammar)
-                    if config.ENABLE_NUMBER_FORMAT:
-                        spoken = format_numbers(spoken)
-                    spoken = format_bullets(spoken)
-                    if BULLET in spoken:
-                        listed = spoken
-                text = listed
-            if config.ENABLE_ARTICLE_FIX and not dev:
-                # Last, after bullets: a spoken letter bullet ("A always
-                # sleep") is gone by now, and grammar has had its turn.
-                text = fix_articles(text)
-        else:
-            after_fillers = after_corrections = after_collapse = after_grammar = text
-            grammar_secs = 0.0
             grammar_used_local = False
+        else:
+            text = apply_spoken_symbols(text)
+            if config.ENABLE_NUMBER_FORMAT and config.CLEANUP_MODE == "cleaned_up":
+                # Before grammar, which would turn ".1" into "0.1".
+                text = restore_spoken_point(text)
+            # Fillers first: "sorry, um, I mean" must become "sorry I mean"
+            # before the correction triggers run.
+            if config.CLEANUP_MODE == "cleaned_up":
+                text = remove_fillers(text)
+                after_fillers = text
+                if config.ENABLE_SELF_CORRECTION:
+                    text = apply_self_corrections(text)
+                after_corrections = text
+                text = collapse_repeats(text)
+                after_collapse = text
+                pre_grammar = text
+                t0 = time.time()
+                grammar_used_local = self._grammar_uses_local()
+                if grammar_used_local:
+                    text = grammar_engine.apply(text)
+                elif not self._cloud_down.value:
+                    # Skipped when Cloud just refused the transcription: it
+                    # would most likely refuse this too, maybe after a 20 s
+                    # timeout. The rule-based cleanup above still ran.
+                    text = self._cloud_grammar(
+                        text, corrected=after_corrections != after_fillers
+                    )
+                grammar_secs = time.time() - t0
+                if dev:
+                    # The grammar model likes to wrap paths in backticks
+                    # ("`/api/v2/users`"); plain text is wanted here.
+                    text = dev_mode.capital_i(dev_mode.strip_backticks(text))
+                after_grammar = text
+                text = finish_sentence(text)
+                if config.ENABLE_NUMBER_FORMAT and not dev:
+                    # After grammar: its digit guard keeps numbers as heard,
+                    # and this picks the written form with fixed rules.
+                    text = format_numbers(text)
+                if config.ENABLE_BULLETS and not dev:
+                    listed = format_bullets(text)
+                    if BULLET not in listed:
+                        # The grammar model can fold spoken points into one
+                        # sentence ("...three things: book the hall, send the
+                        # invites, and order the food", Local, QA 2026-10-11).
+                        # If the words as spoken were a list, keep the list.
+                        spoken = finish_sentence(pre_grammar)
+                        if config.ENABLE_NUMBER_FORMAT:
+                            spoken = format_numbers(spoken)
+                        spoken = format_bullets(spoken)
+                        if BULLET in spoken:
+                            listed = spoken
+                    text = listed
+                if config.ENABLE_ARTICLE_FIX and not dev:
+                    # Last, after bullets: a spoken letter bullet ("A always
+                    # sleep") is gone by now, and grammar has had its turn.
+                    text = fix_articles(text)
+            else:
+                after_fillers = after_corrections = after_collapse = after_grammar = text
+                grammar_secs = 0.0
+                grammar_used_local = False
 
         text = apply_dictionary(text)
         self._record(
@@ -1263,6 +1277,20 @@ class TalkativeApp:
             + (" [developer: prose]" if dev else ""),
         )
         self._insert_final(text, press=press)
+
+    def _other_language(self, text, language):
+        """Cleanup for a dictation in another language (languages.py):
+        Cloud grammar told the language, then the sentence end. Returns
+        (text, after_fillers, after_corrections, after_collapse,
+        grammar seconds) for the debug record."""
+        before = text
+        t0 = time.time()
+        if config.CLEANUP_MODE == "cleaned_up" and not self._cloud_down.value:
+            text = cloud_client.grammar_apply(text, language=language)
+        secs = time.time() - t0
+        if config.CLEANUP_MODE == "cleaned_up":
+            text = finish_sentence(text)
+        return text, before, before, before, secs
 
     def _cloud_grammar(self, text, corrected=False):
         """Cloud grammar. For Indian English (Azure) it first tries Azure's
@@ -1350,9 +1378,11 @@ class TalkativeApp:
         Developer English always uses Groq: its literal-symbol prompt
         needs Whisper."""
         indian = config.SPEECH_SERVICE == "indian_english" and not dev
+        language = languages.code(True, dev)
         try:
             text = cloud_client.transcribe(audio, config.SAMPLE_RATE,
-                                           initial_prompt=prompt, indian_english=indian)
+                                           initial_prompt=prompt, indian_english=indian,
+                                           language=language)
             if (indian and text and getattr(cloud_client.last_stt, "via", "") != "azure"
                     and time.time() - self._azure_notice > 600):
                 self._azure_notice = time.time()
@@ -1366,7 +1396,9 @@ class TalkativeApp:
             first_error = exc
         self._cloud_down.value = True
         logging.warning("Cloud transcription failed (%s); falling back", first_error)
-        local = self._fallback_transcriber()
+        # The Local voice model is English only (small.en): for another
+        # language it would type an English guess, so Cloud is retried.
+        local = self._fallback_transcriber() if language == "en" else None
         if local is not None:
             text = local.transcribe(audio, config.SAMPLE_RATE, initial_prompt=prompt)
             self.tray.notify("Cloud was busy, so this dictation was "
@@ -1378,7 +1410,7 @@ class TalkativeApp:
                 break
             try:
                 text = cloud_client.transcribe(audio, config.SAMPLE_RATE,
-                                               initial_prompt=prompt)
+                                               initial_prompt=prompt, language=language)
                 self._cloud_down.value = False
                 return text
             except Exception as exc:
@@ -1494,7 +1526,8 @@ class TalkativeApp:
                 and continuation.joins(press, before := screen_context.capture())):
             take_back = continuation.chars_to_delete()
             text = (continuation.closers() + " "
-                    + continuation.lowercase_start(text, before))
+                    + continuation.lowercase_start(
+                        text, before, languages.english(self._cloud_active())))
         if learn and press is not None and continuation.last_check:
             _debug_log(continuation=continuation.last_check)
             continuation.last_check = None
@@ -1506,7 +1539,8 @@ class TalkativeApp:
                 and config.INSERT_MODE != "clipboard"):
             around = screen_context.around_caret()
             if around is not None:
-                fitted, space = continuation.fit_to_cursor(text, *around)
+                fitted, space = continuation.fit_to_cursor(
+                    text, *around, english=languages.english(self._cloud_active()))
                 if fitted != text or space is not None:
                     _debug_log(cursor=f"{around[0][-20:]!r} | {around[1][:20]!r} -> {fitted!r}")
                 text = fitted

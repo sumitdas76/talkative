@@ -316,12 +316,15 @@ def _wav_bytes(audio, sample_rate):
     return buf.getvalue()
 
 
-def transcribe(audio, sample_rate, initial_prompt=None, indian_english=False):
+def transcribe(audio, sample_rate, initial_prompt=None, indian_english=False,
+               language="en"):
     """Same contract as Transcriber.transcribe(): returns the transcript
     string, raises on failure (the app.py call site already handles that
     the same way it handles a local transcription failure).
     `indian_english` asks the Worker for Azure en-IN (config.SPEECH_SERVICE);
-    the Worker falls back to Groq on its own if Azure can't serve."""
+    the Worker falls back to Groq on its own if Azure can't serve.
+    `language` is the Whisper code (languages.code()); English for both
+    accents."""
     last_stt.via, last_stt.itn = "", ""
     end = _speech_end(audio, sample_rate)
     if end == 0:
@@ -329,7 +332,7 @@ def transcribe(audio, sample_rate, initial_prompt=None, indian_english=False):
     trimmed = _trim_trailing_silence(audio, sample_rate, speech_end=end)
     last_trim.secs = (audio.size - trimmed.size) / sample_rate
     audio = trimmed
-    if indian_english:
+    if indian_english and language == "en":
         texts, itns, vias = [], [], []
         for piece in _pieces(audio, sample_rate, _AZURE_PIECE_SECONDS):
             result = _transcribe_once(piece, sample_rate, initial_prompt, azure=True)
@@ -344,11 +347,12 @@ def transcribe(audio, sample_rate, initial_prompt=None, indian_english=False):
         return text
     if groq_direct.active():
         text = _own_key(lambda: groq_direct.transcribe(
-            _wav_bytes(audio, sample_rate), initial_prompt, _timeout(audio, sample_rate)))
+            _wav_bytes(audio, sample_rate), initial_prompt, _timeout(audio, sample_rate),
+            language))
         if text is not None:
             last_stt.via = "own-key"
             return text
-    result = _transcribe_once(audio, sample_rate, initial_prompt)
+    result = _transcribe_once(audio, sample_rate, initial_prompt, language=language)
     last_stt.via = result.get("via", "")
     return str(result.get("text", "")).strip()
 
@@ -405,10 +409,12 @@ def friendly_error(exc):
     return "Couldn't reach Talkative Cloud. Check your internet connection."
 
 
-def _transcribe_once(audio, sample_rate, initial_prompt, azure=False):
+def _transcribe_once(audio, sample_rate, initial_prompt, azure=False, language="en"):
     """One /transcribe request -> the Worker's JSON. Raises on failure."""
     body = _wav_bytes(audio, sample_rate)
     headers = _headers("audio/wav")
+    if language != "en":
+        headers["X-Language"] = language
     if azure:
         headers["X-Stt-Provider"] = "azure"
         headers["X-Stt-Language"] = "en-IN"
@@ -432,26 +438,30 @@ def _transcribe_once(audio, sample_rate, initial_prompt, azure=False):
     return json.loads(data.decode("utf-8"))
 
 
-def grammar_apply(text):
+def grammar_apply(text, language="en"):
     """Same contract as grammar_engine.apply(): on any failure or guard
     rejection, return `text` unchanged -- cleanup must never break
     dictation. The deterministic guards (grammar_engine.validate) run here client-side (the
     Worker's model output is trusted no more than the local model's)."""
     if not text:
         return text
-    out = _own_key(lambda: groq_direct.grammar(text)) if groq_direct.active() else None
+    out = (_own_key(lambda: groq_direct.grammar(text, language=language))
+           if groq_direct.active() else None)
     if out is not None:
-        return out if grammar_engine.validate(text, out) else text
+        return out if grammar_engine.validate(text, out, language=language) else text
     try:
         body = json.dumps({"text": text}).encode("utf-8")
-        status, data = _post("/grammar", body, _headers("application/json"), timeout=20)
+        headers = _headers("application/json")
+        if language != "en":
+            headers["X-Language"] = language
+        status, data = _post("/grammar", body, headers, timeout=20)
         if status != 200:
             return text
         result = json.loads(data.decode("utf-8"))
         out = str(result.get("text", "")).strip()
     except Exception:
         return text
-    if not grammar_engine.validate(text, out):
+    if not grammar_engine.validate(text, out, language=language):
         return text
     return out
 

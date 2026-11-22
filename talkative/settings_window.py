@@ -21,7 +21,7 @@ from tkinter import filedialog, messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, audio_devices, config, dev_mode, error_toast, feedback, fix_learning, grammar_engine, groq_direct, history, mic_warmup, model_manager, overlay_thread, packaging, palette, pill, secret_store, settings, try_it_now, updater
+from . import __version__, app_icon, audio_devices, config, dev_mode, error_toast, feedback, fix_learning, grammar_engine, groq_direct, history, languages, mic_warmup, model_manager, overlay_thread, packaging, palette, pill, secret_store, settings, try_it_now, updater
 from .keynames import friendly as _friendly_key_name
 
 log = logging.getLogger(__name__)
@@ -819,14 +819,24 @@ class _SettingsWindow:
         # separate "Cloud" button): an accent under Cloud selects Cloud
         # with that speech service -- US English = Groq's Whisper, Indian
         # English = Azure en-IN via the Worker -- or Local's own button.
+        # Since 2026-11-23 the accent is one entry of a language list
+        # (languages.py): "Speak in" + the list; picking from the list picks
+        # Cloud too. var_engine is now "cloud" or "local".
         self.var_engine = tk.StringVar(
-            value=config.SPEECH_SERVICE if config.PROCESSING_MODE == "cloud" else "local")
-        for label, value in (("US English", "us_english"),
-                             ("Indian English", "indian_english")):
-            ttk.Radiobutton(
-                cloud_box, text=label, variable=self.var_engine, value=value,
-                command=self._engine_changed,
-            ).pack(anchor="w", pady=1)
+            value="cloud" if config.PROCESSING_MODE == "cloud" else "local")
+        lang_row = ttk.Frame(cloud_box)
+        lang_row.pack(anchor="w", fill="x", pady=1)
+        ttk.Radiobutton(
+            lang_row, text="Speak in", variable=self.var_engine, value="cloud",
+            command=self._engine_changed,
+        ).pack(side="left")
+        self.language_combo = ttk.Combobox(
+            lang_row, values=[languages.LABELS[i] for i in languages.IDS],
+            state="readonly", width=24)
+        self.language_combo.set(languages.LABELS.get(
+            config.SPEECH_SERVICE, languages.LABELS["us_english"]))
+        self.language_combo.pack(side="left", padx=(6, 0))
+        self.language_combo.bind("<<ComboboxSelected>>", self._language_picked)
         self._build_own_key(cloud_box)
 
         self.local_radio = ttk.Radiobutton(
@@ -974,8 +984,16 @@ class _SettingsWindow:
             self.var_processing.set("local")
         else:
             self.var_processing.set("cloud")
-            self.var_speech_service.set(engine)
         self._render_local_download()
+
+    def _language_picked(self, _event=None):
+        label = self.language_combo.get()
+        picked = next((i for i in languages.IDS if languages.LABELS[i] == label), None)
+        if picked:
+            self.var_speech_service.set(picked)
+        self.language_combo.selection_clear()
+        self.var_engine.set("cloud")
+        self._engine_changed()
 
     def _download_local_models(self):
         self._local_op = "downloading"

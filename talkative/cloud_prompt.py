@@ -51,9 +51,21 @@ def plain_text(s):
     return s.translate(_PLAIN)
 
 
-def messages(text):
+# worker.js LANGUAGES / languageLine(): a language other than English gets
+# one more system line so the answer stays in that language.
+LANGUAGE_NAMES = {"es": "Spanish", "fr": "French", "de": "German",
+                  "pt": "Portuguese", "it": "Italian", "nl": "Dutch"}
+
+
+def language_line(code):
+    name = LANGUAGE_NAMES[code]
+    return f" The text is in {name}. Reply in {name}."
+
+
+def messages(text, language="en"):
     """The chat messages worker.js handleGrammar() sends for `text`."""
-    out = [{"role": "system", "content": SYSTEM}]
+    system = SYSTEM if language == "en" else SYSTEM + language_line(language)
+    out = [{"role": "system", "content": system}]
     for spoken, cleaned in SHOTS:
         out.append({"role": "user", "content": spoken})
         out.append({"role": "assistant", "content": cleaned})

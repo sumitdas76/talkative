@@ -620,7 +620,7 @@ def _ending_ok(inp, out):
     return last not in _STOPWORDS and last in src[-12:]
 
 
-def validate(inp, out, strict=False):
+def validate(inp, out, strict=False, language="en"):
     """Run all twelve deterministic guards (thirteen with `strict`, the local
     engine's tighter leash: same words, higher retention) against an (input, output) pair.
     True only if `out` is safe to use in place of `inp`. Shared by the local
@@ -629,6 +629,12 @@ def validate(inp, out, strict=False):
     docstring for why the guards exist)."""
     if not out:
         return False
+    if language != "en":
+        # Cloud in another language (languages.py): only the guards that
+        # don't read English words.
+        return (_digits_ok(inp, out) and _dotted_ok(inp, out)
+                and _retention_ok(inp, out, False) and _length_ok(inp, out)
+                and _ending_ok(inp, out))
     if strict and not _same_words_ok(inp, out):
         return False
     return (_digits_ok(inp, out) and _dotted_ok(inp, out)

@@ -146,6 +146,27 @@ const REWRITE_PER_INSTALL_PER_DAY = 100;
 // gpt-oss likes typographic characters (curly quotes, narrow no-break
 // space in "3 pm") that Whisper never emits -- map them back to the plain
 // ASCII the rest of the pipeline and the dictionary rules expect.
+// Dictation languages on Cloud (Backlog cloud-languages, 2026-11-23).
+// The app sends X-Language (talkative/languages.py); anything not on this
+// list, or no header (every client before it), is English.
+const LANGUAGES = {
+  en: "English", es: "Spanish", fr: "French", de: "German",
+  pt: "Portuguese", it: "Italian", nl: "Dutch",
+};
+
+function language(request) {
+  const code = request.headers.get("X-Language");
+  return Object.hasOwn(LANGUAGES, code) ? code : "en";
+}
+
+// The extra grammar line for a language other than English. The few-shot
+// examples stay English; this line keeps the answer in the speaker's
+// language. talkative/cloud_prompt.py language_line() is a copy.
+function languageLine(code) {
+  const name = LANGUAGES[code];
+  return ` The text is in ${name}. Reply in ${name}.`;
+}
+
 function plainText(s) {
   return s
     .replace(/[‘’‛]/g, "'")
@@ -480,7 +501,9 @@ async function handleTranscribe(request, env, timing, ctx) {
   if (bytes.length === 0) {
     return { text: "" };
   }
-  if (request.headers.get("X-Stt-Provider") === "azure") {
+  const lang = language(request);
+  timing.language = lang;
+  if (lang === "en" && request.headers.get("X-Stt-Provider") === "azure") {
     const az = await azureTranscribe(request, env, bytes, timing, ctx);
     if (az) return az;
   }
@@ -495,7 +518,8 @@ async function handleTranscribe(request, env, timing, ctx) {
   const sttModel = STT_MODELS.includes(requested) ? requested : STT_MODELS[0];
   timing.stt_model = sttModel;
   form.append("model", sttModel);
-  form.append("language", "en"); // matches the local model's small.en (English-only)
+  // English unless the app picked another language (language()).
+  form.append("language", lang);
   // Plain json: verbose_json's per-segment no_speech_prob fed a silence
   // filter that never fired -- Groq reported 0 on all 146 segments
   // measured (2026-10-11); the client's own speech check does that job.
@@ -548,7 +572,7 @@ async function handleTranscribe(request, env, timing, ctx) {
   if (groqProblem) {
     timing.groq_problem = groqProblem;
     try {
-      const fb = await workersAiTranscribe(env, bytes, prompt);
+      const fb = await workersAiTranscribe(env, bytes, prompt, lang);
       timing.upstream_ms = Date.now() - t0;
       if (fb.turbo_error) {
         timing.turbo_error = fb.turbo_error;
@@ -573,17 +597,20 @@ async function handleTranscribe(request, env, timing, ctx) {
 // same model Groq runs) takes the WAV as a base64 string; the older base
 // "whisper" model takes a byte array and is the last resort. Counts against
 // Workers AI's own free allowance (10,000 neurons/day, account-wide).
-async function workersAiTranscribe(env, bytes, prompt) {
+async function workersAiTranscribe(env, bytes, prompt, lang = "en") {
   let binary = "";
   for (let i = 0; i < bytes.length; i += 0x8000) {
     binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   }
   try {
-    const input = { audio: btoa(binary), language: "en" };
+    const input = { audio: btoa(binary), language: lang };
     if (prompt) input.initial_prompt = prompt;
     const r = await env.AI.run("@cf/openai/whisper-large-v3-turbo", input);
     return { text: (r.text || "").trim(), via: "workers-ai-large-v3-turbo" };
   } catch (e) {
+    // The base model has no language setting and would guess: English
+    // only, so another language gets BUSY rather than a wrong-language text.
+    if (lang !== "en") throw e;
     const r = await env.AI.run("@cf/openai/whisper", { audio: [...bytes] });
     return { text: (r.text || "").trim(), via: "workers-ai-whisper", turbo_error: String(e) };
   }
@@ -595,7 +622,9 @@ async function handleGrammar(request, env, timing, ctx) {
   if (!text) {
     return { text: "" };
   }
-  const messages = [{ role: "system", content: SYSTEM }];
+  const lang = language(request);
+  const system = lang === "en" ? SYSTEM : SYSTEM + languageLine(lang);
+  const messages = [{ role: "system", content: system }];
   for (const [spoken, cleaned] of SHOTS) {
     messages.push({ role: "user", content: spoken });
     messages.push({ role: "assistant", content: cleaned });
@@ -658,6 +687,11 @@ async function handleGrammar(request, env, timing, ctx) {
     groqError = String(err).slice(0, 300);
   }
 
+  // Workers AI's small model answers in English whatever it's told, and
+  // grammar is optional: another language keeps its text as transcribed.
+  if (lang !== "en") {
+    return { text, via: "none", groq_error: groqError };
+  }
   let result;
   try {
     result = await env.AI.run("@cf/meta/llama-3.2-3b-instruct", {

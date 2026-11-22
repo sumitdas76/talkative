@@ -33,6 +33,8 @@ Each time you dictate, Talkative sends:
   there are spelled the same way, then discarded. Password boxes are
   never read.
 - The transcribed text, for grammar and punctuation cleanup.
+- The language you speak in, if you picked one other than English
+  under Cloud in Settings, so the speech is transcribed in that language.
 - An anonymous install ID: a random number created on your PC the first
   time Talkative runs. It isn't tied to your name, email, or device,
   and is used only to enforce a fair daily usage limit per install.
