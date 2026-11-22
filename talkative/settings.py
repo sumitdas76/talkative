@@ -122,6 +122,10 @@ def _parse_one_key(name):
     if not isinstance(name, str) or not name:
         return None
     key = getattr(keyboard.Key, name, None)
+    if key == keyboard.Key.alt_gr:
+        # One name for Right Alt (see app._same_key): the hook may report
+        # it as either.
+        return keyboard.Key.alt_r
     if key is not None:
         return key
     if len(name) == 1:

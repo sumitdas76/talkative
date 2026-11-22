@@ -323,6 +323,7 @@ def check_text_rules():
                              ("W12", "own_groq_key_settings_test.py"),
                              ("D54", "undo_retype_test.py"),
                              ("D55", "rewrite_test.py"),
+                             ("D55", "rewrite_hotkey_test.py"),
                              ("D56", "languages_test.py")):
         code, out = run_py([script], ROOT / "tools", timeout=60)
         last = out.strip().splitlines()[-1] if out.strip() else "no output"

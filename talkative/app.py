@@ -48,6 +48,15 @@ _MASKED_KEYS = {
 _mask_controller = keyboard.Controller()
 
 
+def _same_key(key):
+    """Right Alt reaches the hook as Key.alt_gr (pynput names vk 165 that
+    on Windows), but the default rewrite chord and older settings say
+    Key.alt_r, and the two don't compare equal: Right Ctrl + Right Alt
+    never started a rewrite (found by tools/e2e/new_features_e2e.py,
+    2026-11-23). One name for both; settings._parse_one_key does the same."""
+    return keyboard.Key.alt_r if key == keyboard.Key.alt_gr else key
+
+
 def _hotkey_key(key):
     """`key` is part of one of the three hotkeys."""
     return key in config.HOTKEY or key in config.DEV_HOTKEY or key in config.REWRITE_HOTKEY
@@ -491,6 +500,7 @@ class TalkativeApp:
         return config.HOTKEY_MODE == "toggle"
 
     def _on_press(self, key):
+        key = _same_key(key)
         if getattr(key, "vk", None) == _MASK_KEY.vk:
             return  # our own mask keystroke, see _MASK_KEY
         if not _hotkey_key(key):
@@ -924,6 +934,7 @@ class TalkativeApp:
         self._listener.start()
 
     def _on_release(self, key):
+        key = _same_key(key)
         if not _hotkey_key(key):
             return
         self._hotkey_pressed.discard(key)
