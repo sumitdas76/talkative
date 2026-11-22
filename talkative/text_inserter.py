@@ -206,6 +206,8 @@ def erase(count, put_back=""):
             _controller.release(Key.backspace)
         if not put_back:
             return
+        # A rewrite's original text may have line breaks (as insert_text).
+        put_back = put_back.replace("\r\n", "\n").replace("\n", "\r\n")
         time.sleep(0.08)  # see insert_text: Notepad types "v" without it
         try:
             previous = _save_clipboard()
@@ -225,3 +227,41 @@ def erase(count, put_back=""):
                 _restore_clipboard(previous)
             except Exception:
                 pass
+
+
+def copy_selection(timeout=0.6):
+    """The selected text, copied with Ctrl+C, for apps whose selection
+    can't be read through UI Automation (rewrite.py). The user's clipboard
+    is put back afterwards. "" when nothing was copied (nothing selected,
+    or the app ignored Ctrl+C); None when the clipboard couldn't be used.
+    The caller waits for the hotkey's keys to be let go first, or the app
+    would see Ctrl+Alt+C."""
+    with _paste_lock:
+        try:
+            previous = _save_clipboard()
+        except Exception:
+            return None
+        try:
+            with _Open():
+                _user32.EmptyClipboard()
+            before = _user32.GetClipboardSequenceNumber()
+            _controller.press(Key.ctrl)
+            _controller.press("c")
+            _controller.release("c")
+            _controller.release(Key.ctrl)
+            end = time.monotonic() + timeout
+            while (_user32.GetClipboardSequenceNumber() == before
+                   and time.monotonic() < end):
+                time.sleep(0.02)
+            time.sleep(0.05)  # some apps add their formats one by one
+            try:
+                text = pyperclip.paste() or ""
+            except Exception:
+                text = ""
+            return text
+        finally:
+            if previous is not None:
+                try:
+                    _restore_clipboard(previous)
+                except Exception:
+                    pass

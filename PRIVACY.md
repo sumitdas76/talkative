@@ -75,6 +75,19 @@ so that only your Windows account on this PC can read it. It is sent
 only to Groq, and never written to a log. Remove key in the same place
 deletes it.
 
+### Rewriting selected text (Cloud only)
+
+When you select text and hold the rewrite key, Talkative reads the
+selected text (up to 4,000 characters) and sends it with your spoken
+instruction to Groq: through Talkative's server, or straight to Groq
+with your own key, as above. Only then: selecting text on its own sends
+nothing. Where an app doesn't let Talkative read the selection, it
+copies it with Ctrl+C and puts your clipboard back afterwards. The
+selected text is not stored on Talkative's server and is not included
+in diagnostic data (only its length is). The original stays in memory
+for 30 minutes so that "scratch that" can put it back, like a
+dictation. Rewriting isn't available in Local mode.
+
 ### Local mode
 
 Speech recognition and cleanup run entirely on your PC. After the

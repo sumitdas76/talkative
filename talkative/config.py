@@ -131,6 +131,16 @@ ENABLE_SPOKEN_SYMBOLS = True
 # developer English. Empty tuple = off.
 DEV_HOTKEY = (keyboard.Key.ctrl_r, keyboard.Key.shift_r)
 
+# Third hotkey: select text, hold it, say what to change ("make it
+# shorter"); the selection is replaced by the rewrite (rewrite.py, Cloud
+# only). Like DEV_HOTKEY it may contain HOTKEY: adding Right Alt while
+# Right Ctrl is held turns that recording into a rewrite. Where Right Alt
+# is AltGr (many European layouts) pick another pair. Empty tuple = off.
+REWRITE_HOTKEY = (keyboard.Key.ctrl_r, keyboard.Key.alt_r)
+# Longest selection sent for a rewrite, and longest answer pasted back.
+REWRITE_MAX_CHARS = 4000
+REWRITE_MAX_REPLY = 8000
+
 # SELF_CORRECTION_TRIGGERS: phrases that signal the speaker is retracting what
 # they just said and the following words should replace it (e.g. "Send it
 # tomorrow, no wait, send it Friday." -> "Send it Friday."). Kept deliberately

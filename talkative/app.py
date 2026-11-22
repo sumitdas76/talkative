@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 from pynput import keyboard
 
-from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, last_dictation, mic_warmup, model_manager, onboarding, paste_target, pill, screen_context, settings, temp_cleanup, try_it_now, updater
+from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, last_dictation, mic_warmup, model_manager, onboarding, paste_target, pill, rewrite, screen_context, settings, temp_cleanup, try_it_now, updater
 from .audio_recorder import AudioRecorder
 from .autostart import BLOCKED_BY_POLICY, BLOCKED_BY_USER, BLOCKED_MESSAGE, sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -20,7 +20,7 @@ from .focus_check import is_focus_editable
 from .keynames import friendly as friendly_key
 from .self_correction import apply_self_corrections
 from .spoken_symbols import apply_spoken_symbols
-from .text_inserter import copy_only, erase, insert_text
+from .text_inserter import copy_only, copy_selection, erase, insert_text
 from .transcriber import Transcriber
 from .tray import TrayApp, show_error_popup
 
@@ -45,6 +45,39 @@ _MASKED_KEYS = {
     keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt_gr,
 }
 _mask_controller = keyboard.Controller()
+
+
+def _hotkey_key(key):
+    """`key` is part of one of the three hotkeys."""
+    return key in config.HOTKEY or key in config.DEV_HOTKEY or key in config.REWRITE_HOTKEY
+
+
+def _chord_held(held):
+    """One of the hotkey chords is fully inside the set `held`."""
+    return any(chord and set(chord) <= held
+               for chord in (config.HOTKEY, config.DEV_HOTKEY, config.REWRITE_HOTKEY))
+
+
+class _SelectionRead:
+    """The selected text, read through UI Automation on its own thread as
+    soon as the rewrite chord is complete (the user is still speaking, so
+    the read costs nothing). get() -> (text before, selected) or None when
+    the app doesn't expose it (then the processing thread copies it)."""
+
+    def __init__(self):
+        self._done = threading.Event()
+        self._result = None
+        threading.Thread(target=self._read, daemon=True, name="read-selection").start()
+
+    def _read(self):
+        try:
+            self._result = screen_context.caret_and_selection(config.REWRITE_MAX_CHARS + 1)
+        finally:
+            self._done.set()
+
+    def get(self, timeout=3.0):
+        self._done.wait(timeout)
+        return self._result
 
 
 def _physically_down(key):
@@ -159,6 +192,7 @@ class TalkativeApp:
         self._hotkey_pressed = set()  # currently-held keys that are part of HOTKEY or DEV_HOTKEY
         self._chord_active = False  # chord already handled for this press-hold, ignore OS key-repeat
         self._dev_dictation = False  # current recording is developer English (DEV_HOTKEY)
+        self._selection = None  # _SelectionRead: current recording is a rewrite (REWRITE_HOTKEY)
         self._latched = False  # toggle mode: recording stays on after a tap, until the next one
         self._lost_release_checks = 0  # see _check_lost_release
         self._recording_id = 0  # bumped per recording, so a stale auto-stop timer can't stop a later one
@@ -458,7 +492,7 @@ class TalkativeApp:
     def _on_press(self, key):
         if getattr(key, "vk", None) == _MASK_KEY.vk:
             return  # our own mask keystroke, see _MASK_KEY
-        if key not in config.HOTKEY and key not in config.DEV_HOTKEY:
+        if not _hotkey_key(key):
             # Esc throws the current dictation away, nothing typed (backlog
             # 2026-10-03, mainly for tap mode, where the stop tap always
             # types). Esc still reaches the focused app too.
@@ -476,10 +510,11 @@ class TalkativeApp:
         self._drop_stale_keys(key)
         self._hotkey_pressed.add(key)
         dev = bool(config.DEV_HOTKEY) and self._hotkey_pressed == set(config.DEV_HOTKEY)
+        rew = bool(config.REWRITE_HOTKEY) and self._hotkey_pressed == set(config.REWRITE_HOTKEY)
         # Once per physical chord press (key-repeat re-fires on_press), and
         # only for the complete chord -- the Windows key pressed on its
         # own must still open Start.
-        complete = dev or self._hotkey_pressed == set(config.HOTKEY)
+        complete = dev or rew or self._hotkey_pressed == set(config.HOTKEY)
         if complete:
             self._chord_engaged = True
         # A Win/Alt key still held after the rest of the chord was let go
@@ -503,7 +538,7 @@ class TalkativeApp:
             # release so OS key-repeat can't start a new recording.
             if self._chord_active:
                 return
-            if self._hotkey_pressed == set(config.HOTKEY) or dev:
+            if self._hotkey_pressed == set(config.HOTKEY) or dev or rew:
                 self._chord_active = True
                 self._stop_recording(reason="stop tap")
             return
@@ -512,10 +547,12 @@ class TalkativeApp:
             # Ctrl, + Right Shift for developer English). Completing it
             # mid-recording upgrades this dictation instead of being ignored
             # -- same audio, only the processing differs.
-            if dev:
+            if dev and self._selection is None:
                 self._dev_dictation = True
+            if rew:
+                self._begin_rewrite()
             return
-        if not dev and self._hotkey_pressed != set(config.HOTKEY):
+        if not dev and not rew and self._hotkey_pressed != set(config.HOTKEY):
             return
         # Windows re-fires on_press at the OS key-repeat rate for as long as
         # the chord is held. Without this guard, holding the hotkey over an
@@ -529,6 +566,7 @@ class TalkativeApp:
             return
         self._chord_active = True
         self._dev_dictation = dev
+        self._selection = None
 
         if self._swapping:
             self.tray.notify("Updating. Ready in a moment.")
@@ -551,6 +589,10 @@ class TalkativeApp:
                 )
             else:
                 self.tray.notify("Still loading the speech model, please wait...")
+            return
+
+        if rew and not self._cloud_active():
+            self._say(rewrite.NEEDS_CLOUD)
             return
 
         if not is_focus_editable():
@@ -576,6 +618,8 @@ class TalkativeApp:
         fix_learning.check()
         self._recording = True
         self._latched = False
+        if rew:
+            self._begin_rewrite()
         self._recording_id += 1
         self._record_start_time = time.time()
         self._live_warned = False
@@ -589,6 +633,20 @@ class TalkativeApp:
             # and if Cloud can't be reached, say so now, not after.
             threading.Thread(target=self._warm_cloud,
                              args=(self._recording_id,), daemon=True).start()
+
+    def _begin_rewrite(self):
+        """The rewrite chord is complete: this recording is the spoken
+        instruction for the selected text (rewrite.py). Read the selection
+        now, while it's certainly still there. Local mode can't rewrite,
+        so a recording upgraded there is dropped with the reason."""
+        if self._selection is not None:
+            return
+        if not self._cloud_active():
+            self._stop_recording(process=False)
+            self._say(rewrite.NEEDS_CLOUD)
+            return
+        self._dev_dictation = False
+        self._selection = _SelectionRead()
 
     def _warm_cloud(self, rec_id):
         if cloud_client.warm() or self._recording_id != rec_id or not self._recording:
@@ -653,9 +711,7 @@ class TalkativeApp:
         self._chord_active = False
         self._masked = False
         self._chord_engaged = False
-        held = self._hotkey_pressed | {key}
-        chord_held = set(config.HOTKEY) <= held or (
-            bool(config.DEV_HOTKEY) and set(config.DEV_HOTKEY) <= held)
+        chord_held = _chord_held(self._hotkey_pressed | {key})
         if self._recording and not self._latched and not chord_held:
             logging.warning("Dropping a recording whose hotkey release was lost")
             self._stop_recording(process=False)
@@ -677,9 +733,7 @@ class TalkativeApp:
             held = {k for k in list(self._hotkey_pressed) if _physically_down(k)}
         except Exception:
             return
-        chord_held = set(config.HOTKEY) <= held or (
-            bool(config.DEV_HOTKEY) and set(config.DEV_HOTKEY) <= held)
-        if chord_held:
+        if _chord_held(held):
             self._lost_release_checks = 0
             return
         self._lost_release_checks += 1
@@ -869,7 +923,7 @@ class TalkativeApp:
         self._listener.start()
 
     def _on_release(self, key):
-        if key not in config.HOTKEY and key not in config.DEV_HOTKEY:
+        if not _hotkey_key(key):
             return
         self._hotkey_pressed.discard(key)
         self._masked = False
@@ -952,12 +1006,12 @@ class TalkativeApp:
             args=(audio, self._dev_dictation, seq,
                   _audio_summary(audio, config.SAMPLE_RATE, reason)
                   + _ready_note(self.recorder, cold), self._context,
-                  self._press, paste_target.at_release(self._target)),
+                  self._press, paste_target.at_release(self._target), self._selection),
         ).start()
         return True
 
     def _process_audio(self, audio, dev=False, seq=None, info="", context=None, press=None,
-                       target=None):
+                       target=None, selection=None):
         with self._order:
             self._jobs += 1
         self._job_seq.value = seq
@@ -987,7 +1041,7 @@ class TalkativeApp:
         slow.daemon = True
         slow.start()
         try:
-            self._process_audio_inner(audio, dev, info, context, press)
+            self._process_audio_inner(audio, dev, info, context, press, selection)
         except Exception:
             logging.exception("Dictation failed")
             self._not_typed("Something went wrong, so nothing was typed. "
@@ -1030,7 +1084,8 @@ class TalkativeApp:
         with self._order:
             self._order.wait_for(lambda: self._turn >= seq, timeout=30)
 
-    def _process_audio_inner(self, audio, dev=False, info="", context=None, press=None):
+    def _process_audio_inner(self, audio, dev=False, info="", context=None, press=None,
+                             selection=None):
         # Developer English swaps the sentence-style bias prompt for one
         # that keeps spoken symbols as literal words (see dev_mode.py).
         base_prompt = dev_mode.STT_PROMPT if dev else config.PUNCTUATION_PROMPT
@@ -1039,6 +1094,12 @@ class TalkativeApp:
         # (screen_context.py). Re-checked here in case the mode changed
         # while recording.
         on_screen = ""
+        if selection is not None:
+            # A rewrite: the instruction is said in Cloud, or not at all.
+            if not self._cloud_active():
+                self._not_typed(rewrite.NEEDS_CLOUD)
+                return
+            dev, context = False, None
         if context is not None and not dev and screen_context.enabled(self._cloud_active()):
             on_screen = context.get()
         prompt = " ".join(p for p in (base_prompt, vocabulary_prompt(), on_screen) if p) or None
@@ -1089,6 +1150,9 @@ class TalkativeApp:
             info = f"{info}, own Groq key" if info else "own Groq key"
 
         raw = text
+        if selection is not None:
+            self._rewrite_selection(audio, raw, selection, info, transcribe_secs)
+            return
         # Only "scratch that" / "type that again", the whole dictation:
         # take the last one back or type it again (last_dictation.py).
         what = last_dictation.command(text) if config.INSERT_MODE != "clipboard" else None
@@ -1472,6 +1536,89 @@ class TalkativeApp:
         updater.note_words(len(text.split()))
         if config.INSERT_MODE == "clipboard":
             self.tray.notify("Copied to clipboard. Press Ctrl+V to paste.")
+
+    def _wait_keys_up(self, limit=2.0):
+        """Until no hotkey key is physically held (at most `limit` s), so a
+        simulated Ctrl+C isn't seen as Ctrl+Alt+C."""
+        end = time.monotonic() + limit
+        keys = set(config.HOTKEY) | set(config.DEV_HOTKEY) | set(config.REWRITE_HOTKEY)
+        while time.monotonic() < end and any(_physically_down(k) for k in keys):
+            time.sleep(0.03)
+
+    def _rewrite_selection(self, audio, raw, selection, info, transcribe_secs):
+        """Replace the selected text with what the spoken instruction asks
+        for (rewrite.py). The selection was read when the chord completed;
+        apps that don't expose it get a Ctrl+C now. Anything uncertain
+        leaves the text alone and says why."""
+        said = rewrite.instruction(raw)
+        read = selection.get()
+        copied = read is None
+        if copied:
+            self._wait_for_turn()
+            self._wait_keys_up()
+            # Ctrl+C goes to whatever is in front: only the window the
+            # instruction was spoken into.
+            hwnd = getattr(getattr(self._job_target, "value", None), "hwnd", None)
+            try:
+                moved = bool(hwnd) and paste_target.user32.GetForegroundWindow() != hwnd
+            except Exception:
+                moved = True
+            selected = "" if moved else copy_selection()
+        else:
+            selected = read[1]
+        if selected is None:
+            problem, selected = "Couldn't read the selected text here.", ""
+        else:
+            selected = selected.replace("\r\n", "\n").replace("\r", "\n")
+            problem = rewrite.selection_problem(selected) or (
+                rewrite.NO_INSTRUCTION if not said else None)
+        # Lengths only: the selected text is never logged or reported.
+        self._record(audio, audio_info=info, raw=raw,
+                     final=f"[rewrite: {len(selected)} characters selected"
+                           + (", copied" if copied else "") + "]",
+                     timing=f"transcribe {transcribe_secs:.1f}s [rewrite]")
+        if problem:
+            self._not_typed(problem)
+            return
+        t0 = time.time()
+        try:
+            reply = cloud_client.rewrite(selected, said)
+        except cloud_client.RewriteFailed as exc:
+            self._not_typed(f"{exc} The text was left as it was.")
+            return
+        new, why = rewrite.read_reply(selected, reply)
+        _debug_log(rewrite=f"{len(selected)} -> {len(new or '')} characters in "
+                           f"{time.time() - t0:.1f}s via "
+                           f"{getattr(cloud_client.last_stt, 'rewrite_via', '?')}"
+                           + (f", refused: {why}" if why else ""))
+        if why:
+            self._not_typed(why)
+            return
+        self._wait_for_turn()
+        target = getattr(self._job_target, "value", None)
+        try:
+            back = paste_target.bring_back(target)
+        except paste_target.Lost:
+            copy_only(new)
+            self._not_typed("The window with the selected text was closed or couldn't be "
+                            "brought back, so the rewrite is on the clipboard.")
+            return
+        try:
+            if not copied:
+                now = screen_context.caret_and_selection(config.REWRITE_MAX_CHARS + 1)
+                if now is not None and not rewrite.same_selection(selected, now[1]):
+                    copy_only(new)
+                    self._not_typed("The selection changed while you spoke, so the "
+                                    "rewrite is on the clipboard. Select the text again "
+                                    "and press Ctrl+V.")
+                    return
+            insert_text(new, append_space=False)
+            continuation.forget()
+            # "Scratch that" puts the original back.
+            last_dictation.remember(new, new, taken=selected, target=paste_target.capture())
+            self._report("rewrote the selection")
+        finally:
+            paste_target.return_to(back, target)
 
     def _say(self, message):
         """A short message near the cursor (not a dictation outcome)."""

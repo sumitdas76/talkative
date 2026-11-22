@@ -30,6 +30,7 @@ STT_MODEL = "whisper-large-v3-turbo"
 GRAMMAR_MODEL = "openai/gpt-oss-20b"
 KEY_PATTERN = re.compile(r"gsk_[A-Za-z0-9]{20,200}")
 _MAX_REPLY = 1_000_000
+REWRITE_MAX_TOKENS = 4096
 _UA = "Talkative"
 
 
@@ -234,16 +235,15 @@ def transcribe(wav_bytes, prompt, timeout):
     return str(result.get("text", "")).strip()
 
 
-def grammar(text, timeout=20.0):
-    """Cleaned text from gpt-oss-20b, as worker.js handleGrammar asks for
-    it. The caller runs grammar_engine.validate() on it."""
+def _chat(messages, timeout, max_tokens=2048):
+    """gpt-oss-20b's reply to `messages`, with the settings worker.js uses."""
     body = json.dumps({
         "model": GRAMMAR_MODEL,
-        "messages": cloud_prompt.messages(text),
+        "messages": messages,
         "temperature": 0,
         "reasoning_effort": "low",
         "include_reasoning": False,
-        "max_tokens": 2048,
+        "max_tokens": max_tokens,
     }).encode("utf-8")
     result = _call("POST", "/chat/completions", body, "application/json", timeout,
                    model=GRAMMAR_MODEL)
@@ -254,3 +254,17 @@ def grammar(text, timeout=20.0):
     if not out.strip():
         raise GroqError("Groq returned no text")
     return cloud_prompt.plain_text(out).strip()
+
+
+def grammar(text, timeout=20.0):
+    """Cleaned text from gpt-oss-20b, as worker.js handleGrammar asks for
+    it. The caller runs grammar_engine.validate() on it."""
+    return _chat(cloud_prompt.messages(text), timeout)
+
+
+def rewrite(text, instruction, timeout=30.0):
+    """`text` rewritten as the spoken `instruction` asks, as worker.js
+    handleRewrite asks for it. rewrite.py checks the reply."""
+    # Room for a 4,000-character answer plus the model's short reasoning.
+    return _chat(cloud_prompt.rewrite_messages(text, instruction), timeout,
+                 max_tokens=REWRITE_MAX_TOKENS)

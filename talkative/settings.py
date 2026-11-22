@@ -86,7 +86,7 @@ _KEYS = {
 # Keys handled outside the type-checked table.
 # "play_sounds" and "output_device" (the start/stop beeps, removed
 # 2026-10-04) may still be in old files; they are ignored.
-_SPECIAL_KEYS = ("hotkey", "dev_hotkey", "input_device")
+_SPECIAL_KEYS = ("hotkey", "dev_hotkey", "rewrite_hotkey", "input_device")
 
 
 def settings_dir():
@@ -188,15 +188,17 @@ def load_into_config(path=None):
         config.HOTKEY = hotkey
         applied["hotkey"] = data["hotkey"]
 
-    # dev_hotkey: same format; an empty list turns developer English off.
-    if data.get("dev_hotkey") == []:
-        config.DEV_HOTKEY = ()
-        applied["dev_hotkey"] = []
-    else:
-        dev_hotkey = _parse_hotkey(data.get("dev_hotkey"))
-        if dev_hotkey is not None:
-            config.DEV_HOTKEY = dev_hotkey
-            applied["dev_hotkey"] = data["dev_hotkey"]
+    # dev_hotkey / rewrite_hotkey: same format; an empty list turns that
+    # key off.
+    for key, attr in (("dev_hotkey", "DEV_HOTKEY"), ("rewrite_hotkey", "REWRITE_HOTKEY")):
+        if data.get(key) == []:
+            setattr(config, attr, ())
+            applied[key] = []
+        else:
+            parsed = _parse_hotkey(data.get(key))
+            if parsed is not None:
+                setattr(config, attr, parsed)
+                applied[key] = data[key]
 
     # input_device: None (default) or a sounddevice input index / name.
     if "input_device" in data and isinstance(data["input_device"], (type(None), int, str)):

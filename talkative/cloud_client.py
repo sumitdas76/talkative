@@ -454,3 +454,41 @@ def grammar_apply(text):
     if not grammar_engine.validate(text, out):
         return text
     return out
+
+
+class RewriteFailed(RuntimeError):
+    """A rewrite couldn't be done; str() is the reason, for the user."""
+
+
+def rewrite(text, instruction):
+    """The model's reply for rewriting `text` as `instruction` asks
+    (rewrite.py checks it). The user's own Groq key first, then the
+    Worker's /rewrite route. No Workers AI fallback: its small model
+    can't follow instructions well enough. Raises RewriteFailed."""
+    if groq_direct.active():
+        out = _own_key(lambda: groq_direct.rewrite(text, instruction))
+        if out is not None:
+            last_stt.rewrite_via = "own-key"
+            return out
+    last_stt.rewrite_via = "worker"
+    try:
+        body = json.dumps({"text": text, "instruction": instruction}).encode("utf-8")
+        status, data = _post("/rewrite", body, _headers("application/json"), timeout=30)
+    except Exception as exc:
+        if "timed out" in str(exc).lower() or isinstance(exc, TimeoutError):
+            raise RewriteFailed("Talkative Cloud took too long to answer.") from None
+        raise RewriteFailed("Couldn't reach Talkative Cloud. Check your internet "
+                            "connection.") from None
+    if status == 429:
+        # Busy, or this install's 100 rewrites today are used up.
+        raise RewriteFailed("Talkative Cloud can't take more rewrites right now. "
+                            "Try again later, or add your own free Groq key in "
+                            "Settings > General.")
+    if status == 404:
+        raise RewriteFailed("Talkative Cloud can't rewrite text yet.")
+    if status != 200:
+        raise RewriteFailed("Talkative Cloud had a problem with that one.")
+    try:
+        return str(json.loads(data.decode("utf-8")).get("text", ""))
+    except Exception:
+        raise RewriteFailed("Talkative Cloud had a problem with that one.") from None

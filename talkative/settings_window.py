@@ -286,16 +286,16 @@ def _key_names(keys):
     return [getattr(k, "name", None) or getattr(k, "char", None) for k in keys]
 
 
-def _hotkey_problem(normal, dev):
-    """Why this pair of hotkeys can't be saved, or None. Both are lists of
-    key names (settings.json format); dev may be [] (code key off)."""
+def _hotkey_problem(normal, dev, rewrite=()):
+    """Why these hotkeys can't be saved, or None. All are lists of key
+    names (settings.json format); dev and rewrite may be [] (that key off)."""
     def typing_only(names):
         # Shift counts too: Shift + A is a capital A, and Shift alone goes
         # down with every capital letter.
         return names and all(
             n in _TYPING_KEYS or len(n) == 1 or n.startswith("shift") for n in names)
 
-    if typing_only(normal) or typing_only(dev):
+    if typing_only(normal) or typing_only(dev) or typing_only(rewrite):
         return ("A hotkey can't be only letters, numbers, Shift, Space or Enter -- "
                 "dictation would start while you type. Pick a key like "
                 "Right Ctrl, or a pair such as Ctrl + Alt. Your previous "
@@ -304,6 +304,9 @@ def _hotkey_problem(normal, dev):
         return ("The dictation key and the code dictation key are the same, "
                 "so every dictation would come out as code. Pick a different "
                 "key for one of them. Your previous hotkeys are kept.")
+    if rewrite and set(rewrite) in (set(normal), set(dev or ())):
+        return ("The rewrite key is the same as another hotkey. Pick a "
+                "different key for it. Your previous hotkeys are kept.")
     return None
 
 
@@ -331,6 +334,7 @@ class _SettingsWindow:
         self.overlay = overlay
         self.pending_hotkey = None
         self.pending_dev_hotkey = None
+        self.pending_rewrite_hotkey = None
         self._capturing = False
 
     def build(self):
@@ -1257,6 +1261,21 @@ class _SettingsWindow:
         for seq in ("<Button-1>", "<Return>", "<space>"):
             help_link.bind(seq, lambda e: self._show_dev_help())
 
+        rewrite_box = self._section(f, "Rewrite selected text")
+        ttk.Label(rewrite_box, wraplength=560, style="Muted.TLabel",
+                  text="Select text, hold this key and say what to change, like "
+                       "“make it shorter” or “turn this into a list”. Needs Cloud. "
+                       "Say “scratch that” to get the original back.").pack(
+            anchor="w", pady=(0, 4))
+        row = self._setting_row(rewrite_box, "Hotkey",
+                                "Click it, then hold the key(s) you want.")
+        self.rewrite_hotkey_btn = ttk.Button(
+            row,
+            text=_hotkey_display(config.REWRITE_HOTKEY) if config.REWRITE_HOTKEY else "Not set",
+            command=lambda: self._capture_hotkey("rewrite"),
+        )
+        self.rewrite_hotkey_btn.grid(row=0, column=1, sticky="e")
+
         # Applies to both hotkeys. Toggle is for long dictations where
         # holding a key the whole time gets tiring.
         style_box = self._section(f, "How the hotkeys work")
@@ -1336,7 +1355,8 @@ class _SettingsWindow:
         if self._capturing:
             return
         self._capturing = True
-        btn = self.dev_hotkey_btn if which == "dev" else self.hotkey_btn
+        btn = {"dev": self.dev_hotkey_btn,
+               "rewrite": self.rewrite_hotkey_btn}.get(which, self.hotkey_btn)
         btn.config(text="Hold 1 or 2 keys…")
 
         pressed = []   # currently-held key names during this capture, max 2
@@ -1364,6 +1384,8 @@ class _SettingsWindow:
                 return
             if which == "dev":
                 self.pending_dev_hotkey = list(chosen)
+            elif which == "rewrite":
+                self.pending_rewrite_hotkey = list(chosen)
             else:
                 self.pending_hotkey = list(chosen)
             self._capturing = False
@@ -2232,19 +2254,27 @@ class _SettingsWindow:
             self.pending_hotkey or _key_names(config.HOTKEY),
             self.pending_dev_hotkey if self.pending_dev_hotkey is not None
             else _key_names(config.DEV_HOTKEY),
+            self.pending_rewrite_hotkey if self.pending_rewrite_hotkey is not None
+            else _key_names(config.REWRITE_HOTKEY),
         )
         if problem:
             # Keep the current keys; everything else still saves.
             messagebox.showwarning(APP_NAME, problem, parent=self.root)
             self.pending_hotkey = None
             self.pending_dev_hotkey = None
+            self.pending_rewrite_hotkey = None
             self.hotkey_btn.config(text=_hotkey_display(config.HOTKEY))
+            self.rewrite_hotkey_btn.config(
+                text=_hotkey_display(config.REWRITE_HOTKEY) if config.REWRITE_HOTKEY
+                else "Not set")
             self.dev_hotkey_btn.config(
                 text=_hotkey_display(config.DEV_HOTKEY) if config.DEV_HOTKEY else "Not set")
         if self.pending_hotkey:
             values["hotkey"] = self.pending_hotkey
         if self.pending_dev_hotkey is not None:
             values["dev_hotkey"] = self.pending_dev_hotkey
+        if self.pending_rewrite_hotkey is not None:
+            values["rewrite_hotkey"] = self.pending_rewrite_hotkey
         try:
             values["input_device"] = self._audio_values[self.audio_combo.current()]
         except Exception:
