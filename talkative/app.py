@@ -1570,8 +1570,8 @@ class TalkativeApp:
             problem, selected = "Couldn't read the selected text here.", ""
         else:
             selected = selected.replace("\r\n", "\n").replace("\r", "\n")
-            problem = rewrite.selection_problem(selected) or (
-                rewrite.NO_INSTRUCTION if not said else None)
+            problem = (rewrite.selection_problem(selected)
+                       or rewrite.instruction_problem(said))
         # Lengths only: the selected text is never logged or reported.
         self._record(audio, audio_info=info, raw=raw,
                      final=f"[rewrite: {len(selected)} characters selected"

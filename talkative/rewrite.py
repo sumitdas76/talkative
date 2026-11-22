@@ -25,6 +25,34 @@ NEEDS_CLOUD = ("Rewriting selected text needs Cloud. Switch to Cloud in "
 NOTHING_SELECTED = ("Select some text first, then hold the rewrite key and "
                     "say what to change.")
 NO_INSTRUCTION = "No words were heard, so the text was left as it was."
+QUESTION = ("That sounded like a question, not a change, so the text was "
+            "left as it was. Say what to change, like “make it shorter”.")
+
+# A question about the text ("Who is this addressed to?") gets answered by
+# gpt-oss, and the answer would replace the selection ("Rahul" pasted over
+# a whole email, 2026-11-23; an extra prompt example didn't stop it). So an
+# instruction that opens like a question and asks for no edit is refused
+# before it's sent. "Can/could/would you..." are polite requests, not
+# questions about the text, and pass.
+_QUESTION_START = re.compile(
+    r"^(who|whom|whose|what|what's|whats|when|where|which|why|how|is|isn't|"
+    r"are|aren't|was|were|does|doesn't|do|did|has|have|should|tell me)\b", re.I)
+_EDIT_WORDS = re.compile(
+    r"\b(make|makes|turn|change|fix|rewrite|reword|rephrase|shorten|"
+    r"lengthen|expand|trim|cut|translate|convert|add|remove|delete|drop|"
+    r"replace|format|put|split|merge|join|simplify|summari[sz]e|polish|"
+    r"clean|tidy|capitali[sz]e|uppercase|lowercase|bullet|list|soften|"
+    r"improve|edit|write|use)\b", re.I)
+
+
+def instruction_problem(said):
+    """Why the spoken instruction can't be sent, or None."""
+    if not said:
+        return NO_INSTRUCTION
+    if _QUESTION_START.match(said) and not re.match(r"how about\b", said, re.I) \
+            and not _EDIT_WORDS.search(said):
+        return QUESTION
+    return None
 
 
 def selection_problem(selected):
@@ -45,6 +73,29 @@ def instruction(raw):
 _TAGS = re.compile(r"^\s*<text>\s*\n?(.*?)\n?\s*</text>\s*$", re.S)
 
 
+def _squash(s):
+    return " ".join(s.lower().split())
+
+
+# The prompt's own example texts and answers. With an instruction it can't
+# act on ("Undo that." on "Regards, Sumit", 2026-11-23) the model once
+# replied with an example's text instead of the user's.
+_SHOTS = [(_squash(text), _squash(answer))
+          for text, _instruction, answer in cloud_prompt.REWRITE_SHOTS]
+
+
+def _echoes_example(original, reply):
+    """Whether `reply` holds an example's text or answer that the user's own
+    selection doesn't explain (they may really have selected that text)."""
+    r, o = _squash(reply), _squash(original)
+    for text, answer in _SHOTS:
+        if text in o:
+            continue
+        if text in r or (answer != _squash(cloud_prompt.NOT_A_REWRITE) and answer in r):
+            return True
+    return False
+
+
 def read_reply(original, reply):
     """-> (new text, None) to paste, or (None, reason) to leave the
     selection alone. `original` is the selected text as read."""
@@ -52,15 +103,20 @@ def read_reply(original, reply):
     m = _TAGS.match(reply)
     if m:
         reply = m.group(1).strip()
+    # gpt-oss ends lines with Markdown's two-space hard break ("Best
+    # regards,  \nSumit", every bullet): the spaces would be pasted too.
+    reply = "\n".join(line.rstrip() for line in reply.split("\n"))
     if cloud_prompt.NOT_A_REWRITE in reply:
-        return None, ("That sounded like a question, not a change, so the text was "
-                      "left as it was. Say what to change, like “make it shorter”.")
+        return None, QUESTION
     if not reply:
         return None, "Nothing came back, so the text was left as it was."
     if len(reply) > config.REWRITE_MAX_REPLY:
         return None, "The rewrite came back too long, so the text was left as it was."
     if reply == original.strip():
         return None, "The rewrite came back the same, so nothing was changed."
+    if _echoes_example(original, reply):
+        return None, ("The rewrite didn't match your text, so it was left as it "
+                      "was. Say what to change, like “make it shorter”.")
     return keep_edges(original, reply), None
 
 
