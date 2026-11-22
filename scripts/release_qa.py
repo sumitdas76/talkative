@@ -317,7 +317,10 @@ def check_text_rules():
                              ("W11", "settings_small_screen_test.py"),
                              ("D50", "still_working_test.py"),
                              ("D51", "single_instance_test.py"),
-                             ("D52", "packaging_test.py")):
+                             ("D52", "packaging_test.py"),
+                             ("D53", "own_groq_key_test.py"),
+                             ("D53", "groq_prompt_drift_test.py"),
+                             ("W12", "own_groq_key_settings_test.py")):
         code, out = run_py([script], ROOT / "tools", timeout=60)
         last = out.strip().splitlines()[-1] if out.strip() else "no output"
         record(check_id, f"Text rules: {script[:-8]}", "PASS" if code == 0 else "FAIL", last)

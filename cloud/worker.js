@@ -52,6 +52,8 @@ const GROQ_GRAMMAR_MODEL = "openai/gpt-oss-20b";
 // Same system instruction and few-shot examples as
 // talkative/grammar_engine.py's _SYSTEM/_SHOTS, so cloud mode behaves the
 // same as local mode. Keep these two in sync by hand if either changes.
+// talkative/cloud_prompt.py is an exact copy for own-key users (direct to
+// Groq); tools/groq_prompt_drift_test.py fails when they differ.
 const SYSTEM = (
   "You clean up dictated text. Fix grammar and punctuation. Remove word " +
   "repetitions, false starts, and spoken self-corrections (keep only what " +

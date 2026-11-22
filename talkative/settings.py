@@ -73,6 +73,8 @@ _KEYS = {
     # is ignored, so a "context_cloud": false every save wrote is too.
     "send_diagnostics": "SEND_DIAGNOSTICS",
     "speech_service": "SPEECH_SERVICE",
+    # DPAPI-encrypted, only this Windows user can read it (secret_store.py).
+    "groq_key_dpapi": "GROQ_KEY_DPAPI",
     "fix_suggestions": "FIX_SUGGESTIONS",
     "fix_dismissed": "FIX_DISMISSED",
     # Not in the settings UI: 0.0 turns the mic pre-roll off.

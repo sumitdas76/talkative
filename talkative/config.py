@@ -238,6 +238,11 @@ CLOUD_ENDPOINT_URL = "https://talkative-cloud.sumitdas76.workers.dev"
 # Worker falls back to Groq for that dictation. Developer English always
 # uses Groq (its literal-symbol prompt needs Whisper).
 SPEECH_SERVICE = "us_english"
+# The user's own free Groq key (Settings > General > Cloud, optional;
+# groq_direct.py), DPAPI-encrypted by secret_store.protect(). Set: Cloud
+# calls Groq directly with it, and Talkative Cloud only when it fails
+# (and for Indian English, which needs our Azure). "" = shared Cloud.
+GROQ_KEY_DPAPI = ""
 # Cloud busy or unreachable: app._cloud_transcribe() uses the Local voice
 # model when it's downloaded (kept loaded FALLBACK_IDLE_SECONDS after its
 # last use), otherwise retries Cloud after each of these waits (seconds).

@@ -19,6 +19,7 @@ import base64
 import http.client
 import io
 import json
+import logging
 import re
 import threading
 import time
@@ -29,7 +30,7 @@ import wave
 
 import numpy as np
 
-from . import config, feedback, grammar_engine
+from . import config, feedback, grammar_engine, groq_direct
 
 CLOUD_BUSY_MESSAGE = "Cloud is busy right now -- please try again in a bit."
 
@@ -109,7 +110,11 @@ def warm():
     goes down in Cloud mode), so the handshake happens while the user
     speaks. Never raises. Returns False if Cloud couldn't be reached (the
     app then says so while the user is still speaking), else True -- also
-    when nothing was tested (a pooled connection, or a system proxy)."""
+    when nothing was tested (a pooled connection, or a system proxy).
+    With the user's own Groq key, Groq is warmed; the Worker only if Groq
+    can't be reached (it's the fallback)."""
+    if groq_direct.active() and groq_direct.warm():
+        return True
     try:
         target = _target()
         if target is None:
@@ -337,9 +342,55 @@ def transcribe(audio, sample_rate, initial_prompt=None, indian_english=False):
             last_stt.itn = " ".join(t for t in itns if t)
             text = _join_pause_fragments(text)
         return text
+    if groq_direct.active():
+        text = _own_key(lambda: groq_direct.transcribe(
+            _wav_bytes(audio, sample_rate), initial_prompt, _timeout(audio, sample_rate)))
+        if text is not None:
+            last_stt.via = "own-key"
+            return text
     result = _transcribe_once(audio, sample_rate, initial_prompt)
     last_stt.via = result.get("via", "")
     return str(result.get("text", "")).strip()
+
+
+# Set when Groq refused the user's own key; app.py shows it once per run
+# (take_key_notice) so they know Talkative Cloud is being used instead.
+_key_notice = {"pending": False, "shown": False}
+
+
+def take_key_notice():
+    """A message for the user if their own Groq key was refused since the
+    last call and they haven't been told this run, else None."""
+    if _key_notice["pending"] and not _key_notice["shown"]:
+        _key_notice["pending"], _key_notice["shown"] = False, True
+        return ("Groq refused your own key, so Talkative Cloud is being used. "
+                "Check the key in Settings > General.")
+    return None
+
+
+def _own_key(call):
+    """Run one request on the user's own Groq key. Returns its result, or
+    None when it failed (the caller then uses Talkative Cloud). Never
+    raises; never logs the key (exceptions here don't contain it)."""
+    try:
+        return call()
+    except groq_direct.KeyRefused as exc:
+        _key_notice["pending"] = True
+        logging.warning("Own Groq key: %s; using Talkative Cloud", exc)
+    except groq_direct.GroqError as exc:
+        logging.warning("Own Groq key: %s; using Talkative Cloud", exc)
+    except Exception as exc:
+        logging.warning("Own Groq key: can't reach Groq (%s); using Talkative Cloud",
+                        type(exc).__name__)
+    return None
+
+
+def _timeout(audio, sample_rate):
+    # A stalled request used to wait 30 s before Talkative fell back (seen
+    # live: 44.8 s with nothing typed yet). Groq answers in well under a
+    # second; uploading a long recording on a slow link takes longer, so
+    # the wait grows with its length.
+    return min(30.0, config.CLOUD_TIMEOUT_BASE + 0.25 * len(audio) / sample_rate)
 
 
 def friendly_error(exc):
@@ -372,12 +423,7 @@ def _transcribe_once(audio, sample_rate, initial_prompt, azure=False):
         # end of an over-long prompt too.
         headers["X-Prompt-B64"] = base64.b64encode(
             initial_prompt[-800:].encode("utf-8")).decode("ascii")
-    # A stalled request used to wait 30 s before Talkative fell back (seen
-    # live: 44.8 s with nothing typed yet). Groq answers in well under a
-    # second; uploading a long recording on a slow link takes longer, so
-    # the wait grows with its length.
-    seconds = len(audio) / sample_rate
-    timeout = min(30.0, config.CLOUD_TIMEOUT_BASE + 0.25 * seconds)
+    timeout = _timeout(audio, sample_rate)
     status, data = _post("/transcribe", body, headers, timeout=timeout)
     if status == 429:
         raise RuntimeError(CLOUD_BUSY_MESSAGE)
@@ -393,6 +439,9 @@ def grammar_apply(text):
     Worker's model output is trusted no more than the local model's)."""
     if not text:
         return text
+    out = _own_key(lambda: groq_direct.grammar(text)) if groq_direct.active() else None
+    if out is not None:
+        return out if grammar_engine.validate(text, out) else text
     try:
         body = json.dumps({"text": text}).encode("utf-8")
         status, data = _post("/grammar", body, _headers("application/json"), timeout=20)

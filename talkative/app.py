@@ -1081,6 +1081,8 @@ class TalkativeApp:
             last_trim.secs = 0.0
         if info and trim:
             info += f", {trim:.1f}s silence trimmed"
+        if self._cloud_active() and getattr(cloud_client.last_stt, "via", "") == "own-key":
+            info = f"{info}, own Groq key" if info else "own Groq key"
 
         raw = text
         if dev:
@@ -1276,6 +1278,9 @@ class TalkativeApp:
                 self._azure_notice = time.time()
                 self.tray.notify("Indian English is busy right now, so US English "
                                  "transcribed this one.")
+            key_notice = cloud_client.take_key_notice()
+            if key_notice:
+                self.tray.notify(key_notice)
             return text
         except Exception as exc:
             first_error = exc

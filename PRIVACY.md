@@ -1,7 +1,7 @@
 Talkative Privacy Policy
 ========================
 
-Last updated: 2026-10-25
+Last updated: 2026-11-22
 
 Talkative is a free, open-source Windows dictation app. This page lists
 every way it talks to the internet, what is sent, and how to turn it
@@ -58,6 +58,22 @@ made today, and how many came from each network address today. The
 address itself is not stored, only a one-way scrambled form of it
 (a hash) that the count is filed under. The services above process your data under
 their own policies, linked above.
+
+### Cloud mode with your own Groq key (optional)
+
+In Settings > General > Processing you can paste your own free Groq
+key. Talkative then sends the audio, the hint text, the text before
+the cursor and the transcribed text straight to Groq
+(api.groq.com) under your own Groq account and Groq's terms, not
+through Talkative's server, and without the install ID. Talkative's
+server is used only when your key doesn't work for a dictation (Groq
+refused it, its daily limit is used up, or Groq can't be reached),
+and for speech-to-text when you choose "Indian English".
+
+The key is stored on your PC in settings.json, encrypted with Windows
+so that only your Windows account on this PC can read it. It is sent
+only to Groq, and never written to a log. Remove key in the same place
+deletes it.
 
 ### Local mode
 

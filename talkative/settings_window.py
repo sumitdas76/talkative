@@ -21,7 +21,7 @@ from tkinter import filedialog, messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, audio_devices, config, dev_mode, error_toast, feedback, fix_learning, grammar_engine, history, mic_warmup, model_manager, overlay_thread, packaging, palette, pill, settings, try_it_now, updater
+from . import __version__, app_icon, audio_devices, config, dev_mode, error_toast, feedback, fix_learning, grammar_engine, groq_direct, history, mic_warmup, model_manager, overlay_thread, packaging, palette, pill, secret_store, settings, try_it_now, updater
 from .keynames import friendly as _friendly_key_name
 
 log = logging.getLogger(__name__)
@@ -823,6 +823,7 @@ class _SettingsWindow:
                 cloud_box, text=label, variable=self.var_engine, value=value,
                 command=self._engine_changed,
             ).pack(anchor="w", pady=1)
+        self._build_own_key(cloud_box)
 
         self.local_radio = ttk.Radiobutton(
             local_box, text="Fully offline. Nothing leaves this PC.",
@@ -845,6 +846,123 @@ class _SettingsWindow:
         models = ttk.Frame(local_box)
         models.pack(fill="x", pady=(6, 0))
         self._build_models(models)
+
+    # ---------------- own Groq key (2026-11-22) ----------------
+
+    def _build_own_key(self, parent):
+        """Folded block under the Cloud accents: paste your own free Groq
+        key so your dictations don't use the shared one (groq_direct.py).
+        Acts at once, like the grammar switch: no Save needed."""
+        self._key_open = False
+        self._key_result = []   # (reason or None, blob) from the check thread
+        self.key_toggle = ttk.Label(parent, cursor="hand2", foreground=self._link,
+                                    takefocus=True)
+        self.key_toggle.pack(anchor="w", pady=(6, 0))
+        for seq in ("<Button-1>", "<Return>", "<space>"):
+            self.key_toggle.bind(seq, lambda e: self._toggle_own_key())
+        self.key_box = ttk.Frame(parent, padding=(16, 4, 0, 0))
+        ttk.Label(
+            self.key_box, wraplength=430, justify="left", style="Muted.TLabel",
+            text="Everyone shares one free Groq key, which has a daily limit. With "
+                 "your own free key, your dictations use your own limit, and your "
+                 "audio goes straight to Groq instead of through Talkative Cloud. "
+                 "If your key stops working, Talkative Cloud is used. Don't add a "
+                 "card to that Groq account: the free limit is plenty.",
+        ).pack(anchor="w")
+        link = ttk.Label(self.key_box, text="Get a free key at console.groq.com",
+                         cursor="hand2", foreground=self._link, takefocus=True)
+        link.pack(anchor="w", pady=(4, 0))
+        for seq in ("<Button-1>", "<Return>", "<space>"):
+            link.bind(seq, lambda e: webbrowser.open("https://console.groq.com/keys"))
+        self.key_entry_row = ttk.Frame(self.key_box)
+        ttk.Label(self.key_entry_row, text="Your key:").pack(side="left")
+        self.var_groq_key = tk.StringVar()
+        self.key_entry = ttk.Entry(self.key_entry_row, textvariable=self.var_groq_key,
+                                   show="•", width=34)
+        self.key_entry.pack(side="left", padx=(6, 6))
+        self.key_entry.bind("<Return>", lambda e: self._check_own_key())
+        self.key_check_btn = ttk.Button(self.key_entry_row, text="Check and use",
+                                        command=self._check_own_key)
+        self.key_check_btn.pack(side="left")
+        self.key_saved_row = ttk.Frame(self.key_box)
+        self.key_left = ttk.Label(self.key_saved_row, text="")
+        self.key_left.pack(side="left")
+        ttk.Button(self.key_saved_row, text="Remove key",
+                   command=self._remove_own_key).pack(side="left", padx=(10, 0))
+        self.key_status = ttk.Label(self.key_box, text="", wraplength=430, justify="left")
+        self.key_status.pack(anchor="w", side="bottom", pady=(4, 0))
+        self._render_own_key()
+
+    def _toggle_own_key(self):
+        self._key_open = not self._key_open
+        self._render_own_key()
+        self._fit_scroll()
+
+    def _render_own_key(self, status=None):
+        saved = groq_direct.active()
+        arrow = "▾" if self._key_open else "▸"
+        self.key_toggle.config(text=(f"{arrow} Your own Groq key: in use" if saved else
+                                     f"{arrow} Use your own free Groq key (optional)"))
+        if not self._key_open:
+            self.key_box.pack_forget()
+            return
+        self.key_box.pack(fill="x", after=self.key_toggle)
+        if saved:
+            self.key_entry_row.pack_forget()
+            left = groq_direct.left_today.get(groq_direct.STT_MODEL)
+            text = "Using your key."
+            if left is not None:
+                text += f" About {left:,} transcriptions left today."
+            if config.SPEECH_SERVICE == "indian_english":
+                text += " Indian English still uses Talkative Cloud; cleanup uses your key."
+            self.key_left.config(text=text)
+            self.key_saved_row.pack(anchor="w", pady=(6, 0))
+        else:
+            self.key_saved_row.pack_forget()
+            self.key_entry_row.pack(anchor="w", pady=(6, 0))
+        if status is not None:
+            self.key_status.config(text=status)
+
+    def _check_own_key(self):
+        candidate = self.var_groq_key.get().strip()
+        if not candidate:
+            self._render_own_key("Paste your key first.")
+            return
+        self.key_check_btn.state(["disabled"])
+        self._render_own_key("Checking with Groq…")
+
+        def work():
+            reason = groq_direct.check_key(candidate)
+            blob = None
+            if reason is None:
+                try:
+                    blob = secret_store.protect(candidate)
+                except Exception:
+                    reason = "Couldn't store the key safely on this PC."
+            self._key_result.append((reason, blob))
+
+        threading.Thread(target=work, daemon=True).start()
+        self.root.after(150, self._poll_own_key)
+
+    def _poll_own_key(self):
+        if not self._key_result:
+            self.root.after(150, self._poll_own_key)
+            return
+        reason, blob = self._key_result.pop()
+        self.key_check_btn.state(["!disabled"])
+        if reason:
+            self._render_own_key(reason)
+            return
+        config.GROQ_KEY_DPAPI = blob
+        settings.save({"groq_key_dpapi": blob})
+        self.var_groq_key.set("")
+        self._render_own_key("Key works. Your dictations now use it.")
+
+    def _remove_own_key(self):
+        config.GROQ_KEY_DPAPI = ""
+        settings.save({"groq_key_dpapi": ""})
+        groq_direct.left_today.clear()
+        self._render_own_key("Key removed. Talkative Cloud's shared key is used again.")
 
     def _engine_changed(self):
         engine = self.var_engine.get()
