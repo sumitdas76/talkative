@@ -605,8 +605,16 @@ def _ending_ok(inp, out):
 
     def same(a, b):
         return (a == b or (min(len(a), len(b)) >= 3 and (a.startswith(b) or b.startswith(a)))
-                or any(a in g and b in g for g in _VERB_FORMS))
+                or any(a in g and b in g for g in _VERB_FORMS)
+                or ("not" in (a, b) and (a + b).endswith("n't")))
 
+    # Nor dropped from it: a dictation cut off mid-sentence must keep its
+    # last word. "...from the downloads page, where we" -> "...from the
+    # downloads page." (office PC, Cloud, 2026-11-20) lost "where we", and
+    # the next dictation carried on after the wrong words.
+    if not re.search(r"[.!?…]['\"”’)\]]*\s*$", inp) and not any(
+            same(src[-1], w) for w in dst[-4:]):
+        return False
     if any(same(last, w) for w in src[-3:]):
         return True
     return last not in _STOPWORDS and last in src[-12:]
