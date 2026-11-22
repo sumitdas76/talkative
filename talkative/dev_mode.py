@@ -1349,6 +1349,20 @@ def strip_backticks(text):
     return re.sub(r"`([^`\n]+)`", r"\1", text)
 
 
+# The developer STT prompt is lowercase, so prose said on the developer key
+# comes back as "i think i'd rather..."; when the grammar model doesn't fix
+# it (rejected or busy), "i" alone is still always "I" in prose
+# (2026-11-22). Not "i.e.", "i++", "i = 0", "/i" or "-i".
+_LONE_I = re.compile(
+    r"(?<![\w.'/\\@#$-])(?<!\bset )(?<!\blet )(?<!\bfor )(?<!\bvariable )(?<!\bindex )i"
+    r"(?='(?:m|d|ll|ve)\b|(?![\w'+/\\@#=-]|\.\w|\s*[=+\-*/<>\[(]|\s+(?:to|in|is|equals)\b))")
+
+
+def capital_i(text):
+    """Prose from the developer key: a lone "i" (and i'm, i'd...) -> "I"."""
+    return _LONE_I.sub("I", text)
+
+
 # Spoken line break inside a code dictation (2026-10-13): "let c equal to
 # 5 plus 2 new line print c" -> two lines. Not before an opening bracket,
 # so C#'s "new line open bracket" (new Line()) stays code. Each line is

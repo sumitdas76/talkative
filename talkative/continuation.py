@@ -12,7 +12,7 @@ that ended the last dictation is deleted and the new text carries on in
 lowercase: "And don't show the Azure."
 
 Only a closing full stop or trailing-off mark ("...", "…", "-") is removed
-(never "?" or "!"), never after a
+(never "?" or "!"; a closing quote after it is kept), never after a
 bullet list, never for code dictations. The first word stays capitalized
 when it is "I", an acronym or a name -- anything that isn't a common
 lowercase word (_COMMON below).
@@ -53,7 +53,10 @@ _last = None  # (pasted text, monotonic time, window handle)
 # trailing-off marks Whisper and the grammar model write for a cut-off word
 # ("we should-" -> "we should..."). The 1.3.16 D6 test found "..." was
 # treated as the end of a sentence and never joined.
-_END = re.compile(r"(?:\.|\.\.\.|…|[-–—]+\.?)$")
+# A closing quote or bracket after it stays and is typed back before the
+# join: 'there was no full stop after "what."' + 'either' ->
+# '..."what" either.' (2026-11-22: a dictation ending '."' never joined).
+_END = re.compile(r"(?:\.|\.\.\.|…|[-–—]+\.?)([\"'”’)\]]*)$")
 
 
 def _foreground():
@@ -311,3 +314,12 @@ def chars_to_delete():
     body = text.rstrip(" ")
     m = _END.search(body)
     return (len(m.group(0)) if m else 1) + (len(text) - len(body))
+
+
+def closers():
+    """The closing quotes/brackets chars_to_delete() takes back with the
+    full stop, to type again in front of the joined text."""
+    if _last is None:
+        return ""
+    m = _END.search(_last[0].rstrip(" "))
+    return m.group(1) if m else ""

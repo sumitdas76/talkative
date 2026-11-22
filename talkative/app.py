@@ -1132,7 +1132,7 @@ class TalkativeApp:
             if dev:
                 # The grammar model likes to wrap paths in backticks
                 # ("`/api/v2/users`"); plain text is wanted here.
-                text = dev_mode.strip_backticks(text)
+                text = dev_mode.capital_i(dev_mode.strip_backticks(text))
             after_grammar = text
             text = finish_sentence(text)
             if config.ENABLE_NUMBER_FORMAT and not dev:
@@ -1405,7 +1405,8 @@ class TalkativeApp:
         if (learn and press is not None and config.INSERT_MODE != "clipboard"
                 and continuation.joins(press, before := screen_context.capture())):
             take_back = continuation.chars_to_delete()
-            text = " " + continuation.lowercase_start(text, before)
+            text = (continuation.closers() + " "
+                    + continuation.lowercase_start(text, before))
         if learn and press is not None and continuation.last_check:
             _debug_log(continuation=continuation.last_check)
             continuation.last_check = None
