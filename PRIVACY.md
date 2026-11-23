@@ -211,8 +211,8 @@ What stays on your PC
   change, and keeps only the word pair (for example "Kuber Netties" ->
   "Kubernetes") to offer in Settings > Auto Text. The text of the box is
   not kept. Turn this off in Settings > Dictation > Accuracy.
-- Dictation history, only if you turn it on in the Dictation tab. It is
-  never uploaded, in either mode.
+- Dictation history, only if you turn it on in Settings > History. It is
+  never uploaded, in either mode, and Delete history there removes it.
 - A debug log, off by default, which holds dictated text (and the text
   read before the cursor) and the recordings of the last 30 dictations
   if turned on.

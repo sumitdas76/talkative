@@ -31,10 +31,6 @@ APP_NAME = "Talkative"
 _open_lock = threading.Lock()
 _is_open = False
 
-_EXAMPLE_SPOKEN = "“So um, send the file today, oh sorry, send the file by this evening.”"
-_EXAMPLE_CLEAN = "Send the file by this evening."
-_EXAMPLE_ASIS = "So um, send the file today, oh sorry, send the file by this evening."
-
 _CHECKBOX_SIZE = 16  # on-screen box size; drawn at 4x and downscaled for crisp anti-aliasing
 
 # A name of our own, not "Checkbutton.indicator" -- that name is already
@@ -416,8 +412,8 @@ _window = None
 # Sidebar pages, top to bottom; About sits at the bottom of the sidebar.
 # Feedback got its own page on 2026-10-30 (was the bottom of About).
 # Audio and Output share one page since 2026-10-31 (user request), which
-# also shows the devices in use.
-_PAGES = ["General", "Auto Text", "Dictation", "Hotkeys", "Audio & Output",
+# also shows the devices in use. Dictation became History on 2026-11-23.
+_PAGES = ["General", "Auto Text", "History", "Hotkeys", "Audio & Output",
           "Feedback", "About"]
 # General > Processing: the Cloud column's text width (beside Local).
 _CLOUD_COL_W = 300
@@ -573,7 +569,7 @@ class _SettingsWindow:
         builders = {
             "General": self._tab_general,
             "Auto Text": self._tab_dictionary,
-            "Dictation": self._tab_dictation,
+            "History": self._tab_history,
             "Hotkeys": self._tab_hotkeys,
             "Audio & Output": self._tab_audio_output,
             "Feedback": lambda f: self._build_feedback_section(
@@ -1500,47 +1496,49 @@ class _SettingsWindow:
             fix_learning.remove(heard, typed, dismiss=True)
         self._fix_render()
 
-    def _tab_dictation(self, f):
-        cleanup_box = self._section(f, "Dictation style", first=True)
-        self.var_cleanup = tk.StringVar(value=config.CLEANUP_MODE)
-        ttk.Radiobutton(
-            cleanup_box, text="Cleaned up: removes fillers, slips and "
-                    "repetitions. Keeps the meaning unchanged.",
-            variable=self.var_cleanup, value="cleaned_up",
-            command=self._update_example,
-        ).pack(anchor="w", pady=2)
-        ttk.Radiobutton(
-            cleanup_box, text="As spoken: types every word exactly as spoken.",
-            variable=self.var_cleanup, value="as_spoken",
-            command=self._update_example,
-        ).pack(anchor="w", pady=2)
-
-        example_box = ttk.Frame(cleanup_box, style="Card.TFrame", padding=(14, 10))
-        example_box.pack(fill="x", pady=(10, 0))
-        ttk.Label(example_box, text="Example", style="CardTitle.TLabel").pack(
-            anchor="w", pady=(0, 4))
-        ttk.Label(example_box, text="You said:", style="Card.TLabel").pack(anchor="w")
-        ttk.Label(example_box, text=_EXAMPLE_SPOKEN, wraplength=520,
-                  style="CardMuted.TLabel").pack(anchor="w", pady=(0, 6))
-        ttk.Label(example_box, text="Appears on screen:", style="Card.TLabel").pack(anchor="w")
-        self.example_label = ttk.Label(example_box, text="", wraplength=520,
-                                       style="Card.TLabel")
-        self.example_label.pack(anchor="w")
-        self._update_example()
-
-        history_box = self._section(f, "History")
+    def _tab_history(self, f):
+        # Was the "Dictation" page until 2026-11-23: its Dictation style
+        # choice (Cleaned up / As spoken) was removed from Settings at the
+        # user's request; a saved cleanup_mode still applies.
+        history_box = self._section(f, "History", first=True)
         self.var_history = tk.BooleanVar(value=config.ENABLE_HISTORY)
         row = self._setting_row(history_box, "Keep a history of what I've dictated",
                                 "Saved only on this device. Nothing is sent anywhere.")
         ttk.Checkbutton(row, variable=self.var_history,
                         style="Switch.TCheckbutton").grid(row=0, column=1, sticky="e")
+        buttons = ttk.Frame(history_box)
+        buttons.pack(anchor="w", pady=(8, 0))
         ttk.Button(
-            history_box, text="View history…", command=self._open_history_viewer,
-        ).pack(anchor="w", pady=(8, 0))
+            buttons, text="View history…", command=self._open_history_viewer,
+        ).pack(side="left")
+        self.history_delete_btn = ttk.Button(
+            buttons, text="Delete history", command=self._history_delete)
+        self.history_delete_btn.pack(side="left", padx=(8, 0))
+        self.history_status = ttk.Label(history_box, text="", style="Muted.TLabel")
+        self.history_status.pack(anchor="w", pady=(6, 0))
+        self._history_refresh()
 
-    def _update_example(self):
-        clean = self.var_cleanup.get() == "cleaned_up"
-        self.example_label.config(text=_EXAMPLE_CLEAN if clean else _EXAMPLE_ASIS)
+    def _history_refresh(self):
+        """Delete is only offered when something is saved; the line below
+        the buttons says how much (history keeps the last
+        history.MAX_ENTRIES dictations)."""
+        n = len(history.load())
+        self.history_delete_btn.state(["!disabled"] if n else ["disabled"])
+        self.history_status.config(
+            text=(f"{n} saved dictation{'s' if n != 1 else ''}." if n
+                  else "Nothing saved."))
+
+    def _history_delete(self):
+        n = len(history.load())
+        if not n or not messagebox.askyesno(
+            "Delete history",
+            f"Delete all {n} saved dictation{'s' if n != 1 else ''} from this "
+            "PC? This can't be undone.",
+            parent=self.root,
+        ):
+            return
+        history.clear()
+        self._history_refresh()
 
     def _open_history_viewer(self):
         win = tk.Toplevel(self.root)
@@ -1581,6 +1579,7 @@ class _SettingsWindow:
             ):
                 history.clear()
                 refresh()
+                self._history_refresh()
 
         bar = ttk.Frame(win, padding=(12, 4, 12, 10))
         bar.pack(fill="x")
@@ -2655,7 +2654,6 @@ class _SettingsWindow:
             "processing_mode": self.var_processing.get(),
             "send_diagnostics": self.var_diagnostics.get(),
             "speech_service": self.var_speech_service.get(),
-            "cleanup_mode": self.var_cleanup.get(),
             "enable_history": self.var_history.get(),
             "insert_mode": self.var_insert.get(),
             "append_space": self.var_space.get(),

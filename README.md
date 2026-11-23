@@ -25,7 +25,7 @@ stored. Prefer fully offline? Switch to Local in Settings → General any
 time and download the voice model (about 0.5 GB). After that, your
 audio and text never leave your PC.
 
-Dictation history, if you turn it on in the Dictation tab, is always
+Dictation history, if you turn it on in Settings > History, is always
 stored only on your device, regardless of mode. In either mode the app
 checks GitHub once a day for updates (nothing about you is sent), and
 the Feedback box in Settings → About sends a message only when you
