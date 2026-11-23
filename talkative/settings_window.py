@@ -909,66 +909,101 @@ class _SettingsWindow:
     # ---------------- own Groq key (2026-11-22) ----------------
 
     def _build_own_key(self, parent):
-        """Folded block under the Cloud accents: paste your own free Groq
-        key so your dictations don't use the shared one (groq_direct.py).
-        Acts at once, like the grammar switch: no Save needed."""
-        self._key_open = False
+        """Under the Cloud language: which Groq key Cloud uses. Talkative's
+        shared key needs nothing; your own free key (groq_direct.py) gets a
+        step-by-step guide and a box to paste it in (2026-11-23, user
+        request: two clear choices instead of a folded link). Acts at once,
+        like the grammar switch: no Save needed."""
         self._key_result = []   # (reason or None, blob) from the check thread
-        self.key_toggle = ttk.Label(parent, cursor="hand2", foreground=self._link,
-                                    takefocus=True)
-        self.key_toggle.pack(anchor="w", pady=(6, 0))
-        for seq in ("<Button-1>", "<Return>", "<space>"):
-            self.key_toggle.bind(seq, lambda e: self._toggle_own_key())
-        self.key_box = ttk.Frame(parent, padding=(16, 4, 0, 0))
         wrap = _CLOUD_COL_W - 24
+        self.var_key_choice = tk.StringVar(
+            value="own" if groq_direct.active() else "shared")
+        choices = ttk.Frame(parent, padding=(22, 4, 0, 0))
+        choices.pack(anchor="w", fill="x")
+        self.key_shared_radio = ttk.Radiobutton(
+            choices, text="Talkative's shared key (ready to use)",
+            variable=self.var_key_choice, value="shared", command=self._key_choice_changed)
+        self.key_shared_radio.pack(anchor="w", pady=1)
+        self.key_own_radio = ttk.Radiobutton(
+            choices, text="My own free Groq key", variable=self.var_key_choice,
+            value="own", command=self._key_choice_changed)
+        self.key_own_radio.pack(anchor="w", pady=1)
+        self.key_status = ttk.Label(choices, text="", wraplength=wrap, justify="left")
+        self.key_status.pack(anchor="w", side="bottom", pady=(4, 0))
+
+        self.key_box = ttk.Frame(choices, padding=(22, 2, 0, 0))
         ttk.Label(
-            self.key_box, wraplength=wrap, justify="left", style="Muted.TLabel",
-            text="Everyone shares one free Groq key, which has a daily limit. With "
-                 "your own free key, your dictations use your own limit, and your "
-                 "audio goes straight to Groq instead of through Talkative Cloud. "
-                 "If your key stops working, Talkative Cloud is used. The free "
-                 "plan is plenty, so there's no need to add a credit card to "
-                 "your Groq account.",
+            self.key_box, wraplength=wrap - 22, justify="left", style="Muted.TLabel",
+            text="Your own key has its own daily limit, and your audio goes "
+                 "straight to Groq. If it stops working, the shared key is used.",
         ).pack(anchor="w")
-        link = ttk.Label(self.key_box, text="Get a free key at console.groq.com",
-                         cursor="hand2", foreground=self._link, takefocus=True)
-        link.pack(anchor="w", pady=(4, 0))
-        for seq in ("<Button-1>", "<Return>", "<space>"):
-            link.bind(seq, lambda e: webbrowser.open("https://console.groq.com/keys"))
+        # The guide: what to click on console.groq.com, step by step.
+        self.key_guide = ttk.Frame(self.key_box)
+        self.key_guide.columnconfigure(1, weight=1)
+        steps = [
+            None,  # 1: the link, below
+            "Sign in with Google.",
+            "Click Create API Key.",
+            "Type a name, such as Talkative. You can leave the description empty.",
+            "Create it, then copy the key. Groq shows it only once.",
+            "Paste it below and click Check and use.",
+        ]
+        for i, step in enumerate(steps):
+            ttk.Label(self.key_guide, text=f"{i + 1}.", style="Muted.TLabel").grid(
+                row=i, column=0, sticky="nw", padx=(0, 6))
+            if step is None:
+                link = ttk.Label(self.key_guide, text="Open console.groq.com/keys",
+                                 cursor="hand2", foreground=self._link, takefocus=True)
+                for seq in ("<Button-1>", "<Return>", "<space>"):
+                    link.bind(seq, lambda e: webbrowser.open("https://console.groq.com/keys"))
+                link.grid(row=i, column=1, sticky="w")
+            else:
+                ttk.Label(self.key_guide, text=step, wraplength=wrap - 44,
+                          justify="left").grid(row=i, column=1, sticky="w")
+        self.key_card_note = ttk.Label(
+            self.key_box, wraplength=wrap - 22, justify="left", style="Muted.TLabel",
+            text="The free plan is plenty, so there's no need to add a credit card.")
+
         self.key_entry_row = ttk.Frame(self.key_box)
         ttk.Label(self.key_entry_row, text="Your key:").pack(anchor="w")
         self.var_groq_key = tk.StringVar()
         self.key_entry = ttk.Entry(self.key_entry_row, textvariable=self.var_groq_key,
-                                   show="•", width=20)
+                                   show="•", width=18)
         self.key_entry.pack(side="left", padx=(0, 6), pady=(2, 0))
         self.key_entry.bind("<Return>", lambda e: self._check_own_key())
         self.key_check_btn = ttk.Button(self.key_entry_row, text="Check and use",
                                         command=self._check_own_key)
         self.key_check_btn.pack(side="left")
         self.key_saved_row = ttk.Frame(self.key_box)
-        self.key_left = ttk.Label(self.key_saved_row, text="", wraplength=wrap, justify="left")
+        self.key_left = ttk.Label(self.key_saved_row, text="", wraplength=wrap - 22,
+                                  justify="left")
         self.key_left.pack(anchor="w")
         ttk.Button(self.key_saved_row, text="Remove key",
                    command=self._remove_own_key).pack(anchor="w", pady=(4, 0))
-        self.key_status = ttk.Label(self.key_box, text="", wraplength=wrap, justify="left")
-        self.key_status.pack(anchor="w", side="bottom", pady=(4, 0))
         self._render_own_key()
 
-    def _toggle_own_key(self):
-        self._key_open = not self._key_open
-        self._render_own_key()
+    def _key_choice_changed(self):
+        # Back to the shared key with a key saved: that key is removed
+        # (an unused key is better not kept).
+        if self.var_key_choice.get() == "shared" and groq_direct.active():
+            self._remove_own_key()
+            return
+        self._render_own_key("")
         self._fit_scroll()
 
     def _render_own_key(self, status=None):
         saved = groq_direct.active()
-        arrow = "▾" if self._key_open else "▸"
-        self.key_toggle.config(text=(f"{arrow} Your own Groq key: in use" if saved else
-                                     f"{arrow} Use your own free Groq key (optional)"))
-        if not self._key_open:
+        own = self.var_key_choice.get() == "own"
+        if status is not None:
+            self.key_status.config(text=status)
+        if not own:
             self.key_box.pack_forget()
             return
-        self.key_box.pack(fill="x", after=self.key_toggle)
+        self.key_box.pack(anchor="w", fill="x", after=self.key_own_radio)
         if saved:
+            # The guide is for getting a key; with one in use it's noise.
+            self.key_guide.pack_forget()
+            self.key_card_note.pack_forget()
             self.key_entry_row.pack_forget()
             left = groq_direct.left_today.get(groq_direct.STT_MODEL)
             text = "Using your key."
@@ -980,9 +1015,9 @@ class _SettingsWindow:
             self.key_saved_row.pack(anchor="w", pady=(6, 0))
         else:
             self.key_saved_row.pack_forget()
+            self.key_guide.pack(anchor="w", fill="x", pady=(6, 0))
+            self.key_card_note.pack(anchor="w", pady=(6, 0))
             self.key_entry_row.pack(anchor="w", pady=(6, 0))
-        if status is not None:
-            self.key_status.config(text=status)
 
     def _check_own_key(self):
         candidate = self.var_groq_key.get().strip()
@@ -1023,7 +1058,9 @@ class _SettingsWindow:
         config.GROQ_KEY_DPAPI = ""
         settings.save({"groq_key_dpapi": ""})
         groq_direct.left_today.clear()
-        self._render_own_key("Key removed. Talkative Cloud's shared key is used again.")
+        self.var_key_choice.set("shared")
+        self._render_own_key("Key removed. The shared key is used again.")
+        self._fit_scroll()
 
     def _engine_changed(self):
         engine = self.var_engine.get()
