@@ -1,8 +1,9 @@
 """
 App-owned speech model storage.
 
-Models live in %LOCALAPPDATA%\\Talkative\\models (not the shared Hugging
-Face cache), so deleting them from the UI can't surprise other tools and
+Models live in %LOCALAPPDATA%\\Talkative\\models, or beside the EXE when
+it was installed outside the user's profile (choose_models_dir; not the
+shared Hugging Face cache), so deleting them from the UI can't surprise other tools and
 "storage used" is accurate. Downloads go through faster-whisper's own
 download helper pointed at this folder; the same folder is passed to
 WhisperModel as download_root at load time.
@@ -89,10 +90,64 @@ def gb(mb):
     return f"{mb / 1000:.1f} GB"
 
 
+_models_dir = None
+
+
+def _under(path, parent):
+    try:
+        Path(path).resolve().relative_to(Path(parent).resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _writable(d):
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        probe = d / ".talkative-write-test"
+        probe.write_bytes(b"")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def choose_models_dir(exe=None, frozen=None, store=None, profile=None, default=None):
+    """Where the models live (2026-11-23, user: let people pick where
+    Talkative installs, and have the models follow, so installing on D:
+    really keeps the gigabytes off C:).
+
+    - Installed copy outside the user's profile (the installer's "Install
+      location"): <install folder>\\models.
+    - Otherwise, from source, the Store build, or the default install
+      under %LOCALAPPDATA%\\Programs: %LOCALAPPDATA%\\Talkative\\models.
+    - Models already in %LOCALAPPDATA%\\Talkative\\models are kept there
+      (no surprise re-download for existing installs), and an install
+      folder that can't be written falls back there too.
+    Arguments are for tests; the app calls models_dir()."""
+    import sys
+    from . import packaging
+    default = Path(default) if default else settings_dir() / "models"
+    exe = Path(exe or sys.executable)
+    frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+    store = packaging.is_store_build() if store is None else store
+    profile = profile or os.environ.get("USERPROFILE", "")
+    if not frozen or store or (profile and _under(exe, profile)):
+        return default
+    if default.is_dir() and any(p.is_dir() and any(p.iterdir()) for p in default.iterdir()):
+        return default
+    beside = exe.parent / "models"
+    return beside if _writable(beside) else default
+
+
 def models_dir():
-    d = settings_dir() / "models"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """Chosen once per run (see choose_models_dir), so it can't change
+    under a download or a loaded model."""
+    global _models_dir
+    if _models_dir is None:
+        _models_dir = choose_models_dir()
+    _models_dir.mkdir(parents=True, exist_ok=True)
+    return _models_dir
 
 
 def _repo_dir(size, base=None):

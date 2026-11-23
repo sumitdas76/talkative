@@ -499,6 +499,13 @@ begin
               + 'models and your settings?' + #13#10
               + 'This frees up to 4 GB of disk space.',
               mbConfirmation, MB_YESNO, IDNO) = IDYES then
+    begin
       DelTree(ExpandConstant('{localappdata}\Talkative'), True, True, True);
+      { Installed outside the profile, the models live in the install
+        folder (model_manager.choose_models_dir, 2026-11-23). Inno already
+        tried to remove the folder and left it because of them. }
+      DelTree(ExpandConstant('{app}\models'), True, True, True);
+      RemoveDir(ExpandConstant('{app}'));
+    end;
   end;
 end;

@@ -52,7 +52,7 @@ import time
 import urllib.request
 from datetime import date, datetime, timedelta
 
-from . import __version__, app_icon, config, model_manager, overlay_thread, packaging
+from . import __version__, app_icon, config, model_manager, overlay_thread, packaging, settings
 
 # Manifest key -> what it is locally. "speech" entries update the
 # faster-whisper repo dirs; "grammar" updates the invisible engine.
@@ -72,7 +72,9 @@ _controller = None  # from start_background_check, for check_now's prompt
 
 
 def state_path():
-    return model_manager.models_dir().parent / "updater.json"
+    # Beside settings.json, not beside the models: those can live in the
+    # install folder since 2026-11-23 (model_manager.choose_models_dir).
+    return settings.settings_dir() / "updater.json"
 
 
 def _load_state():
@@ -540,7 +542,7 @@ def _show_dialog(entry, on_download, on_cancel):
 
 
 def _app_updates_dir():
-    return model_manager.models_dir().parent / "updates"
+    return settings.settings_dir() / "updates"
 
 
 def _download_installer(release, progress):
