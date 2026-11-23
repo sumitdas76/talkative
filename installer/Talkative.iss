@@ -69,6 +69,9 @@ DisableWelcomePage=no
 DisableDirPage=yes
 DisableReadyPage=yes
 DisableFinishedPage=yes
+; The welcome page places its own controls (panel strip, location box,
+; privacy link) at fixed spots; a resizable window would leave them behind.
+WizardResizable=no
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=..\assets\icon.ico
 ; The privacy policy is a link on the welcome page (was a full page of
@@ -129,6 +132,35 @@ begin
     Result := Pos(Lowercase('{#MyAppExeName}'), Lowercase(String(Output))) > 0;
 end;
 
+var
+  { A copy running from the install folder was closed by PrepareToInstall
+    (normal, non-update install); DeinitializeSetup reopens it unless
+    ssDone already opened the new version. }
+  KilledRunning: Boolean;
+  Launched: Boolean;
+
+{ Close Talkative.exe processes running from this install folder only
+  (a portable or second copy elsewhere doesn't lock these files and is
+  left alone). True when one was running. }
+function CloseCopyInApp: Boolean;
+var
+  ResultCode: Integer;
+  OutFile, Exe: String;
+  Output: AnsiString;
+begin
+  Exe := ExpandConstant('{app}\{#MyAppExeName}');
+  StringChangeEx(Exe, '''', '''''', True);
+  OutFile := ExpandConstant('{tmp}\closed.txt');
+  Exec(ExpandConstant('{cmd}'),
+    '/C powershell.exe -NoProfile -NonInteractive -Command "Get-Process '
+    + '{#MyAppName} -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '''
+    + Exe + ''' } | ForEach-Object { $_.Id; Stop-Process -Id $_.Id -Force }" > "'
+    + OutFile + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := LoadStringFromFile(OutFile, Output) and (Trim(String(Output)) <> '');
+  if Result then
+    Sleep(800);
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
@@ -168,15 +200,9 @@ begin
       the consent: close it here, before Inno's own files-in-use check,
       so that page never shows; ssDone opens the new version. Called on
       the Install click (the ready page is off). }
-    Log('Talkative is running: closing it before installing');
-    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#MyAppExeName}',
-      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    for I := 1 to 10 do
-    begin
-      if not TalkativeRunning then
-        Break;
-      Sleep(300);
-    end;
+    KilledRunning := CloseCopyInApp;
+    if KilledRunning then
+      Log('Talkative is running: closing it before installing');
   end;
 end;
 
@@ -186,7 +212,18 @@ var
   Exe: String;
 begin
   if not IsUpdateMode then
+  begin
+    { Closed for a silent install (winget upgrade) or a failed one: never
+      leave the user without dictation. As the signed-in user, not the
+      installer's possibly elevated account. }
+    if KilledRunning and not Launched then
+    begin
+      Exe := ExpandConstant('{app}\{#MyAppExeName}');
+      if FileExists(Exe) then
+        ShellExecAsOriginalUser('open', Exe, '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+    end;
     Exit;
+  end;
   try
     Exe := ExpandConstant('{app}\{#MyAppExeName}');
   except
@@ -230,16 +267,46 @@ end;
   Files can't be used: test by writing a file there first. }
 function CanWriteTo(Dir: String): Boolean;
 var
-  Existed: Boolean;
-  Probe: String;
+  Probe, Parent: String;
 begin
-  Existed := DirExists(Dir);
-  Probe := AddBackslash(Dir) + '.talkative-write-test';
-  Result := ForceDirectories(Dir) and SaveStringToFile(Probe, '', False);
+  if DirExists(Dir) then
+  begin
+    Probe := AddBackslash(Dir) + '.talkative-write-test';
+    Result := SaveStringToFile(Probe, '', False);
+    if Result then
+      DeleteFile(Probe);
+    Exit;
+  end;
+  { Not there yet: Setup will create it inside the nearest folder that
+    exists, so test making a folder there (and remove it again) instead
+    of creating the whole path and leaving empty parents behind. }
+  Parent := Dir;
+  while not DirExists(Parent) and (ExtractFileDir(Parent) <> Parent) do
+    Parent := ExtractFileDir(Parent);
+  Probe := AddBackslash(Parent) + '.talkative-write-test';
+  Result := CreateDir(Probe);
   if Result then
-    DeleteFile(Probe);
-  if not Existed then
-    RemoveDir(Dir);
+    RemoveDir(Probe);
+end;
+
+{ True when the folder has anything in it besides . and .. }
+function HasFiles(Dir: String): Boolean;
+var
+  F: TFindRec;
+begin
+  Result := False;
+  if FindFirst(AddBackslash(Dir) + '*', F) then
+  try
+    repeat
+      if (F.Name <> '.') and (F.Name <> '..') then
+      begin
+        Result := True;
+        Exit;
+      end;
+    until not FindNext(F);
+  finally
+    FindClose(F);
+  end;
 end;
 
 { The folder page (which normally checks the path) is never shown, so
@@ -288,6 +355,26 @@ begin
     MsgBox('Enter a full folder path, for example C:\Apps\{#MyAppName}, or click Browse.',
       mbError, MB_OK);
     Exit;
+  end;
+  { A drive root, or a folder that already holds other files (typed by
+    hand: Browse adds \Talkative itself), gets a Talkative folder of its
+    own inside it. Otherwise the app would treat <folder>\models as its
+    own, uninstall could delete it, and the folder lock would re-permission
+    the user's files (neutral QA, 2026-11-23). }
+  if (Length(Dir) = 3) or (DirExists(Dir) and HasFiles(Dir)
+      and not FileExists(AddBackslash(Dir) + '{#MyAppExeName}')) then
+  begin
+    Dir := AddBackslash(Dir) + '{#MyAppName}';
+    if DirExists(Dir) and HasFiles(Dir)
+        and not FileExists(AddBackslash(Dir) + '{#MyAppExeName}') then
+    begin
+      MsgBox(Dir + ' already has other files in it.' + #13#10#13#10
+        + 'Pick an empty folder, or click Browse.', mbError, MB_OK);
+      Exit;
+    end;
+    WizardForm.DirEdit.Text := Dir;
+    MsgBox('That folder already has other files in it, so {#MyAppName} gets a folder '
+      + 'of its own inside it:' + #13#10#13#10 + Dir, mbInformation, MB_OK);
   end;
   { GetDriveType: 2 removable (USB stick, SD card), 4 network (mapped
     drive), 5 CD/DVD. }
@@ -408,6 +495,11 @@ begin
   AutostartBox.Top := Y;
   AutostartBox.Width := W;
   AutostartBox.Height := ScaleY(22);
+  { It only seeds a fresh install's settings; on a reinstall the app's own
+    setting (Settings > General > Startup) is kept, so the box would do
+    nothing (neutral QA, 2026-11-23). }
+  if FileExists(ExpandConstant('{localappdata}\Talkative\settings.json')) then
+    AutostartBox.Visible := False;
 
   { The privacy link sits in the button band, lined up with the text above
     and centred on the buttons, so the band isn't an empty strip. }
@@ -441,6 +533,36 @@ end;
   (everyone else may still read and run it). The default folder, inside
   the profile, is private already and is left alone. Runs on every
   install, so an update also fixes a folder installed before this. }
+{ "*S-1-5-21-..." for icacls: works for local, Microsoft and work
+  (Entra) accounts alike, where DOMAIN\name may not resolve. '' if
+  whoami fails. }
+function CurrentUserSid: String;
+var
+  ResultCode, P: Integer;
+  OutFile: String;
+  Output: AnsiString;
+begin
+  Result := '';
+  OutFile := ExpandConstant('{tmp}\whoami.txt');
+  if Exec(ExpandConstant('{cmd}'), '/C whoami /user /fo csv /nh > "' + OutFile + '"',
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+     and (ResultCode = 0) and LoadStringFromFile(OutFile, Output) then
+  begin
+    Result := Trim(String(Output));
+    P := Pos('"S-1-', Result);
+    if P = 0 then
+    begin
+      Result := '';
+      Exit;
+    end;
+    Result := Copy(Result, P + 1, Length(Result));
+    P := Pos('"', Result);
+    if P > 0 then
+      Result := Copy(Result, 1, P - 1);
+    Result := '*' + Result;
+  end;
+end;
+
 procedure LockInstallFolder;
 var
   App, User: String;
@@ -449,7 +571,9 @@ begin
   App := ExpandConstant('{app}');
   if UnderFolder(App, GetEnv('USERPROFILE')) then
     Exit;
-  User := GetEnv('USERDOMAIN') + '\' + GetEnv('USERNAME');
+  User := CurrentUserSid;
+  if User = '' then
+    User := GetEnv('USERDOMAIN') + '\' + GetEnv('USERNAME');
   { Grant this user first, so removing the inherited entries can never
     lock them out of their own install. On the folder ONLY, no /T: the
     files keep inheriting and pick up the new folder entries by
@@ -458,7 +582,7 @@ begin
     leaving Talkative.exe with no permissions at all -- "Access is denied"
     even for the user (found in testing, 2026-11-23). }
   if Exec(ExpandConstant('{sys}\icacls.exe'),
-          '"' + App + '" /grant:r "' + User + ':(OI)(CI)F" /C /Q',
+          '"' + App + '" /grant:r ' + AddQuotes(User + ':(OI)(CI)F') + ' /C /Q',
           '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
   begin
     Exec(ExpandConstant('{sys}\icacls.exe'),
@@ -467,7 +591,13 @@ begin
     Log(Format('install folder locked to %s (icacls %d)', [User, ResultCode]));
   end
   else
+  begin
     Log(Format('install folder not locked: granting %s failed (%d)', [User, ResultCode]));
+    SuppressibleMsgBox('{#MyAppName} is installed, but Windows didn''t let Setup make '
+      + App + ' private to your account, so other accounts on this PC may be able to '
+      + 'change its files.' + #13#10#13#10 + 'A folder inside your user folder is '
+      + 'private already.', mbInformation, MB_OK, IDOK);
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -481,8 +611,13 @@ begin
     Silent installs (winget, the app's own /UPDATE) don't; update mode
     relaunches from DeinitializeSetup. }
   if (CurStep = ssDone) and not WizardSilent then
-    ShellExec('', ExpandConstant('{app}\{#MyAppExeName}'), '', '',
+  begin
+    { As the signed-in user: if Setup itself runs elevated, an elevated
+      Talkative would be the copy the single-instance guard keeps. }
+    ShellExecAsOriginalUser('open', ExpandConstant('{app}\{#MyAppExeName}'), '', '',
       SW_SHOWNORMAL, ewNoWait, ResultCode);
+    Launched := True;
+  end;
   { The app owns the autostart registry sync via its settings; the installer
     only seeds the setting on a fresh install so the two never fight. }
   if (CurStep = ssPostInstall) and AutostartBox.Checked then
@@ -527,7 +662,8 @@ begin
       { Installed outside the profile, the models live in the install
         folder (model_manager.choose_models_dir, 2026-11-23). Inno already
         tried to remove the folder and left it because of them. }
-      DelTree(ExpandConstant('{app}\models'), True, True, True);
+      if FileExists(ExpandConstant('{app}\models\.talkative-models')) then
+        DelTree(ExpandConstant('{app}\models'), True, True, True);
       RemoveDir(ExpandConstant('{app}'));
     end;
   end;
