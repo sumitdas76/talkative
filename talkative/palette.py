@@ -11,6 +11,20 @@ background pair is checked for at least 4.5:1 contrast
 """
 
 PALETTES = {
+    # The icon's own steel blue (sampled from assets/icon-256.png: #5997cd
+    # top, #295276 bottom), the default since 2026-11-23 so the icon, the
+    # installer panel and the app read as one brand (user: "go with
+    # blue"). Kept clear of the indigo/violet "generic AI" range above.
+    "blue": {
+        "label": "Blue",
+        "light": dict(bg="#f4f7fb", fg="#141b24", field="#ffffff", raised="#e3eaf3",
+                      border="#b3c1d3", hover="#d5dfeb", title="#1f4f7a", muted="#4a5666"),
+        "dark": dict(bg="#0f1620", fg="#e8eef5", field="#16202c", raised="#1e2a38",
+                     border="#3a4b60", hover="#283646", title="#8cc2f0", muted="#a8b4c2"),
+        "accent": "#2a6197", "accent_fg": "#ffffff", "accent_hover": "#1f4a75",
+        "header": ("#295276", "#3a6c9c"), "header_fg": "#ffffff",
+        "line": "#5cb3ff", "line_halo": "#0f1620",
+    },
     # Warm editorial: cream paper, ink, deep forest green (in the spirit
     # of Wispr Flow's site), an orange listening line.
     "forest": {
@@ -48,7 +62,7 @@ PALETTES = {
     },
 }
 
-DEFAULT = "forest"
+DEFAULT = "blue"
 
 
 def get():

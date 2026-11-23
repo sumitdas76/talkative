@@ -419,9 +419,9 @@ PRESS_ENTER_AFTER = False
 # Settings window appearance: "light", "dark", or "system" (follow the
 # Windows app theme).
 THEME = "system"
-# Color scheme (palette.py): "forest", "coral" or "teal" -- Settings,
+# Color scheme (palette.py): "blue" (default since 2026-11-23), "forest", "coral" or "teal" -- Settings,
 # its header band and the listening pill.
-COLOR_SCHEME = "forest"
+COLOR_SCHEME = "blue"
 
 # No sounds: the start/stop/done beeps were removed 2026-10-04 at the
 # user's request (the listening pill already shows when Talkative is

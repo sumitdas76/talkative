@@ -183,6 +183,63 @@ end;
 
 var
   AutostartBox: TNewCheckBox;
+  PrivacyLink: TNewStaticText;
+  LocationLabel: TNewStaticText;
+  ChangeLink: TNewStaticText;
+  BandStrip: TBitmapImage;
+
+{ Install location (user, 2026-11-23: let people choose where it goes).
+  A line on the welcome page, not a folder page, so the install stays one
+  click. Offered only on a first install: a reinstall or update keeps the
+  folder it already has (Inno's UsePreviousAppDir), otherwise the updater
+  and Start menu would point at a stale copy. }
+function PreviouslyInstalled: Boolean;
+begin
+  Result := RegKeyExists(HKCU,
+    'Software\Microsoft\Windows\CurrentVersion\Uninstall\{7E1B3C52-9A44-4E0B-B7D1-52B4A46C1F0D}_is1');
+end;
+
+{ The installer never asks for admin rights, so a folder like Program
+  Files can't be used: test by writing a file there first. }
+function CanWriteTo(Dir: String): Boolean;
+var
+  Existed: Boolean;
+  Probe: String;
+begin
+  Existed := DirExists(Dir);
+  Probe := AddBackslash(Dir) + '.talkative-write-test';
+  Result := ForceDirectories(Dir) and SaveStringToFile(Probe, '', False);
+  if Result then
+    DeleteFile(Probe);
+  if not Existed then
+    RemoveDir(Dir);
+end;
+
+procedure ShowLocation;
+begin
+  LocationLabel.Caption := 'Installs to ' + MinimizePathName(WizardForm.DirEdit.Text,
+    LocationLabel.Font, WizardForm.WelcomeLabel2.Width - ScaleX(90));
+  ChangeLink.Left := LocationLabel.Left + LocationLabel.Width + ScaleX(8);
+end;
+
+procedure ChangeLocation(Sender: TObject);
+var
+  Dir: String;
+begin
+  Dir := WizardForm.DirEdit.Text;
+  if not BrowseForFolder('Choose where to install {#MyAppName}. A {#MyAppName} folder is made inside the folder you pick.', Dir, True) then
+    Exit;
+  if CompareText(ExtractFileName(RemoveBackslashUnlessRoot(Dir)), '{#MyAppName}') <> 0 then
+    Dir := AddBackslash(Dir) + '{#MyAppName}';
+  if not CanWriteTo(Dir) then
+  begin
+    MsgBox('Windows doesn''t let {#MyAppName} install there without admin rights.' + #13#10
+      + 'Pick a folder in your user folder or on another drive.', mbError, MB_OK);
+    Exit;
+  end;
+  WizardForm.DirEdit.Text := Dir;
+  ShowLocation;
+end;
 
 procedure OpenPrivacy(Sender: TObject);
 var
@@ -194,10 +251,32 @@ end;
 
 procedure InitializeWizard;
 var
-  Link: TNewStaticText;
   Page: TNewNotebookPage;
+  Panel: TBitmapImage;
+  R: TRect;
 begin
   Page := WizardForm.WelcomePage;
+
+  { The brand panel runs the full height of the window, beside the
+    buttons too (user, 2026-11-23: it should fill the entire left side).
+    Inno's welcome image stops above the button band, and a picture on
+    the form itself is always drawn under the page (a graphic control
+    can't sit above a windowed one; tried). So the band beside the
+    buttons gets its own strip in the art's bottom color (the gradient
+    ends there), and the two read as one panel. }
+  Panel := WizardForm.WizardBitmapImage;
+  BandStrip := TBitmapImage.Create(WizardForm);
+  BandStrip.Parent := WizardForm;
+  BandStrip.Left := 0;
+  BandStrip.Top := Panel.Height;
+  BandStrip.Width := Panel.Width;
+  BandStrip.Height := WizardForm.ClientHeight - Panel.Height;
+  BandStrip.Bitmap.Width := 8;
+  BandStrip.Bitmap.Height := 8;
+  BandStrip.Bitmap.Canvas.Brush.Color := $644421; { #214464, BGR }
+  R.Left := 0; R.Top := 0; R.Right := 8; R.Bottom := 8;
+  BandStrip.Bitmap.Canvas.FillRect(R);
+  BandStrip.Stretch := True;
   { Inno appends blank lines + ClickNext to this label; trim them so the
     checkbox sits right under the text. }
   WizardForm.WelcomeLabel2.Caption := Trim(WizardForm.WelcomeLabel2.Caption);
@@ -212,19 +291,45 @@ begin
   AutostartBox.Width := WizardForm.WelcomeLabel2.Width;
   AutostartBox.Height := ScaleY(22);
 
-  Link := TNewStaticText.Create(WizardForm);
-  Link.Parent := Page;
-  Link.Caption := 'Privacy policy';
-  Link.Cursor := crHand;
-  Link.Font.Style := [fsUnderline];
-  Link.Font.Color := clHotLight;
-  Link.OnClick := @OpenPrivacy;
-  Link.Left := WizardForm.WelcomeLabel2.Left;
-  Link.Top := AutostartBox.Top + AutostartBox.Height + ScaleY(12);
+  LocationLabel := TNewStaticText.Create(WizardForm);
+  LocationLabel.Parent := Page;
+  LocationLabel.Left := WizardForm.WelcomeLabel2.Left;
+  LocationLabel.Top := AutostartBox.Top + AutostartBox.Height + ScaleY(14);
+  ChangeLink := TNewStaticText.Create(WizardForm);
+  ChangeLink.Parent := Page;
+  ChangeLink.Caption := 'Change';
+  ChangeLink.Cursor := crHand;
+  ChangeLink.Font.Style := [fsUnderline];
+  ChangeLink.Font.Color := clHotLight;
+  ChangeLink.OnClick := @ChangeLocation;
+  ChangeLink.Top := LocationLabel.Top;
+  ShowLocation;
+  if PreviouslyInstalled then
+  begin
+    LocationLabel.Visible := False;
+    ChangeLink.Visible := False;
+  end;
+
+  { The privacy link sits in the button band, lined up with the text above
+    and centred on the buttons, so the band isn't an empty strip. }
+  PrivacyLink := TNewStaticText.Create(WizardForm);
+  PrivacyLink.Parent := WizardForm;
+  PrivacyLink.Caption := 'Privacy policy';
+  PrivacyLink.Cursor := crHand;
+  PrivacyLink.Font.Style := [fsUnderline];
+  PrivacyLink.Font.Color := clHotLight;
+  PrivacyLink.OnClick := @OpenPrivacy;
+  PrivacyLink.Left := WizardForm.WelcomeLabel2.Left;
+  PrivacyLink.Top := WizardForm.NextButton.Top
+    + (WizardForm.NextButton.Height - PrivacyLink.Height) div 2;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  { Panel and link belong to the welcome page only; the progress page
+    uses the full width. }
+  BandStrip.Visible := CurPageID = wpWelcome;
+  PrivacyLink.Visible := CurPageID = wpWelcome;
   if CurPageID = wpWelcome then
     WizardForm.NextButton.Caption := SetupMessage(msgButtonInstall);
 end;
