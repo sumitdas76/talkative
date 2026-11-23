@@ -1580,6 +1580,7 @@ class TalkativeApp:
         if config.ENABLE_HISTORY:
             history.add(text)
         updater.note_words(len(text.split()))
+        usage_ping.note_dictation()
         if config.INSERT_MODE == "clipboard":
             self.tray.notify("Copied to clipboard. Press Ctrl+V to paste.")
 
@@ -1757,17 +1758,8 @@ class TalkativeApp:
         # from the configured default.
         try_it_now.controller = SimpleNamespace(
             get=lambda: self.recorder.device, set=self._set_input_device)
-        if not config.ONBOARDING_DONE:
-            # The first-run screen asks about the install count itself.
-            usage_ping.skip_this_run()
         onboarding.maybe_show(on_choice=self._onboarding_done)
         usage_ping.start()
-        # Installs set up before the count existed: ask once, after the
-        # update check's own startup work, never on top of the first-run
-        # screen (skip_this_run above).
-        ask = threading.Timer(20, usage_ping.maybe_ask)
-        ask.daemon = True
-        ask.start()
         # Local setup's background grammar download, if Talkative was
         # closed before it finished (see onboarding.finish_local).
         if config.GRAMMAR_PENDING_DOWNLOAD and config.ENABLE_GRAMMAR_ENGINE:

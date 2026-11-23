@@ -1,15 +1,20 @@
-"""Anonymous count of active installs (Backlog usage-count, 2026-11-23;
-PRIVACY.md "Counting installs").
+"""Anonymous usage count (Backlog usage-count, 2026-11-23; PRIVACY.md
+"Anonymous usage count").
 
-Only with the user's yes (config.USAGE_COUNT): asked once, on the first-run
-screen or, for installs from before this existed, in a small window after
-the update. Nothing is sent before an answer or after a no.
+On by default and disclosed, not asked (user's decision, 2026-11-23); the
+off switch is in Settings > About (config.USAGE_COUNT). No identifier of
+any kind is sent -- no install ID, no hash, no random code -- so the count
+can't be tied to an install or a person. Instead the check-in carries
+flags that let the Worker count exactly:
 
-Once a UTC day the check-in posts to the Worker's /usage route: a random
-code made for this count alone (config.USAGE_ID, never sent with
-dictation, feedback or diagnostics -- not the install ID, which the Worker
-could link to Cloud requests and feedback), the version, Cloud / own key /
-Local, and installer / store / source. No X-Install-Id header.
+  - active installs per UTC day (one check-in per install per day),
+  - per ISO week / month ("week_first" / "month_first": this install's
+    first check-in of that week / month),
+  - new installs ("new_install": the first check-in after the first-run
+    setup, not existing installs updating to this version),
+
+plus the version, Cloud / own key / Local, installer / store / source, and
+how many dictations since the last check-in, as a range ("6-20").
 
 TALKATIVE_NO_USAGE=1 turns it off for tests and release QA, so throwaway
 first-run folders aren't counted.
@@ -18,7 +23,6 @@ first-run folders aren't counted.
 import json
 import logging
 import os
-import secrets
 import sys
 import threading
 import time
@@ -31,41 +35,53 @@ log = logging.getLogger(__name__)
 _START_DELAY = 15     # seconds after startup, after the update check's 10
 _POLL_SECONDS = 1800  # how often a running app looks whether a check-in is due
 _TIMEOUT = 10
-_asked_this_run = False
+_SAVE_EVERY = 300     # seconds between saving the dictation tally
 _lock = threading.Lock()
+_last_saved = 0.0
 
-QUESTION = ("Help count how many people use Talkative? Once a day it sends a "
-            "random code made only for this count, the app version, and "
-            "Cloud or Local. Nothing you dictate. Change it any time in "
-            "Settings > About.")
-YES = "Yes, count me"
-NO = "No thanks"
+BUCKETS = ((0, "0"), (5, "1-5"), (20, "6-20"), (50, "21-50"))
 
 
-def _today():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def keys(now=None):
+    """(day, ISO week, month) in UTC, e.g. ("2026-11-23", "2026-W48", "2026-11")."""
+    now = now or _now()
+    year, week, _ = now.isocalendar()
+    return now.strftime("%Y-%m-%d"), f"{year}-W{week:02d}", now.strftime("%Y-%m")
+
+
+def bucket(n):
+    for top, label in BUCKETS:
+        if n <= top:
+            return label
+    return "50+"
 
 
 def disabled_by_env():
     return os.environ.get("TALKATIVE_NO_USAGE") == "1"
 
 
-def set_answer(yes):
-    """Record the user's answer (first-run screen, the one-time window, or
-    the Settings switch). A yes makes the random code if there isn't one."""
-    values = {"usage_asked": True, "usage_count": bool(yes)}
-    config.USAGE_ASKED = True
-    config.USAGE_COUNT = bool(yes)
-    if yes and not config.USAGE_ID:
-        config.USAGE_ID = secrets.token_hex(32)
-        values["usage_id"] = config.USAGE_ID
-    settings.save(values)
+def mark_new_install():
+    """Called when the first-run setup finishes: the next check-in counts
+    this install as new (once)."""
+    config.USAGE_NEW_INSTALL = True
+    settings.save({"usage_new_install": True})
 
 
-def short_code():
-    """First 8 characters of the code, for Settings > About (deletion
-    requests), or "" before there is one."""
-    return config.USAGE_ID[:8]
+def note_dictation():
+    """One dictation typed. Kept in memory, saved now and then so a
+    restart loses at most a few minutes of tally."""
+    global _last_saved
+    config.USAGE_DICTATIONS += 1
+    if time.monotonic() - _last_saved > _SAVE_EVERY:
+        _last_saved = time.monotonic()
+        try:
+            settings.save({"usage_dictations": config.USAGE_DICTATIONS})
+        except Exception:
+            pass
 
 
 def mode():
@@ -86,36 +102,48 @@ def channel():
     return "installer" if getattr(sys, "frozen", False) else "source"
 
 
-def body():
-    return {"id": config.USAGE_ID, "version": __version__,
-            "mode": mode(), "channel": channel()}
+def body(now=None):
+    day, week, month = keys(now)
+    return {
+        "version": __version__, "mode": mode(), "channel": channel(),
+        "new_install": bool(config.USAGE_NEW_INSTALL),
+        "week_first": config.USAGE_LAST_WEEK != week,
+        "month_first": config.USAGE_LAST_MONTH != month,
+        "dictations": bucket(config.USAGE_DICTATIONS),
+    }
 
 
-def due():
-    return (config.USAGE_COUNT and config.USAGE_ASKED and config.ONBOARDING_DONE
-            and len(config.USAGE_ID) == 64 and not disabled_by_env()
+def due(now=None):
+    return (config.USAGE_COUNT and config.ONBOARDING_DONE and not disabled_by_env()
             and bool(config.CLOUD_ENDPOINT_URL)
-            and config.USAGE_LAST_DAY != _today())
+            and config.USAGE_LAST_DAY != keys(now)[0])
 
 
-def _mark_sent():
-    config.USAGE_LAST_DAY = _today()
-    settings.save({"usage_last_day": config.USAGE_LAST_DAY})
+def _mark_sent(now):
+    day, week, month = keys(now)
+    config.USAGE_LAST_DAY, config.USAGE_LAST_WEEK, config.USAGE_LAST_MONTH = day, week, month
+    config.USAGE_NEW_INSTALL = False
+    config.USAGE_DICTATIONS = 0
+    settings.save({"usage_last_day": day, "usage_last_week": week,
+                   "usage_last_month": month, "usage_new_install": False,
+                   "usage_dictations": 0})
 
 
-def send_if_due():
+def send_if_due(now=None):
     """One check-in if one is due. Returns True when the day is done (sent,
     or refused by the server, which a retry wouldn't change). Network
-    failures return False and are retried on the next look. Never raises."""
+    failures and server errors return False and are retried on the next
+    look. Never raises."""
     with _lock:
-        if not due():
+        now = now or _now()
+        if not due(now):
             return False
         from . import cloud_client
         headers = cloud_client._headers("application/json")
         headers.pop("X-Install-Id", None)
         try:
             status, data = cloud_client._post(
-                "/usage", json.dumps(body()).encode(), headers, _TIMEOUT)
+                "/usage", json.dumps(body(now)).encode(), headers, _TIMEOUT)
         except Exception as exc:
             log.info("usage check-in: no connection (%s), will retry", type(exc).__name__)
             return False
@@ -124,7 +152,7 @@ def send_if_due():
             return False
         if status != 200:
             log.warning("usage check-in refused: %s %s", status, data[:200])
-        _mark_sent()
+        _mark_sent(now)
         return True
 
 
@@ -139,61 +167,3 @@ def start():
                 log.exception("usage check-in failed")
             time.sleep(_POLL_SECONDS)
     threading.Thread(target=run, daemon=True, name="usage-ping").start()
-
-
-def maybe_ask(overlay_get=None):
-    """For installs that finished setup before this existed (or left the
-    first-run question unanswered): ask once, in a small window. Closing it
-    counts as no. Does nothing during a run that showed the first-run
-    screen, so two windows never stack."""
-    global _asked_this_run
-    if (config.USAGE_ASKED or not config.ONBOARDING_DONE or _asked_this_run
-            or disabled_by_env()):
-        return
-    _asked_this_run = True
-    from . import overlay_thread
-    overlay = (overlay_get or overlay_thread.get)()
-    overlay._ready.wait(timeout=3)
-    if overlay._failed:
-        return
-    overlay.build(lambda: _build_question(overlay))
-
-
-def skip_this_run():
-    """The first-run screen is showing; don't ask in a second window."""
-    global _asked_this_run
-    _asked_this_run = True
-
-
-def _build_question(overlay):
-    import tkinter as tk
-    from tkinter import ttk
-
-    from . import app_icon, overlay_thread
-    try:
-        root = tk.Toplevel(overlay.root)
-        root.title("Talkative")
-        app_icon.set_window_icon(root)
-        root.configure(bg=overlay_thread.bg_color())
-        root.resizable(False, False)
-        root.attributes("-topmost", True)
-        ttk.Label(root, padding=(18, 16, 18, 6), font=("Segoe UI", 12, "bold"),
-                  text="One quick question").pack(anchor="w")
-        ttk.Label(root, padding=(18, 0, 18, 0), wraplength=440,
-                  text=QUESTION).pack(anchor="w")
-        buttons = ttk.Frame(root, padding=(18, 14, 18, 14))
-        buttons.pack(fill="x")
-
-        def answer(yes):
-            set_answer(yes)
-            root.destroy()
-
-        no_btn = ttk.Button(buttons, text=NO, command=lambda: answer(False))
-        yes_btn = ttk.Button(buttons, text=YES, command=lambda: answer(True))
-        # Equal weight: same style, side by side, neither the default.
-        no_btn.pack(side="right")
-        yes_btn.pack(side="right", padx=(0, 8))
-        root.protocol("WM_DELETE_WINDOW", lambda: answer(False))
-        root.bind("<Escape>", lambda e: answer(False))
-    except Exception:
-        log.exception("usage question window failed")

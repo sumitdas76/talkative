@@ -51,9 +51,9 @@ class_name = "DiagStore"
 tag = "v3"
 new_sqlite_classes = ["DiagStore"]
 
-# Anonymous count of active installs (worker.js's UsageStore, 2026-11-23):
-# one row per hashed install per UTC day, deleted after 30 days; daily
-# totals kept. Read via GET /usage with ADMIN_KEY (tools/usage.py).
+# Anonymous usage count (worker.js's UsageStore, 2026-11-23): totals only
+# per day, ISO week and month; no identifier is sent or stored.
+# Read via GET /usage with ADMIN_KEY (tools/usage.py).
 [[durable_objects.bindings]]
 name = "USAGE_DO"
 class_name = "UsageStore"

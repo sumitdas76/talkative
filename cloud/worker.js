@@ -372,65 +372,79 @@ async function handleDiagnostics(request, env, installId) {
   return Response.json({ ok: true });
 }
 
-// Anonymous count of active installs (Backlog usage-count, 2026-11-23;
-// PRIVACY.md "Counting installs"). Once a UTC day each install that hasn't
-// turned it off posts a hash of its install id (never the id itself), its
-// version, mode and channel. One row per install per day, so repeats change
-// nothing; rows older than USAGE_DAYS_KEPT are deleted and only the daily
-// totals (numbers) stay. Read with ADMIN_KEY (tools/usage.py). The shared
-// secret is public, so anyone can post made-up ids: USAGE_PER_IP_PER_DAY
-// bounds that; the count is for planning only.
-const USAGE_DAYS_KEPT = 30;
+// Anonymous usage count (Backlog usage-count, 2026-11-23; PRIVACY.md
+// "Anonymous usage count"). On by default in the app, disclosed, with an
+// off switch; no identifier of any kind is sent or stored. Once a UTC day
+// each install posts its version, mode, channel, a dictation range, and
+// flags: new_install (first check-in after setup), week_first / month_first
+// (first check-in this ISO week / month). Only totals are kept: per day,
+// per week and per month. Read with ADMIN_KEY (tools/usage.py). The shared
+// secret is public, so anyone can post made-up check-ins:
+// USAGE_PER_IP_PER_DAY bounds that; the count is for planning only.
 const USAGE_PER_IP_PER_DAY = 20;
 const USAGE_MAX_BODY = 512;
 const USAGE_MODES = ["cloud", "own-key", "local"];
 const USAGE_CHANNELS = ["installer", "store", "source"];
+const USAGE_DICTATIONS = ["0", "1-5", "6-20", "21-50", "50+"];
+
+export function isoWeek(day) {
+  const d = new Date(day + "T00:00:00Z");
+  const dow = (d.getUTCDay() + 6) % 7;            // Monday = 0
+  d.setUTCDate(d.getUTCDate() - dow + 3);          // Thursday of this week
+  const year = d.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const week = 1 + Math.round(((d - jan4) / 86400000 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
 
 export class UsageStore extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     const sql = this.ctx.storage.sql;
-    sql.exec("CREATE TABLE IF NOT EXISTS seen (day TEXT NOT NULL, id TEXT NOT NULL, " +
-      "version TEXT NOT NULL, mode TEXT NOT NULL, channel TEXT NOT NULL, PRIMARY KEY (day, id))");
-    sql.exec("CREATE TABLE IF NOT EXISTS daily (day TEXT PRIMARY KEY, data TEXT NOT NULL)");
+    // Per-install rows from the first design (never used live).
+    sql.exec("DROP TABLE IF EXISTS seen");
+    sql.exec("DROP TABLE IF EXISTS daily");
+    sql.exec("CREATE TABLE IF NOT EXISTS totals (period TEXT PRIMARY KEY, data TEXT NOT NULL)");
   }
 
-  // Returns true when this install wasn't counted today yet.
-  async add(day, id, version, mode, channel) {
+  _bump(period, fn) {
     const sql = this.ctx.storage.sql;
-    const cutoff = new Date(Date.now() - USAGE_DAYS_KEPT * 86400000).toISOString().slice(0, 10);
-    sql.exec("DELETE FROM seen WHERE day < ?", cutoff);
-    const before = sql.exec("SELECT COUNT(*) AS n FROM seen WHERE day = ? AND id = ?", day, id).one().n;
-    if (before) return false;
-    sql.exec("INSERT INTO seen (day, id, version, mode, channel) VALUES (?, ?, ?, ?, ?)",
-      day, id, version, mode, channel);
-    const group = (col) => Object.fromEntries(sql.exec(
-      `SELECT ${col} AS k, COUNT(*) AS n FROM seen WHERE day = ? GROUP BY ${col}`, day)
-      .toArray().map((r) => [r.k, r.n]));
-    const active = sql.exec("SELECT COUNT(*) AS n FROM seen WHERE day = ?", day).one().n;
-    sql.exec("INSERT OR REPLACE INTO daily (day, data) VALUES (?, ?)", day, JSON.stringify({
-      active, mode: group("mode"), version: group("version"), channel: group("channel"),
-    }));
-    return true;
+    const rows = sql.exec("SELECT data FROM totals WHERE period = ?", period).toArray();
+    const rec = rows.length ? JSON.parse(rows[0].data) : {};
+    fn(rec);
+    sql.exec("INSERT OR REPLACE INTO totals (period, data) VALUES (?, ?)", period, JSON.stringify(rec));
   }
 
-  // Daily totals plus distinct installs over the last 7 and 30 days.
-  async report() {
-    const sql = this.ctx.storage.sql;
-    const since = (days) => new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
-    const span = (days) => {
-      const from = since(days);
-      const total = sql.exec("SELECT COUNT(DISTINCT id) AS n FROM seen WHERE day >= ?", from).one().n;
-      // Each install counted once, under its latest mode and channel.
-      const latest = sql.exec(
-        "SELECT s.mode, s.channel FROM seen s JOIN (SELECT id, MAX(day) AS d FROM seen " +
-        "WHERE day >= ? GROUP BY id) m ON s.id = m.id AND s.day = m.d", from).toArray();
-      const tally = (key) => latest.reduce((acc, r) => ((acc[r[key]] = (acc[r[key]] || 0) + 1), acc), {});
-      return { from, installs: total, mode: tally("mode"), channel: tally("channel") };
+  async add(day, c) {
+    const inc = (obj, key) => { obj[key] = (obj[key] || 0) + 1; };
+    const tally = (rec) => {
+      inc(rec, "active");
+      for (const k of ["mode", "version", "channel", "dictations"]) {
+        rec[k] = rec[k] || {};
+        inc(rec[k], c[k]);
+      }
     };
-    const days = sql.exec("SELECT day, data FROM daily ORDER BY day DESC LIMIT 400").toArray()
-      .map((r) => ({ day: r.day, ...JSON.parse(r.data) }));
-    return { last_7_days: span(7), last_30_days: span(30), days };
+    this._bump("day:" + day, (rec) => {
+      tally(rec);
+      if (c.new_install) inc(rec, "new");
+    });
+    if (c.week_first) this._bump("week:" + isoWeek(day), tally);
+    if (c.month_first) this._bump("month:" + day.slice(0, 7), tally);
+    if (c.new_install) this._bump("all", (rec) => inc(rec, "installs"));
+  }
+
+  async report() {
+    const rows = this.ctx.storage.sql.exec(
+      "SELECT period, data FROM totals ORDER BY period DESC").toArray();
+    const out = { days: [], weeks: [], months: [], new_installs_total: 0 };
+    for (const r of rows) {
+      const [kind, key] = r.period.split(":");
+      const data = JSON.parse(r.data);
+      if (kind === "all") out.new_installs_total = data.installs || 0;
+      else out[kind + "s"].push({ [kind]: key, ...data });
+    }
+    out.days = out.days.slice(0, 400);
+    return out;
   }
 }
 
@@ -451,16 +465,26 @@ async function handleUsage(request, env) {
   } catch {
     return badRequest("bad_json", "Body is not JSON.");
   }
-  if (!body || typeof body !== "object") return badRequest("bad_json", "Body is not an object.");
-  const { id, version, mode, channel } = body;
-  if (typeof id !== "string" || !/^[0-9a-f]{64}$/.test(id)) {
-    return badRequest("bad_id", "id must be 64 lowercase hex characters.");
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return badRequest("bad_json", "Body is not an object.");
   }
+  const allowed = ["version", "mode", "channel", "new_install", "week_first", "month_first",
+    "dictations"];
+  if (Object.keys(body).some((k) => !allowed.includes(k))) {
+    return badRequest("unknown_field", "Only " + allowed.join(", ") + " are accepted.");
+  }
+  const { version, mode, channel, dictations } = body;
   if (typeof version !== "string" || !/^\d{1,3}\.\d{1,3}\.\d{1,4}$/.test(version)) {
     return badRequest("bad_version", "version must look like 1.3.25.");
   }
   if (!USAGE_MODES.includes(mode)) return badRequest("bad_mode", "Unknown mode.");
   if (!USAGE_CHANNELS.includes(channel)) return badRequest("bad_channel", "Unknown channel.");
+  if (!USAGE_DICTATIONS.includes(dictations)) {
+    return badRequest("bad_dictations", "Unknown dictations range.");
+  }
+  for (const k of ["new_install", "week_first", "month_first"]) {
+    if (typeof body[k] !== "boolean") return badRequest("bad_flag", k + " must be true or false.");
+  }
   const ipName = await ipQuotaName(request);
   if (ipName) {
     const q = await checkAndIncrementQuota(env, "usage:" + ipName, USAGE_PER_IP_PER_DAY);
@@ -469,8 +493,11 @@ async function handleUsage(request, env) {
         { status: 429 });
     }
   }
-  const counted = await usageStore(env).add(today(), id, version, mode, channel);
-  return Response.json({ ok: true, counted });
+  await usageStore(env).add(today(), {
+    version, mode, channel, dictations,
+    new_install: body.new_install, week_first: body.week_first, month_first: body.month_first,
+  });
+  return Response.json({ ok: true });
 }
 
 // Record a limit hit without delaying the response or ever failing it.
@@ -908,7 +935,7 @@ export default {
       return unauthorized();
     }
     if (url.pathname === "/usage") {
-      // Before the install-id check: the check-in carries only a hash of it.
+      // Before the install-id check: the check-in carries no identifier.
       try {
         return await handleUsage(request, env);
       } catch (err) {

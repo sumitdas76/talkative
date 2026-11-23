@@ -72,12 +72,14 @@ _KEYS = {
     # checkboxes) were removed 2026-10-26 -- always on now; a saved value
     # is ignored, so a "context_cloud": false every save wrote is too.
     "send_diagnostics": "SEND_DIAGNOSTICS",
-    # Anonymous install count (usage_ping.py): the user's answer, whether
-    # they were asked, the random code, the last check-in's UTC day.
+    # Anonymous usage count (usage_ping.py): the off switch and the
+    # check-in's bookkeeping (no identifier).
     "usage_count": "USAGE_COUNT",
-    "usage_asked": "USAGE_ASKED",
-    "usage_id": "USAGE_ID",
     "usage_last_day": "USAGE_LAST_DAY",
+    "usage_last_week": "USAGE_LAST_WEEK",
+    "usage_last_month": "USAGE_LAST_MONTH",
+    "usage_new_install": "USAGE_NEW_INSTALL",
+    "usage_dictations": "USAGE_DICTATIONS",
     "speech_service": "SPEECH_SERVICE",
     # DPAPI-encrypted, only this Windows user can read it (secret_store.py).
     "groq_key_dpapi": "GROQ_KEY_DPAPI",

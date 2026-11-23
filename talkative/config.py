@@ -449,6 +449,8 @@ RELEASES_API_URL = (
 )
 # Opened by Settings > About's "Read the privacy policy" link.
 PRIVACY_URL = "https://github.com/sumitdas76/talkative/blob/main/PRIVACY.md"
+# The public repo, for the "Star on GitHub" card in Settings > About.
+REPO_URL = "https://github.com/sumitdas76/talkative"
 # The replaced model is kept for undo until this many words have been
 # dictated with the new one (usage-based grace, spec section 7.6).
 UPDATE_GRACE_WORDS = 1000
@@ -504,15 +506,17 @@ DEBUG_AUDIO_KEEP = 30
 # MUST default False; the user turns it on in Settings > About and
 # confirms what is sent.
 SEND_DIAGNOSTICS = False
-# Anonymous count of active installs (usage_ping.py). MUST default False:
-# the user is asked once (first-run screen, or a small window after the
-# update) and nothing is sent before a yes. USAGE_ID is a random code made
-# for this count alone, never sent with anything else; USAGE_LAST_DAY is
-# the UTC day of the last check-in.
-USAGE_COUNT = False
-USAGE_ASKED = False
-USAGE_ID = ""
+# Anonymous usage count (usage_ping.py): on by default and disclosed in
+# PRIVACY.md (user's decision, 2026-11-23); off switch in Settings > About.
+# No identifier is sent. The rest is the check-in's own bookkeeping: the
+# UTC day / ISO week / month of the last check-in, whether the first-run
+# setup finished since (a new install), and dictations since then.
+USAGE_COUNT = True
 USAGE_LAST_DAY = ""
+USAGE_LAST_WEEK = ""
+USAGE_LAST_MONTH = ""
+USAGE_NEW_INSTALL = False
+USAGE_DICTATIONS = 0
 
 # ---------------------------------------------------------------------------
 # Startup

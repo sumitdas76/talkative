@@ -113,22 +113,7 @@ def _build(overlay, on_choice):
         ttk.Label(local_box, wraplength=460, text=hardware.local_fit()).pack(
             anchor="w", pady=(8, 0))
 
-        # Anonymous install count (usage_ping.py): asked here, consent
-        # only -- two equal choices, neither selected. Left unanswered,
-        # usage_ping.maybe_ask() asks once in its own window next start.
-        count_box = ttk.LabelFrame(root, text="Help count users (optional)", padding=12)
-        count_box.pack(fill="x", padx=18, pady=(6, 6))
-        ttk.Label(count_box, wraplength=440, style="Muted.TLabel",
-                  text=usage_ping.QUESTION).pack(anchor="w")
-        count = tk.StringVar(value="")
-        count_row = ttk.Frame(count_box)
-        count_row.pack(anchor="w", pady=(6, 0))
-        ttk.Radiobutton(count_row, text=usage_ping.YES, variable=count,
-                        value="yes").pack(side="left")
-        ttk.Radiobutton(count_row, text=usage_ping.NO, variable=count,
-                        value="no").pack(side="left", padx=(16, 0))
-
-        status = ttk.Label(root, padding=(18, 4, 18, 0), style="Muted.TLabel", wraplength=480)
+        status =ttk.Label(root, padding=(18, 4, 18, 0), style="Muted.TLabel", wraplength=480)
         status.pack(anchor="w")
         bar = ttk.Progressbar(root, mode="indeterminate", length=300)
 
@@ -148,8 +133,7 @@ def _build(overlay, on_choice):
                 config.CLOUD_NOTICE_DONE = True
                 values["cloud_notice_done"] = True
             settings.save(values)
-            if count.get() in ("yes", "no"):
-                usage_ping.set_answer(count.get() == "yes")
+            usage_ping.mark_new_install()
             _mark_done()
             root.destroy()
             if on_choice:

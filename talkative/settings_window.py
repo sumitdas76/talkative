@@ -2052,7 +2052,8 @@ class _SettingsWindow:
             self._model_delete_worker(tier, size)
 
     def _tab_about(self, f):
-        ver = self._section(f, "Version", first=True)
+        self._star_card(f)
+        ver = self._section(f, "Version")
         row = ttk.Frame(ver)
         row.pack(fill="x")
         row.columnconfigure(0, weight=1)
@@ -2106,27 +2107,40 @@ class _SettingsWindow:
                  + feedback.install_id()[:8],
         ).pack(anchor="w", pady=(4, 0))
 
-        # Anonymous install count (usage_ping.py). Nothing selected until
-        # the user has answered once (consent, not a preset default).
-        count = self._section(f, "Anonymous user count")
-        self.var_usage = tk.StringVar(
-            value=("yes" if config.USAGE_COUNT else "no") if config.USAGE_ASKED else "")
-        ttk.Radiobutton(
-            count, text="Count this install in the anonymous user total",
-            variable=self.var_usage, value="yes",
-        ).pack(anchor="w", pady=2)
-        ttk.Radiobutton(
-            count, text="Don't count this install",
-            variable=self.var_usage, value="no",
-        ).pack(anchor="w", pady=2)
-        code = usage_ping.short_code()
+        # Anonymous usage count (usage_ping.py): on by default and disclosed
+        # (user's decision, 2026-11-23); no identifier is sent.
+        count = self._section(f, "Anonymous usage count")
+        self.var_usage = tk.BooleanVar(value=config.USAGE_COUNT)
+        row = self._setting_row(
+            count, "Send the anonymous usage count",
+            "Once a day: version, Cloud or Local, and roughly how many "
+            "dictations. No ID and nothing you dictate.")
+        ttk.Checkbutton(row, variable=self.var_usage,
+                        style="Switch.TCheckbutton").grid(row=0, column=1, sticky="e")
+
+    def _star_card(self, f):
+        """A quiet request for a GitHub star (user's request, 2026-11-23):
+        one card here, never a popup or a reminder."""
+        card = ttk.Frame(f, style="Card.TFrame", padding=(16, 12))
+        card.pack(fill="x", pady=(0, 6))
+        card.columnconfigure(0, weight=1)
+        text = ttk.Frame(card, style="CardBody.TFrame")
+        text.grid(row=0, column=0, sticky="w")
+        ttk.Label(text, text=f"Like {APP_NAME}?", style="CardTitle.TLabel").pack(anchor="w")
         ttk.Label(
-            count, wraplength=560, style="Muted.TLabel",
-            text="Once a day: a random code made only for this count, the "
-                 "app version, and Cloud or Local. Nothing you dictate. Codes "
-                 "are deleted after 30 days."
-                 + (f" Your count code: {code}" if code else ""),
-        ).pack(anchor="w", pady=(4, 0))
+            text, wraplength=420, style="CardMuted.TLabel",
+            text=f"{APP_NAME} is free and made by one person. A star on "
+                 "GitHub helps other people find it.",
+        ).pack(anchor="w", pady=(2, 0))
+        open_repo = lambda e=None: webbrowser.open(config.REPO_URL)  # noqa: E731
+        repo = ttk.Label(text, text=config.REPO_URL.replace("https://", ""),
+                         style="Card.TLabel", foreground=self._link, cursor="hand2",
+                         takefocus=True)
+        repo.pack(anchor="w", pady=(4, 0))
+        for seq in ("<Button-1>", "<Return>", "<space>"):
+            repo.bind(seq, open_repo)
+        ttk.Button(card, text="★  Star on GitHub", style="Accent.TButton",
+                   command=open_repo).grid(row=0, column=1, sticky="e", padx=(12, 0))
 
     def _check_updates(self):
         self.check_updates_btn.config(state="disabled")
@@ -2290,10 +2304,7 @@ class _SettingsWindow:
             "hotkey_mode": self.var_hotkey_mode.get(),
             "dictionary": dictionary,
         }
-        usage = self.var_usage.get()
-        if usage in ("yes", "no") and (
-                not config.USAGE_ASKED or config.USAGE_COUNT != (usage == "yes")):
-            usage_ping.set_answer(usage == "yes")
+        values["usage_count"] = self.var_usage.get()
         problem = _hotkey_problem(
             self.pending_hotkey or _key_names(config.HOTKEY),
             self.pending_dev_hotkey if self.pending_dev_hotkey is not None

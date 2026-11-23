@@ -9,9 +9,9 @@ off. The source code in this repository is the reference: nothing is
 sent that isn't described here.
 
 Talkative has no accounts, no ads and no tracking across apps or sites.
-If you agree, it sends one anonymous daily count (see "Counting
-installs" below). The only diagnostics are the ones you can choose to
-send (below).
+It sends one anonymous usage count a day, with no ID in it (see
+"Anonymous usage count" below; you can turn it off). The only
+diagnostics are the ones you can choose to send (below).
 
 
 Your choice: Cloud or Local
@@ -179,30 +179,31 @@ reports already sent are deleted when their 30 days are up, or sooner if
 you ask through the Feedback box.
 
 
-Counting installs (only if you said yes)
-----------------------------------------
+Anonymous usage count (on unless you turn it off)
+-------------------------------------------------
 
-Talkative asks once whether it may count this install: on the first-run
-screen, or, if you installed it before this was added, in a small window
-after the update. Nothing is sent until you answer, and nothing at all
-if you say no.
+Once a day, in either mode, Talkative tells Talkative's server
+(Cloudflare) that one copy of Talkative was used, so the maintainer
+knows how many people use it. Exactly this is sent, nothing more:
 
-If you say yes, once a day Talkative sends Talkative's server
-(Cloudflare) a random code created on your PC for this count alone,
-plus the app version, whether you use Cloud, Cloud with your own Groq
-key, or Local, and how you installed it (installer, Microsoft Store, or
-from source). The code is never sent with your dictation, feedback or
-diagnostic data, and it is not your install ID. Nothing you dictate is
-included. Your network address is not stored; as with Cloud requests,
-a daily count is filed under a one-way scrambled form of it, to allow
-at most 20 check-ins a day from one address.
+- the app version,
+- whether you use Cloud, Cloud with your own Groq key, or Local,
+- how you installed it (installer, Microsoft Store, or from source),
+- roughly how many dictations since the last count, as a range
+  (0, 1-5, 6-20, 21-50 or more than 50), never what you dictated,
+- three yes/no marks: whether this is the first count since you
+  installed Talkative, the first this week, and the first this month
+  (so weekly and monthly users can be counted without any ID).
 
-Why: to know how many people use Talkative, to plan the free Cloud
-capacity, and to know when old versions can be retired. The per-install
-codes are deleted after 30 days; after that only daily totals (numbers)
-are kept. Change your answer any time in Settings > About. To have your
-code deleted sooner, send the 8 characters shown there ("Your count
-code") through the Feedback box.
+No identifier of any kind is sent: not your install ID, not a code,
+not a hash. Nothing in it can be traced back to you or your PC, and the
+server keeps only totals (for example "120 copies used on 3 December").
+Your network address is not stored; as with Cloud requests, a daily
+count is filed under a one-way scrambled form of it, to allow at most
+20 of these a day from one address. Why: to know how many people use
+Talkative, to plan the free Cloud capacity, and to know when old
+versions can be retired. Turn it off in Settings > About ("Send the
+anonymous usage count"); nothing is sent from then on.
 
 
 What stays on your PC
