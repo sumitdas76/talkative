@@ -102,13 +102,28 @@ def _under(path, parent):
         return False
 
 
+# Written into a models folder beside the EXE when the app makes it; the
+# uninstaller deletes that folder only when this file is in it, so it can
+# never remove a folder of the user's that happens to be called "models".
+MODELS_MARKER = ".talkative-models"
+
+
 def _writable(d):
+    """d (the folder the models would go in, usually not there yet) can be
+    created: probed in its parent, which is left as it was."""
     try:
-        d.mkdir(parents=True, exist_ok=True)
-        probe = d / ".talkative-write-test"
+        probe = d.parent / ".talkative-write-test"
         probe.write_bytes(b"")
         probe.unlink()
         return True
+    except OSError:
+        return False
+
+
+def _has_models(d):
+    """Any non-empty folder in d; False (not an error) when d can't be read."""
+    try:
+        return d.is_dir() and any(p.is_dir() and any(p.iterdir()) for p in d.iterdir())
     except OSError:
         return False
 
@@ -135,7 +150,13 @@ def choose_models_dir(exe=None, frozen=None, store=None, profile=None, default=N
     profile = profile or os.environ.get("USERPROFILE", "")
     if not frozen or store or (profile and _under(exe, profile)):
         return default
-    if default.is_dir() and any(p.is_dir() and any(p.iterdir()) for p in default.iterdir()):
+    # Only an installed copy (the installer's uninstaller sits beside it):
+    # a portable EXE in Downloads or on a stick, or the dev root copy, keeps
+    # using %LOCALAPPDATA% and leaves nothing beside itself (neutral QA
+    # 2026-11-23).
+    if not (exe.parent / "unins000.exe").exists():
+        return default
+    if _has_models(default):
         return default
     beside = exe.parent / "models"
     return beside if _writable(beside) else default
@@ -148,6 +169,13 @@ def models_dir():
     if _models_dir is None:
         _models_dir = choose_models_dir()
     _models_dir.mkdir(parents=True, exist_ok=True)
+    if _models_dir != settings_dir() / "models":
+        marker = _models_dir / MODELS_MARKER
+        if not marker.exists():
+            try:
+                marker.write_text("Talkative's speech and grammar models.\n", encoding="utf-8")
+            except OSError:
+                pass
     return _models_dir
 
 
