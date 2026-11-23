@@ -2126,11 +2126,13 @@ class _SettingsWindow:
         card.columnconfigure(0, weight=1)
         text = ttk.Frame(card, style="CardBody.TFrame")
         text.grid(row=0, column=0, sticky="w")
-        ttk.Label(text, text=f"Like {APP_NAME}?", style="CardTitle.TLabel").pack(anchor="w")
+        ttk.Label(text, text="Got a feature you'd love to see?",
+                  style="CardTitle.TLabel").pack(anchor="w")
         ttk.Label(
             text, wraplength=420, style="CardMuted.TLabel",
-            text=f"{APP_NAME} is free and made by one person. A star on "
-                 "GitHub helps other people find it.",
+            text=f"Stars help {APP_NAME} reach more people, and a bigger "
+                 "community gets requests built sooner. One click helps "
+                 "yours get made.",
         ).pack(anchor="w", pady=(2, 0))
         open_repo = lambda e=None: webbrowser.open(config.REPO_URL)  # noqa: E731
         repo = ttk.Label(text, text=config.REPO_URL.replace("https://", ""),
