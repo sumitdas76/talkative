@@ -76,8 +76,9 @@ and for speech-to-text when you choose "Indian English".
 
 The key is stored on your PC in settings.json, encrypted with Windows
 so that only your Windows account on this PC can read it. It is sent
-only to Groq, and never written to a log. Remove key in the same place
-deletes it.
+only to Groq, and never written to a log. Switching back to the shared
+key keeps it saved, so you can switch again later; Remove key in the
+same place deletes it.
 
 ### Rewriting selected text (Cloud only)
 

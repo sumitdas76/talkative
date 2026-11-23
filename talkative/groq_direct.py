@@ -69,8 +69,14 @@ def key():
         return _cache["key"]
 
 
-def active():
+def saved():
+    """An own key is saved (whether or not it's the one in use)."""
     return bool(key())
+
+
+def active():
+    """Cloud uses the own key: one is saved and it's the chosen key."""
+    return config.USE_OWN_GROQ_KEY and saved()
 
 
 # One reused HTTPS connection (as cloud_client does for the Worker): a new

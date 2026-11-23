@@ -983,16 +983,21 @@ class _SettingsWindow:
         self._render_own_key()
 
     def _key_choice_changed(self):
-        # Back to the shared key with a key saved: that key is removed
-        # (an unused key is better not kept).
-        if self.var_key_choice.get() == "shared" and groq_direct.active():
-            self._remove_own_key()
-            return
-        self._render_own_key("")
+        # Acts at once. The saved key is kept when the shared key is
+        # picked: people swap between the two to have enough for the day.
+        own = self.var_key_choice.get() == "own"
+        config.USE_OWN_GROQ_KEY = own
+        settings.save({"use_own_groq_key": own})
+        status = ""
+        if groq_direct.saved():
+            status = ("Your key is in use again." if own else
+                      "Using the shared key. Your own key is kept: pick it "
+                      "again to switch back.")
+        self._render_own_key(status)
         self._fit_scroll()
 
     def _render_own_key(self, status=None):
-        saved = groq_direct.active()
+        saved = groq_direct.saved()
         own = self.var_key_choice.get() == "own"
         if status is not None:
             self.key_status.config(text=status)
@@ -1050,7 +1055,8 @@ class _SettingsWindow:
             self._render_own_key(reason)
             return
         config.GROQ_KEY_DPAPI = blob
-        settings.save({"groq_key_dpapi": blob})
+        config.USE_OWN_GROQ_KEY = True
+        settings.save({"groq_key_dpapi": blob, "use_own_groq_key": True})
         self.var_groq_key.set("")
         self._render_own_key("Key works. Your dictations now use it.")
 

@@ -253,6 +253,10 @@ SPEECH_SERVICE = "us_english"
 # calls Groq directly with it, and Talkative Cloud only when it fails
 # (and for Indian English, which needs our Azure). "" = shared Cloud.
 GROQ_KEY_DPAPI = ""
+# Which key Cloud uses when an own key is saved: False = Talkative's shared
+# key, the own key kept for later (users swap between the two to have
+# enough for the day; user's decision 2026-11-23, don't delete it).
+USE_OWN_GROQ_KEY = True
 # Cloud busy or unreachable: app._cloud_transcribe() uses the Local voice
 # model when it's downloaded (kept loaded FALLBACK_IDLE_SECONDS after its
 # last use), otherwise retries Cloud after each of these waits (seconds).

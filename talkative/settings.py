@@ -83,6 +83,7 @@ _KEYS = {
     "speech_service": "SPEECH_SERVICE",
     # DPAPI-encrypted, only this Windows user can read it (secret_store.py).
     "groq_key_dpapi": "GROQ_KEY_DPAPI",
+    "use_own_groq_key": "USE_OWN_GROQ_KEY",
     "fix_suggestions": "FIX_SUGGESTIONS",
     "fix_dismissed": "FIX_DISMISSED",
     # Not in the settings UI: 0.0 turns the mic pre-roll off.
