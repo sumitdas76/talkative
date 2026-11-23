@@ -119,9 +119,18 @@ def due(now=None):
             and config.USAGE_LAST_DAY != keys(now)[0])
 
 
-def _mark_sent(now):
+def _mark_sent(now, counted=True):
+    """The day's check-in is done. `counted` False (refused, e.g. 429: more
+    than 20 installs behind one address, common on mobile networks) keeps
+    the new-install / first-of-week / first-of-month flags for the next
+    day's try, or that install would never be counted as new (neutral QA
+    2026-11-23)."""
     day, week, month = keys(now)
-    config.USAGE_LAST_DAY, config.USAGE_LAST_WEEK, config.USAGE_LAST_MONTH = day, week, month
+    config.USAGE_LAST_DAY = day
+    if not counted:
+        settings.save({"usage_last_day": day})
+        return
+    config.USAGE_LAST_WEEK, config.USAGE_LAST_MONTH = week, month
     config.USAGE_NEW_INSTALL = False
     config.USAGE_DICTATIONS = 0
     settings.save({"usage_last_day": day, "usage_last_week": week,
@@ -152,7 +161,7 @@ def send_if_due(now=None):
             return False
         if status != 200:
             log.warning("usage check-in refused: %s %s", status, data[:200])
-        _mark_sent(now)
+        _mark_sent(now, counted=status == 200)
         return True
 
 

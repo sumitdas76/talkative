@@ -1353,9 +1353,15 @@ def strip_backticks(text):
 # comes back as "i think i'd rather..."; when the grammar model doesn't fix
 # it (rejected or busy), "i" alone is still always "I" in prose
 # (2026-11-22). Not "i.e.", "i++", "i = 0", "/i" or "-i".
+# Also not the loop variable in prose about code ("use i as the index",
+# "loop i from 1 to 10", "pass i into the function" got a capital I --
+# neutral QA 2026-11-23).
 _LONE_I = re.compile(
-    r"(?<![\w.'/\\@#$-])(?<!\bset )(?<!\blet )(?<!\bfor )(?<!\bvariable )(?<!\bindex )i"
-    r"(?='(?:m|d|ll|ve)\b|(?![\w'+/\\@#=-]|\.\w|\s*[=+\-*/<>\[(]|\s+(?:to|in|is|equals)\b))")
+    r"(?<![\w.'/\\@#$-])(?<!\bset )(?<!\blet )(?<!\bfor )(?<!\bvariable )(?<!\bindex )"
+    r"(?<!\buse )(?<!\bloop )(?<!\bpass )(?<!\bincrement )(?<!\bdecrement )"
+    r"(?<!\biterate )(?<!\bwhere )(?<!\breturn )(?<!\bprint )i"
+    r"(?='(?:m|d|ll|ve)\b|(?![\w'+/\\@#=-]|\.\w|\s*[=+\-*/<>\[(]|"
+    r"\s+(?:to|in|is|equals|as|from|into|by|times|and j)\b))")
 
 
 def capital_i(text):
