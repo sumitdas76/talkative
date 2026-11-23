@@ -1098,16 +1098,14 @@ class _SettingsWindow:
         )
         self.local_radio.pack(anchor="w", pady=1)
 
-        self._local_op = None    # None | "downloading"
-        self._local_error = []   # messages appended by the worker, shown by the poll
-        local_row = ttk.Frame(local_box)
-        local_row.pack(fill="x")
-        self.local_status = ttk.Label(local_row, text="")
-        self.local_bar = ttk.Progressbar(local_row, mode="indeterminate", length=240)
-        self.local_download_btn = ttk.Button(
-            local_row, command=self._download_local_models
-        )
-
+        # No general "Download voice model" button here any more (2026-11-23,
+        # user: it didn't say whether it was Fast or Accurate; it fetched
+        # whichever was selected). The Fast and Accurate cards below each
+        # have their own Download; this line only says which one Local
+        # still needs.
+        self._local_error = []
+        self.local_status = ttk.Label(local_box, text="", style="Muted.TLabel",
+                                      wraplength=640)
         self._render_local_download()
         models = ttk.Frame(local_box)
         models.pack(fill="x", pady=(6, 0))
@@ -1292,58 +1290,30 @@ class _SettingsWindow:
         self.var_engine.set("cloud")
         self._engine_changed()
 
-    def _download_local_models(self):
-        self._local_op = "downloading"
-
-        def work():
-            try:
-                # Voice model only: Optimize Narration is opt-in (its card).
-                if not model_manager.is_downloaded(config.MODEL_SIZE):
-                    model_manager.download(config.MODEL_SIZE)
-            except Exception as exc:
-                self._local_error.append(f"Could not download local models:\n{exc}")
-            finally:
-                self._local_op = None
-
-        threading.Thread(target=work, daemon=True).start()
+    def _local_need_text(self):
+        """What Local still needs, naming the model; "" when the chosen
+        voice model is downloaded (the cards then say "Downloaded")."""
+        if model_manager.is_downloaded(config.MODEL_SIZE):
+            return ""
+        chosen = model_manager.MODELS.get(
+            model_manager.tier_for_size(config.MODEL_SIZE) or "fast",
+            model_manager.MODELS["fast"])["label"]
+        others = [info["label"] for info in model_manager.MODELS.values()
+                  if info["label"] != chosen and model_manager.is_downloaded(info["size"])]
+        if others:
+            return (f"The {chosen} voice model isn't downloaded. Download it below, "
+                    f"or pick {others[0]}.")
+        names = " or ".join(info["label"] for info in model_manager.MODELS.values())
+        return f"Local needs a voice model. Download {names} below."
 
     def _render_local_download(self):
-        installed = model_manager.is_downloaded(config.MODEL_SIZE)
-        if self._local_op == "downloading":
-            info = model_manager.MODELS.get(
-                model_manager.tier_for_size(config.MODEL_SIZE) or "fast",
-                model_manager.MODELS["fast"])
-            done = model_manager.speech_download_mb(config.MODEL_SIZE)
-            pct = model_manager.download_percent(done, info["download_mb"])
-            self.local_status.config(
-                text=f"Downloading… {pct}% ({min(int(done), info['download_mb'])} "
-                     f"of {info['download_mb']} MB)")
-            self.local_download_btn.pack(anchor="w", pady=(4, 4))
-            self.local_status.pack(anchor="w", before=self.local_download_btn)
-            self.local_bar.config(mode="determinate", maximum=100, value=pct)
-            self.local_bar.pack(anchor="w", pady=(0, 4), before=self.local_download_btn)
-            self.local_download_btn.config(state="disabled", text="Downloading…")
+        text = self._local_need_text()
+        if text:
+            self.local_status.config(text=text)
+            # Right under the Local radio, also when shown again later.
+            self.local_status.pack(anchor="w", pady=(2, 0), after=self.local_radio)
         else:
-            self.local_bar.pack_forget()
-            if installed:
-                # The model boxes below say "Downloaded": no status line or
-                # greyed-out button, to keep General short.
-                self.local_status.pack_forget()
-                self.local_download_btn.pack_forget()
-            else:
-                info = model_manager.MODELS.get(
-                    model_manager.tier_for_size(config.MODEL_SIZE) or "fast",
-                    model_manager.MODELS["fast"])
-                self.local_status.config(
-                    text="Local mode needs the voice model downloaded "
-                         f"first ({info['approx']})."
-                )
-                self.local_download_btn.config(
-                    state="normal",
-                    text=f"Download voice model ({info['download_gb']} GB)"
-                )
-                self.local_download_btn.pack(anchor="w", pady=(4, 4))
-                self.local_status.pack(anchor="w", before=self.local_download_btn)
+            self.local_status.pack_forget()
         while self._local_error:
             messagebox.showerror(APP_NAME, self._local_error.pop(0), parent=self.root)
 
