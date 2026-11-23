@@ -265,6 +265,64 @@ def _apply_section_glyph(style, canvas, card, edge):
     style.layout("Section.TFrame", [(_SECTION_ELEMENT, {"sticky": "nswe"})])
 
 
+def _window_picture(hwnd, x, y, w, h):
+    """What the window `hwnd` shows inside the screen rectangle x, y, w, h
+    (its client area), as a PIL image, via PrintWindow: works even where
+    another window overlaps it. None on failure. Same logical pixels as Tk
+    (the app isn't DPI-aware)."""
+    import ctypes
+    from ctypes import wintypes
+    u, g = ctypes.windll.user32, ctypes.windll.gdi32
+    H = ctypes.c_void_p
+    for f in (u.GetWindowDC, g.CreateCompatibleDC, g.CreateCompatibleBitmap, g.SelectObject):
+        f.restype = H
+    u.GetWindowDC.argtypes = [H]
+    g.CreateCompatibleDC.argtypes = [H]
+    g.CreateCompatibleBitmap.argtypes = [H, ctypes.c_int, ctypes.c_int]
+    g.SelectObject.argtypes = [H, H]
+    u.PrintWindow.argtypes = [H, H, ctypes.c_uint]
+    g.GetDIBits.argtypes = [H, H, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p,
+                            ctypes.c_void_p, ctypes.c_uint]
+    g.DeleteObject.argtypes = [H]
+    g.DeleteDC.argtypes = [H]
+    u.ReleaseDC.argtypes = [H, H]
+    u.GetWindowRect.argtypes = [H, ctypes.c_void_p]
+
+    class BIH(ctypes.Structure):
+        _fields_ = [("biSize", wintypes.DWORD), ("biWidth", ctypes.c_long),
+                    ("biHeight", ctypes.c_long), ("biPlanes", wintypes.WORD),
+                    ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
+                    ("biSizeImage", wintypes.DWORD), ("a", ctypes.c_long),
+                    ("b", ctypes.c_long), ("c", wintypes.DWORD), ("d", wintypes.DWORD)]
+
+    r = wintypes.RECT()
+    if not u.GetWindowRect(hwnd, ctypes.byref(r)):
+        return None
+    ww, wh = r.right - r.left, r.bottom - r.top
+    if ww <= 0 or wh <= 0:
+        return None
+    hdc = u.GetWindowDC(hwnd)
+    mdc = g.CreateCompatibleDC(hdc)
+    bmp = g.CreateCompatibleBitmap(hdc, ww, wh)
+    try:
+        g.SelectObject(mdc, bmp)
+        if not u.PrintWindow(hwnd, mdc, 2):  # PW_RENDERFULLCONTENT
+            return None
+        buf = ctypes.create_string_buffer(ww * wh * 4)
+        bih = BIH(ctypes.sizeof(BIH), ww, -wh, 1, 32, 0, 0, 0, 0, 0, 0)
+        if not g.GetDIBits(mdc, bmp, 0, wh, buf, ctypes.byref(bih), 0):
+            return None
+        whole = Image.frombuffer("RGBA", (ww, wh), buf, "raw", "BGRA", 0, 1).convert("RGB")
+    finally:
+        g.DeleteObject(bmp)
+        g.DeleteDC(mdc)
+        u.ReleaseDC(hwnd, hdc)
+    left, top = x - r.left, y - r.top
+    if left < 0 or top < 0 or left + w > ww or top + h > wh:
+        return None
+    return whole.crop((left, top, left + w, top + h))
+
+
 def _fonts(root):
     """Windows 11's UI font (Segoe UI Variable) when it's installed, else
     Segoe UI (Windows 10)."""
@@ -1296,7 +1354,49 @@ class _SettingsWindow:
     def _theme_changed(self):
         config.THEME = self.var_theme.get()
         config.COLOR_SCHEME = self.var_scheme.get()
+        # A cross-fade (2026-11-23, user: the switch "looks very jagged"):
+        # a picture of the window as it was covers it while every control
+        # restyles underneath, then fades out. Without a picture (it
+        # couldn't be taken), the switch is applied as before.
+        cover = self._cover_with_snapshot()
         self._apply_theme()
+        if cover is not None:
+            self.root.update_idletasks()
+            self._fade_out(cover)
+
+    def _cover_with_snapshot(self):
+        """A borderless window over the Settings window's inside, showing
+        what it looks like now; None if that couldn't be done."""
+        try:
+            self.root.update_idletasks()
+            x, y = self.root.winfo_rootx(), self.root.winfo_rooty()
+            w, h = self.root.winfo_width(), self.root.winfo_height()
+            shot = _window_picture(int(self.root.wm_frame(), 16), x, y, w, h)
+            if shot is None:
+                return None
+            cover = tk.Toplevel(self.root)
+            cover.overrideredirect(True)
+            cover.geometry(f"{w}x{h}+{x}+{y}")
+            cover.attributes("-alpha", 1.0)
+            cover._photo = ImageTk.PhotoImage(shot)  # kept while it shows
+            tk.Label(cover, image=cover._photo, bd=0, highlightthickness=0).pack()
+            cover.update()
+            return cover
+        except Exception:
+            log.debug("theme cross-fade: no snapshot", exc_info=True)
+            return None
+
+    def _fade_out(self, cover, step=0):
+        steps = 12  # ~200 ms at 16 ms a step
+        try:
+            if step >= steps or not cover.winfo_exists():
+                cover.destroy()
+                return
+            t = (step + 1) / steps
+            cover.attributes("-alpha", (1 - t) ** 2)  # fast at first, gentle at the end
+            self.root.after(16, lambda: self._fade_out(cover, step + 1))
+        except tk.TclError:
+            pass
 
     def _tab_dictionary(self, f):
         words = self._section(f, "Your Auto Text", first=True)
