@@ -594,10 +594,12 @@ class _SettingsWindow:
         """Size the page area: as tall as the tallest page (so the window
         doesn't jump on a page switch) but no taller than the screen
         allows; a scrollbar shows only when the chosen page doesn't fit."""
-        canvas, area = self._scroll_canvas, self._area
+        canvas = self._scroll_canvas
         page = self._pages[self.page]
         need = page.winfo_reqheight()
-        want_w = area.winfo_reqwidth()
+        # Only the chosen page is on screen (select_page), so the widest
+        # page sets the width, as the tallest sets the height.
+        want_w = max(p.winfo_reqwidth() for p in self._pages.values())
         want_h = max(p.winfo_reqheight() for p in self._pages.values())
         if self._page_cap:
             want_h = min(want_h, self._page_cap)
@@ -688,7 +690,14 @@ class _SettingsWindow:
         return "break"
 
     def select_page(self, name):
-        self._pages[name].tkraise()
+        # Only the chosen page is gridded (was: all seven stacked in one
+        # cell and the chosen one raised). Hidden pages stacked underneath
+        # were restyled and repainted too, so a Light/Dark switch took ~0.9 s
+        # and the window changed color piece by piece (user, 2026-11-23).
+        for n, page in self._pages.items():
+            if n != name:
+                page.grid_remove()
+        self._pages[name].grid()
         for n, label in self._nav.items():
             label.state(["selected" if n == name else "!selected"])
         self.page = name
@@ -746,7 +755,8 @@ class _SettingsWindow:
         # clam in both modes: the native vista theme draws tabs itself and
         # ignores color styling, and the active tab must stand out.
         style = ttk.Style(self.root)
-        style.theme_use("clam")
+        if style.theme_use() != "clam":
+            style.theme_use("clam")
         # Colors from palette.py (2026-10-26, user request: "more
         # colorful", then "not the generic AI look").
         pal = palette.get()
