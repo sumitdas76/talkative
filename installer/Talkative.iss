@@ -51,18 +51,37 @@ OutputDir=Output
 OutputBaseFilename=TalkativeSetup
 Compression=lzma2
 SolidCompression=yes
-WizardStyle=modern
+; Look (2026-11-23, the user: "so like Windows XP ... people will run
+; away from this window"): Inno 6.7's Windows 11 style, following the
+; system light/dark setting, no divider lines; branded art from
+; assets/generate_installer_art.py at every Windows scale. One page
+; (welcome + Install), then progress, then the app opens by itself:
+; no folder, tasks, ready or finished pages. Needs Inno Setup >= 6.7.
+WizardStyle=modern dynamic windows11 hidebevels
+WizardImageFile=art\welcome-100.png,art\welcome-125.png,art\welcome-150.png,art\welcome-175.png,art\welcome-200.png,art\welcome-250.png
+WizardImageFileDynamicDark=art\welcome-100.png,art\welcome-125.png,art\welcome-150.png,art\welcome-175.png,art\welcome-200.png,art\welcome-250.png
+WizardSmallImageFile=art\small-100.png,art\small-125.png,art\small-150.png,art\small-175.png,art\small-200.png,art\small-250.png
+WizardSmallImageFileDynamicDark=art\small-100.png,art\small-125.png,art\small-150.png,art\small-175.png,art\small-200.png,art\small-250.png
+DisableWelcomePage=no
+DisableDirPage=yes
+DisableReadyPage=yes
+DisableFinishedPage=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=..\assets\icon.ico
-; Shown as a page before installing: SignPath Foundation's terms require
-; software that sends user data to servers the user didn't specify to
-; display its privacy policy during installation. Kept pure ASCII and
-; plain-text friendly so the same file reads well here and on GitHub.
-; Silent (update) installs skip the page.
-InfoBeforeFile=..\PRIVACY.md
+; The privacy policy is a link on the welcome page (was a full page of
+; PRIVACY.md before 2026-11-23, for SignPath Foundation's terms; SignPath
+; declined on 2026-11-13. If we reapply, check whether a link is enough).
+; "Start when Windows starts" is a checkbox on the same page (was the
+; [Tasks] page).
 
-[Tasks]
-Name: "autostart"; Description: "Start {#MyAppName} when Windows starts"
+[Messages]
+SetupWindowTitle=Install %1
+WelcomeLabel1=Talk instead of type
+WelcomeLabel2=Talkative turns your voice into text in any app. Hold the key, speak, let go, and your words appear where the cursor is.%n%nInstalls just for you, with no admin rights. It takes a few seconds.
+WizardInstalling=Installing
+; The welcome page's own "Click Next to continue" line: there is no Next.
+ClickNext=
+InstallingLabel=Setting up [name]. It opens by itself when it's ready.
 
 [Files]
 Source: "..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -74,8 +93,9 @@ Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 [Run]
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; \
     StatusMsg: "Installing system components..."; Check: VCRuntimeMissing
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; \
-    Flags: nowait postinstall skipifsilent
+; The app itself is opened from CurStepChanged(ssDone), after the
+; autostart choice is written: with the finished page gone, a postinstall
+; entry's timing relative to that write isn't something to rely on.
 
 [Code]
 { /UPDATE is passed only by the app's own one-click updater (updater.py),
@@ -161,13 +181,68 @@ begin
     Result := Installed <> 1;
 end;
 
+var
+  AutostartBox: TNewCheckBox;
+
+procedure OpenPrivacy(Sender: TObject);
+var
+  ResultCode: Integer;
+begin
+  ShellExecAsOriginalUser('open', 'https://github.com/sumitdas76/talkative/blob/main/PRIVACY.md',
+    '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+end;
+
+procedure InitializeWizard;
+var
+  Link: TNewStaticText;
+  Page: TNewNotebookPage;
+begin
+  Page := WizardForm.WelcomePage;
+  { Inno appends blank lines + ClickNext to this label; trim them so the
+    checkbox sits right under the text. }
+  WizardForm.WelcomeLabel2.Caption := Trim(WizardForm.WelcomeLabel2.Caption);
+  WizardForm.WelcomeLabel2.AdjustHeight;
+
+  AutostartBox := TNewCheckBox.Create(WizardForm);
+  AutostartBox.Parent := Page;
+  AutostartBox.Caption := 'Start {#MyAppName} when Windows starts';
+  AutostartBox.Checked := True;
+  AutostartBox.Left := WizardForm.WelcomeLabel2.Left;
+  AutostartBox.Top := WizardForm.WelcomeLabel2.Top + WizardForm.WelcomeLabel2.Height + ScaleY(20);
+  AutostartBox.Width := WizardForm.WelcomeLabel2.Width;
+  AutostartBox.Height := ScaleY(22);
+
+  Link := TNewStaticText.Create(WizardForm);
+  Link.Parent := Page;
+  Link.Caption := 'Privacy policy';
+  Link.Cursor := crHand;
+  Link.Font.Style := [fsUnderline];
+  Link.Font.Color := clHotLight;
+  Link.OnClick := @OpenPrivacy;
+  Link.Left := WizardForm.WelcomeLabel2.Left;
+  Link.Top := AutostartBox.Top + AutostartBox.Height + ScaleY(12);
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = wpWelcome then
+    WizardForm.NextButton.Caption := SetupMessage(msgButtonInstall);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   SettingsFile: string;
+  ResultCode: Integer;
 begin
+  { Open the app when an interactive install is done (no finished page).
+    Silent installs (winget, the app's own /UPDATE) don't; update mode
+    relaunches from DeinitializeSetup. }
+  if (CurStep = ssDone) and not WizardSilent then
+    ShellExec('', ExpandConstant('{app}\{#MyAppExeName}'), '', '',
+      SW_SHOWNORMAL, ewNoWait, ResultCode);
   { The app owns the autostart registry sync via its settings; the installer
     only seeds the setting on a fresh install so the two never fight. }
-  if (CurStep = ssPostInstall) and WizardIsTaskSelected('autostart') then
+  if (CurStep = ssPostInstall) and AutostartBox.Checked then
   begin
     SettingsFile := ExpandConstant('{localappdata}\Talkative\settings.json');
     if not FileExists(SettingsFile) then

@@ -89,7 +89,7 @@ jobs:
           Invoke-WebRequest https://aka.ms/vs/17/release/vc_redist.x64.exe -OutFile installer\redist\vc_redist.x64.exe
 
       - name: Install Inno Setup
-        run: choco install innosetup -y --no-progress
+        run: choco install innosetup --version 6.7.3 -y --no-progress  # >= 6.7 for the Windows 11 wizard style; pinned so Inno 7 can't change the installer unnoticed
 
       - name: Build TalkativeSetup.exe
         run: |
