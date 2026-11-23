@@ -286,31 +286,43 @@ def _fonts(root):
 # or keyboard focus, a stronger one for the chosen page. Same create-once
 # rule as the checkbox.
 _NAV_ELEMENT = "SumitNav.background"
-_NAV_IMAGE = (40, 28)
+_NAV_IMAGE = (40, 32)
 _nav_images = None  # (normal, hover, chosen) photos once created
 
 
-def _draw_nav_glyphs(sidebar, hover, chosen):
+def _draw_nav_glyphs(sidebar, hover, chosen, edge, bar):
+    """The chosen page (2026-11-23, user: a better light-mode menu): a
+    raised pill with a hairline edge and a short accent bar on its left,
+    as in Windows 11 Settings. The bar sits inside the image's fixed
+    border with only straight rows in the stretched middle, so it stays one
+    piece when the pill stretches."""
     scale = 4
     w, h = _NAV_IMAGE[0] * scale, _NAV_IMAGE[1] * scale
     out = []
     for fill in (sidebar, hover, chosen):
         img = Image.new("RGBA", (w, h), sidebar)
-        ImageDraw.Draw(img).rounded_rectangle((0, 0, w - 1, h - 1), radius=7 * scale, fill=fill)
+        d = ImageDraw.Draw(img)
+        if fill == chosen:
+            d.rounded_rectangle((0, 0, w - 1, h - 1), radius=7 * scale, fill=fill,
+                                outline=edge, width=scale)
+            d.rounded_rectangle((3 * scale, 7 * scale, 6 * scale, h - 7 * scale),
+                                radius=2 * scale, fill=bar)
+        else:
+            d.rounded_rectangle((0, 0, w - 1, h - 1), radius=7 * scale, fill=fill)
         out.append(img.resize(_NAV_IMAGE, Image.LANCZOS))
     return out
 
 
-def _apply_nav_glyphs(style, sidebar, hover, chosen):
+def _apply_nav_glyphs(style, sidebar, hover, chosen, edge, bar):
     global _nav_images
-    pils = _draw_nav_glyphs(sidebar, hover, chosen)
+    pils = _draw_nav_glyphs(sidebar, hover, chosen, edge, bar)
     if _nav_images is None:
         _nav_images = tuple(ImageTk.PhotoImage(p) for p in pils)
         normal, over, picked = _nav_images
         style.element_create(
             _NAV_ELEMENT, "image", normal,
             ("selected", picked), ("active", over), ("focus", over),
-            border=8, sticky="nsew",
+            border=10, sticky="nsew",
         )
     else:
         for photo, pil in zip(_nav_images, pils):
@@ -746,8 +758,17 @@ class _SettingsWindow:
         muted = m["muted"]
         # The sidebar sits between the page and the raised color; the
         # chosen page's item is raised, hover halfway to it.
-        sidebar = pill._mix(bg, raised, 0.5)
-        nav_hover = pill._mix(sidebar, raised, 0.45)
+        dark = self._effective_theme() == "dark"
+        if dark:
+            sidebar = pill._mix(bg, raised, 0.5)
+            nav_hover = pill._mix(sidebar, raised, 0.45)
+            nav_chosen = pill._mix(raised, hover, 0.5)
+        else:
+            # Light (2026-11-23): a quiet sidebar close to the page, the
+            # chosen page a white pill, hover halfway between.
+            sidebar = pill._mix(bg, raised, 0.28)
+            nav_chosen = field
+            nav_hover = pill._mix(sidebar, raised, 0.35)
 
         # Cards on a canvas (2026-11-23): the page is `bg`, each section
         # a `card` surface (the theme's field color) with a hairline edge;
@@ -769,8 +790,12 @@ class _SettingsWindow:
         style.configure("SidebarTitle.TLabel", background=sidebar, foreground=fg,
                         font=(fonts["display"], 14))
         style.configure("SidebarMuted.TLabel", background=sidebar, foreground=muted)
-        style.configure("Nav.TLabel", foreground=fg, padding=(12, 6))
-        _apply_nav_glyphs(style, sidebar, nav_hover, pill._mix(raised, hover, 0.5))
+        style.configure("Nav.TLabel", foreground=muted, padding=(16, 7))
+        style.map("Nav.TLabel", foreground=[("selected", fg), ("active", fg), ("focus", fg)],
+                  font=[("selected", (semi, 10))])
+        _apply_nav_glyphs(style, sidebar, nav_hover, nav_chosen,
+                          edge=pill._mix(nav_chosen, border, 0.5),
+                          bar=title if dark else accent)
         style.configure("PageTitle.TLabel", background=canvas,
                         font=(fonts["display"], 20))
         style.configure("Section.TLabel", foreground=title, font=(semi, 11))
