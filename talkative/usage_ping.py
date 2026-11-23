@@ -156,6 +156,19 @@ def send_if_due(now=None):
         return True
 
 
+def send_soon():
+    """The first-run setup just finished: check in now, off the UI thread.
+    start()'s first look ran before setup was done, and the next one is
+    _POLL_SECONDS away, so without this an install whose user turns the
+    count off (or quits) in that half hour was never counted at all."""
+    def run():
+        try:
+            send_if_due()
+        except Exception:
+            log.exception("usage check-in failed")
+    threading.Thread(target=run, daemon=True, name="usage-ping-first").start()
+
+
 def start():
     """Call once at startup, after settings are loaded."""
     def run():

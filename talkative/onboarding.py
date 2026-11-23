@@ -135,6 +135,7 @@ def _build(overlay, on_choice):
             settings.save(values)
             usage_ping.mark_new_install()
             _mark_done()
+            usage_ping.send_soon()
             root.destroy()
             if on_choice:
                 on_choice(chosen_mode)
