@@ -44,7 +44,9 @@ MODELS = {
         # Shown while switching to it (load measured 2026-11-11: ~1.5 s / 12 s).
         "load_note": "a few seconds",
         # Card bullets in Settings; download size and RAM are added after.
-        "points": ["Text in 1–2 seconds", "Less accurate, most of all with accents"],
+        # Card text kept to one line per bullet (2026-11-23), so General
+        # fits 1366x768 without scrolling.
+        "points": ["Text in 1–2 seconds", "Less accurate with accents"],
         "advice": "Recommended for most people.",
     },
     "accurate": {
@@ -57,9 +59,8 @@ MODELS = {
         "download_mb": 1446,
         "ram_mb": 900,
         "load_note": "about 10 to 20 seconds",
-        "points": ["Text in about 5 seconds, even for a few words",
-                   "About 25% fewer mistakes, most of all with accents"],
-        "advice": "Pick this if Fast often mishears you.",
+        "points": ["Text in about 5 seconds", "About 25% fewer mistakes"],
+        "advice": "Pick this if Fast mishears you.",
     },
 }
 

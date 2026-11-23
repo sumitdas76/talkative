@@ -12,6 +12,7 @@ ignored.
 """
 
 import logging
+import math
 import os
 import threading
 import webbrowser
@@ -403,6 +404,37 @@ def _swatch(pal):
     ImageDraw.Draw(mask).rounded_rectangle(
         (0, 0, w * scale - 1, h * scale - 1), radius=4 * scale, fill=255)
     img.putalpha(mask)
+    return img.resize((w, h), Image.LANCZOS)
+
+
+def _anim_glyph(style, color):
+    """A small still drawing of a listening style, for its radio in
+    Settings > Appearance: a wave, seven bars, or a dot in a ring."""
+    scale, w, h = 4, 34, 14
+    img = Image.new("RGBA", (w * scale, h * scale), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    mid = h * scale / 2
+    if style == "bars":
+        heights = (0.3, 0.6, 0.9, 1.0, 0.75, 0.45, 0.25)
+        bw, gap = 2.4 * scale, 2.2 * scale
+        x0 = (w * scale - (7 * bw + 6 * gap)) / 2
+        for i, f in enumerate(heights):
+            x = x0 + i * (bw + gap)
+            half = max(bw / 2, f * (mid - scale))
+            d.rounded_rectangle((x, mid - half, x + bw, mid + half), radius=bw / 2, fill=color)
+    elif style == "pulse":
+        cx = w * scale / 2
+        r = 6.3 * scale
+        d.ellipse((cx - r, mid - r, cx + r, mid + r), outline=color, width=round(1.6 * scale))
+        r = 2.4 * scale
+        d.ellipse((cx - r, mid - r, cx + r, mid + r), fill=color)
+    else:
+        pts = []
+        for i in range(61):
+            x = i / 60
+            env = math.sin(math.pi * x) ** 1.5
+            pts.append((x * (w - 2) * scale + scale, mid - math.sin(x * 4 * math.tau) * env * (mid - scale)))
+        d.line(pts, fill=color, width=round(1.5 * scale), joint="curve")
     return img.resize((w, h), Image.LANCZOS)
 
 
@@ -1044,6 +1076,22 @@ class _SettingsWindow:
                 schemes, text=pal["label"], image=swatch, compound="left",
                 variable=self.var_scheme, value=name, command=self._theme_changed,
             ).pack(side="left", padx=(16, 0))
+        # Listening animation (2026-11-23, user request): each choice with a
+        # small drawing of it in the scheme's line color; picking one plays
+        # it at the bottom of the screen for a few seconds.
+        self.var_listen = tk.StringVar(
+            value=config.LISTEN_STYLE if config.LISTEN_STYLE in pill.STYLES else "line")
+        row = self._setting_row(look, "Listening animation")
+        anims = ttk.Frame(row)
+        anims.grid(row=0, column=1, sticky="e")
+        self._anim_imgs = {}
+        for style, label in (("line", "Line"), ("bars", "Bars"), ("pulse", "Pulse")):
+            img = ImageTk.PhotoImage(_anim_glyph(style, palette.get()["line"]))
+            self._anim_imgs[style] = img
+            ttk.Radiobutton(
+                anims, text=label, image=img, compound="left",
+                variable=self.var_listen, value=style, command=self._listen_style_changed,
+            ).pack(side="left", padx=(16, 0))
 
         # Cloud and Local as two parts, the local models under Local
         # (2026-10-27, user request: the Models tab folded in here).
@@ -1062,7 +1110,12 @@ class _SettingsWindow:
         ttk.Label(cloud_col, text="Cloud", style="Sub.TLabel").pack(anchor="w")
         cloud_box = ttk.Frame(cloud_col, padding=(4, 2, 0, 0))
         cloud_box.pack(fill="x")
-        ttk.Label(local_col, text="Local", style="Sub.TLabel").pack(anchor="w")
+        # The heading row also carries the models' storage / update note
+        # on its right (was a line of its own under the cards; moved up
+        # 2026-11-23 so General fits 1366x768 with the animation row).
+        self._local_head = ttk.Frame(local_col)
+        self._local_head.pack(fill="x")
+        ttk.Label(self._local_head, text="Local", style="Sub.TLabel").pack(side="left")
         local_box = ttk.Frame(local_col, padding=(4, 2, 0, 0))
         local_box.pack(fill="x")
         self.var_processing = tk.StringVar(value=config.PROCESSING_MODE)
@@ -1293,7 +1346,9 @@ class _SettingsWindow:
     def _local_need_text(self):
         """What Local still needs, naming the model; "" when the chosen
         voice model is downloaded (the cards then say "Downloaded")."""
-        if model_manager.is_downloaded(config.MODEL_SIZE):
+        # Only while Local is picked: it's about Local, and Cloud users
+        # (the default) would pay a line of height for nothing.
+        if self.var_engine.get() != "local" or model_manager.is_downloaded(config.MODEL_SIZE):
             return ""
         chosen = model_manager.MODELS.get(
             model_manager.tier_for_size(config.MODEL_SIZE) or "fast",
@@ -1317,9 +1372,17 @@ class _SettingsWindow:
         while self._local_error:
             messagebox.showerror(APP_NAME, self._local_error.pop(0), parent=self.root)
 
+    def _listen_style_changed(self):
+        """Applies at once (like the color scheme) and plays a preview;
+        saved with Save and apply."""
+        config.LISTEN_STYLE = self.var_listen.get()
+        pill.preview()
+
     def _theme_changed(self):
         config.THEME = self.var_theme.get()
         config.COLOR_SCHEME = self.var_scheme.get()
+        for style, img in getattr(self, "_anim_imgs", {}).items():
+            img.paste(_anim_glyph(style, palette.get()["line"]))
         # A cross-fade (2026-11-23, user: the switch "looks very jagged"):
         # a picture of the window as it was covers it while every control
         # restyles underneath, then fades out. Without a picture (it
@@ -1917,8 +1980,8 @@ class _SettingsWindow:
         self.ram_label = ttk.Label(f, text="", wraplength=640)
         self._ram_text = None
 
-        notes = ttk.Frame(f)
-        notes.pack(anchor="w")
+        notes = ttk.Frame(self._local_head)
+        notes.pack(side="right")
         self.storage_label = ttk.Label(notes, style="Muted.TLabel", text="")
         self.storage_label.pack(side="left")
         self.update_label = ttk.Label(notes, style="Muted.TLabel", text="")
@@ -1944,12 +2007,12 @@ class _SettingsWindow:
                                  command=self._grammar_switched)
         _card_points(box, [
             "Fixes small grammar slips",
-            "Each dictation 2 to 6 seconds slower",
+            "2 to 6 seconds slower",
             "1.5 GB download",
             f"Uses about {model_manager.gb(model_manager.GRAMMAR_RAM_MB)} of RAM",
         ]).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 0))
         ttk.Label(
-            box, text="Optional. Most dictations don't need it.",
+            box, text="Most dictations don't need it.",
             style="Card.TLabel", wraplength=200,
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
         # Row 3 takes the spare height, so status and buttons sit at the
@@ -2199,7 +2262,7 @@ class _SettingsWindow:
         self._ram_text = text
         if text:
             self.ram_label.config(text=text)
-            self.ram_label.pack(anchor="w", pady=(0, 4), before=self.storage_label.master)
+            self.ram_label.pack(anchor="w", pady=(0, 4))
         else:
             self.ram_label.pack_forget()
 
@@ -2621,6 +2684,7 @@ class _SettingsWindow:
             "start_with_windows": self.var_autostart.get(),
             "theme": self.var_theme.get(),
             "color_scheme": self.var_scheme.get(),
+            "listen_style": self.var_listen.get(),
             "processing_mode": self.var_processing.get(),
             "send_diagnostics": self.var_diagnostics.get(),
             "speech_service": self.var_speech_service.get(),

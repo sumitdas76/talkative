@@ -422,6 +422,10 @@ THEME = "system"
 # Color scheme (palette.py): "blue" (default since 2026-11-23), "forest", "coral" or "teal" -- Settings,
 # its header band and the listening pill.
 COLOR_SCHEME = "blue"
+# Listening animation (pill.py STYLES): "line" (the heartbeat line,
+# default), "bars" or "pulse" -- Settings > General > Appearance
+# (2026-11-23, user request).
+LISTEN_STYLE = "line"
 
 # No sounds: the start/stop/done beeps were removed 2026-10-04 at the
 # user's request (the listening pill already shows when Talkative is

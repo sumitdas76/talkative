@@ -61,6 +61,7 @@ _KEYS = {
     "hotkey_mode": "HOTKEY_MODE",
     "theme": "THEME",
     "color_scheme": "COLOR_SCHEME",
+    "listen_style": "LISTEN_STYLE",
     "first_run_done": "FIRST_RUN_DONE",
     "debug_log": "DEBUG_LOG",
     "install_id": "INSTALL_ID",
