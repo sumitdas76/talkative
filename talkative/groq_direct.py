@@ -31,6 +31,14 @@ GRAMMAR_MODEL = "openai/gpt-oss-20b"
 KEY_PATTERN = re.compile(r"gsk_[A-Za-z0-9]{20,200}")
 _MAX_REPLY = 1_000_000
 REWRITE_MAX_TOKENS = 4096
+
+
+def rewrite_max_tokens(text):
+    """The reply budget for a rewrite of `text`, the same rule as worker.js
+    handleRewrite (about 1.5x the text, at most 4096): a flat 4096 let one
+    request reserve half of gpt-oss's tokens-per-minute (neutral QA
+    2026-11-23). JavaScript counts UTF-16 units, so the length does too."""
+    return min(REWRITE_MAX_TOKENS, -(-(len(text.encode("utf-16-le")) // 2) // 2) + 400)
 _UA = "Talkative"
 
 
@@ -271,6 +279,5 @@ def grammar(text, timeout=20.0, language="en"):
 def rewrite(text, instruction, timeout=30.0):
     """`text` rewritten as the spoken `instruction` asks, as worker.js
     handleRewrite asks for it. rewrite.py checks the reply."""
-    # Room for a 4,000-character answer plus the model's short reasoning.
     return _chat(cloud_prompt.rewrite_messages(text, instruction), timeout,
-                 max_tokens=REWRITE_MAX_TOKENS)
+                 max_tokens=rewrite_max_tokens(text))
