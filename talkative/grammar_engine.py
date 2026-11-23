@@ -72,6 +72,10 @@ _SHOTS = [
 
 _DIGIT_RUN = re.compile(r"\d+")
 _WORD = re.compile(r"[a-z0-9']+")
+# Other languages (Cloud, languages.py): letters of any script, so
+# "fatigué" or "können" is one word, not "fatigu" + "e" (neutral QA
+# 2026-11-23: the ASCII pattern let retention count fragments).
+_UWORD = re.compile(r"[^\W_]+(?:['’][^\W_]+)*")
 
 # Function words excluded from the per-sentence retention check below --
 # without this, a dropped sentence can pass on pure coincidence (its only
@@ -329,15 +333,15 @@ def _digits_ok(inp, out):
     return sorted(got + words) == want
 
 
-def _retention_ok(inp, out, strict=False):
-    src = _WORD.findall(inp.lower())
+def _retention_ok(inp, out, strict=False, word=_WORD):
+    src = word.findall(inp.lower())
     if not src:
         return True
-    dst = set(_WORD.findall(out.lower()))
+    dst = set(word.findall(out.lower()))
     if strict:
         # Strict (Local): count each occurrence, so "I'm okay, I'm fine."
         # -> "I'm okay." loses an "I'm" instead of hiding behind the other.
-        left = Counter(_WORD.findall(out.lower()))
+        left = Counter(word.findall(out.lower()))
         kept = 0
         for w in src:
             if left[w]:
@@ -570,18 +574,24 @@ def _hedge_ok(inp, out):
 # Forms of one verb that share no prefix: a grammar fix of the last word
 # ("what features does this release has" -> "...have?", 2026-11-22, Cloud;
 # rejected until 1.3.25) is the same word, not an invented ending.
+# Grouped by TENSE: an agreement fix ("has" -> "have", "is" -> "are") keeps
+# the meaning, a tense change doesn't ("the server is" -> "The server was."
+# was accepted when every form of a verb shared one group -- neutral QA
+# 2026-11-23, a regression from the first version of this list).
 _VERB_FORMS = (
-    frozenset("has have had".split()),
-    frozenset("is are was were am be been".split()),
-    frozenset("do does did".split()),
-    frozenset("go goes went gone".split()),
-    frozenset("hasn't haven't hadn't".split()),
-    frozenset("isn't aren't wasn't weren't".split()),
-    frozenset("don't doesn't didn't".split()),
+    frozenset("has have".split()),
+    frozenset("is are am".split()),
+    frozenset("was were".split()),
+    frozenset("do does".split()),
+    frozenset("go goes".split()),
+    frozenset("hasn't haven't".split()),
+    frozenset("isn't aren't".split()),
+    frozenset("wasn't weren't".split()),
+    frozenset("don't doesn't".split()),
 )
 
 
-def _ending_ok(inp, out):
+def _ending_ok(inp, out, word=_WORD):
     """No words invented after the end of what was said. A dictation cut
     off mid-sentence (the key released before the thought ended, often to
     go on in the next one) gets "finished" by the model: "...and also the"
@@ -597,8 +607,8 @@ def _ending_ok(inp, out):
     cleared" -> "...cleared it." is exactly the invention this catches.
     Measured with tools/grammar_eval/guard_eval.py."""
     norm = lambda s: s.lower().replace("’", "'")
-    src = _WORD.findall(norm(inp))
-    dst = _WORD.findall(norm(out))
+    src = word.findall(norm(inp))
+    dst = word.findall(norm(out))
     if len(src) < 3 or not dst:
         return True
     last = dst[-1]
@@ -620,6 +630,53 @@ def _ending_ok(inp, out):
     return last not in _STOPWORDS and last in src[-12:]
 
 
+# Negation words per language: one must not vanish, as in English
+# (_negation_ok). Neutral QA 2026-11-23 found "No quiero ir" -> "Quiero
+# ir" and "Je ne veux pas venir" -> "Je veux venir" accepted.
+_NEG_WORDS = {
+    "es": {"no", "nunca", "jamás", "nada", "nadie", "ni", "tampoco", "ningún", "ninguno",
+           "ninguna"},
+    "fr": {"ne", "n", "pas", "jamais", "rien", "aucun", "aucune", "ni", "non"},
+    "de": {"nicht", "kein", "keine", "keinen", "keinem", "keiner", "keines", "nie",
+           "niemals", "nichts", "niemand", "weder"},
+    "it": {"non", "mai", "niente", "nulla", "nessuno", "nessuna", "né"},
+    "nl": {"niet", "geen", "nooit", "niets", "niemand", "noch"},
+    "pt": {"não", "nunca", "jamais", "nada", "ninguém", "nem", "nenhum", "nenhuma"},
+}
+
+
+def _lang_negations(text, language):
+    words = _NEG_WORDS.get(language, set())
+    n = 0
+    for w in _UWORD.findall(text.lower()):
+        if w in words:
+            n += 1
+        elif "'" in w or "’" in w:
+            # French/Italian elision: "n'est", "n'ai" carry the "ne".
+            head = re.split("['’]", w)[0]
+            if head in words:
+                n += 1
+    return n
+
+
+def _lang_negation_ok(inp, out, language):
+    return _lang_negations(out, language) >= _lang_negations(inp, language)
+
+
+def _names_ok(inp, out):
+    """A capitalized word inside a sentence (a name: María, Dupont) must
+    survive: "María llamó" -> "Juan llamó" kept every other word. Not for
+    German, where every noun is capitalized."""
+    keep = set()
+    for sentence in re.split(r"(?<=[.!?…])\s+", inp.strip()):
+        words = _UWORD.findall(sentence)
+        keep.update(w.lower() for w in words[1:] if w[:1].isupper())
+    if not keep:
+        return True
+    have = {w.lower() for w in _UWORD.findall(out)}
+    return keep <= have
+
+
 def validate(inp, out, strict=False, language="en"):
     """Run all twelve deterministic guards (thirteen with `strict`, the local
     engine's tighter leash: same words, higher retention) against an (input, output) pair.
@@ -630,11 +687,14 @@ def validate(inp, out, strict=False, language="en"):
     if not out:
         return False
     if language != "en":
-        # Cloud in another language (languages.py): only the guards that
-        # don't read English words.
+        # Cloud in another language (languages.py): the language-free
+        # guards with words of any script, plus negations and names for
+        # that language.
         return (_digits_ok(inp, out) and _dotted_ok(inp, out)
-                and _retention_ok(inp, out, False) and _length_ok(inp, out)
-                and _ending_ok(inp, out))
+                and _retention_ok(inp, out, False, word=_UWORD) and _length_ok(inp, out)
+                and _ending_ok(inp, out, word=_UWORD)
+                and _lang_negation_ok(inp, out, language)
+                and (language == "de" or _names_ok(inp, out)))
     if strict and not _same_words_ok(inp, out):
         return False
     return (_digits_ok(inp, out) and _dotted_ok(inp, out)
