@@ -244,6 +244,8 @@ _PAGES = ["General", "Auto Text", "Dictation", "Hotkeys", "Audio & Output",
           "Feedback", "About"]
 # General > Processing: the Cloud column's text width (beside Local).
 _CLOUD_COL_W = 300
+# About's two columns: text width in each.
+_ABOUT_WRAP = 440
 
 
 def _on_closed():
@@ -402,6 +404,7 @@ class _SettingsWindow:
             "About": self._tab_about,
         }
         self._pages = {}
+        self._wide_columns = []  # (second column, gap above it when stacked)
         for name in _PAGES:
             page = ttk.Frame(area, padding=(28, 20, 28, 8))
             page.grid(row=0, column=0, sticky="nsew")
@@ -459,10 +462,13 @@ class _SettingsWindow:
         self.root.geometry(f"+{x}+{y}")
 
     def _stack_general(self):
-        """General's two pairs of columns (Startup | Appearance, Cloud |
-        Local) one above the other, for screens too narrow for them."""
-        for second, gap in self._general_columns:
+        """The side-by-side columns (General: Startup | Appearance, Cloud |
+        Local; About: its two halves) one above the other, for screens too
+        narrow for them."""
+        for second, gap in self._wide_columns:
             second.grid(row=1, column=0, columnspan=2, sticky="new", pady=(gap, 0))
+            # An emptied column in a "uniform" group would keep its width.
+            second.master.columnconfigure(1, weight=0, uniform="")
         self._cloud_spacer.configure(width=1)
 
     def _fit_scroll(self):
@@ -580,7 +586,7 @@ class _SettingsWindow:
         body.pack(fill="x")
         return body
 
-    def _setting_row(self, parent, title, desc=None):
+    def _setting_row(self, parent, title, desc=None, wrap=None):
         """A row with the setting's name (and a muted line under it) on
         the left; the caller grids its control at column 1, on the right."""
         row = ttk.Frame(parent)
@@ -590,7 +596,8 @@ class _SettingsWindow:
         text.grid(row=0, column=0, sticky="w")
         ttk.Label(text, text=title).pack(anchor="w")
         if desc:
-            ttk.Label(text, text=desc, style="Muted.TLabel").pack(anchor="w")
+            ttk.Label(text, text=desc, style="Muted.TLabel",
+                      wraplength=wrap or 0, justify="left").pack(anchor="w")
         return row
 
     def _close(self):
@@ -844,7 +851,7 @@ class _SettingsWindow:
         # Fixed width, so opening the key block doesn't widen the window.
         self._cloud_spacer = ttk.Frame(cloud_col, width=_CLOUD_COL_W, height=1)
         self._cloud_spacer.pack(side="bottom")
-        self._general_columns = [(look_col, 14), (local_col, 10)]
+        self._wide_columns += [(look_col, 14), (local_col, 10)]
         ttk.Label(cloud_col, text="Cloud", style="Sub.TLabel").pack(anchor="w")
         cloud_box = ttk.Frame(cloud_col, padding=(4, 2, 0, 0))
         cloud_box.pack(fill="x")
@@ -2093,7 +2100,18 @@ class _SettingsWindow:
 
     def _tab_about(self, f):
         self._star_card(f)
-        ver = self._section(f, "Version")
+        # Two columns under the star card (2026-11-23, user request, like
+        # General): Version and Privacy left, the two sending choices right.
+        cols = ttk.Frame(f)
+        cols.pack(fill="x", pady=(8, 0))
+        cols.columnconfigure(0, weight=1, uniform="about")
+        cols.columnconfigure(1, weight=1, uniform="about")
+        left = ttk.Frame(cols)
+        left.grid(row=0, column=0, sticky="new", padx=(0, 24))
+        right = ttk.Frame(cols)
+        right.grid(row=0, column=1, sticky="new")
+        self._wide_columns.append((right, 14))
+        ver = self._section(left, "Version", first=True)
         row = ttk.Frame(ver)
         row.pack(fill="x")
         row.columnconfigure(0, weight=1)
@@ -2111,11 +2129,11 @@ class _SettingsWindow:
         )
         self.check_updates_btn.grid(row=0, column=1, sticky="e")
 
-        box = self._section(f, "Privacy")
+        box = self._section(left, "Privacy")
         # Short on purpose (2026-10-27, user request); the details --
         # history, feedback, diagnostics -- are in PRIVACY.md.
         ttk.Label(
-            box, wraplength=560,
+            box, wraplength=_ABOUT_WRAP,
             text="Cloud sends your audio, and the text just before the "
                  "cursor, to a server for processing. Nothing you dictate is kept unless "
                  "you turn on diagnostic data below. Local keeps everything "
@@ -2128,7 +2146,7 @@ class _SettingsWindow:
         for seq in ("<Button-1>", "<Return>", "<space>"):
             link.bind(seq, open_policy)
 
-        diag = self._section(f, "Diagnostic data")
+        diag = self._section(right, "Diagnostic data", first=True)
         self.var_diagnostics = tk.BooleanVar(value=config.SEND_DIAGNOSTICS)
         ttk.Radiobutton(
             diag, text="Send diagnostic data to help fix problems",
@@ -2140,7 +2158,7 @@ class _SettingsWindow:
             variable=self.var_diagnostics, value=False,
         ).pack(anchor="w", pady=2)
         ttk.Label(
-            diag, wraplength=560, style="Muted.TLabel",
+            diag, wraplength=_ABOUT_WRAP, style="Muted.TLabel",
             text="Diagnostic data is what you said, what was typed, and the "
                  "recording of each dictation. It goes to Sumit only, is "
                  "kept for 30 days, then deleted. Your diagnostic ID: "
@@ -2149,12 +2167,12 @@ class _SettingsWindow:
 
         # Anonymous usage count (usage_ping.py): on by default and disclosed
         # (user's decision, 2026-11-23); no identifier is sent.
-        count = self._section(f, "Anonymous usage count")
+        count = self._section(right, "Anonymous usage count")
         self.var_usage = tk.BooleanVar(value=config.USAGE_COUNT)
         row = self._setting_row(
             count, "Send the anonymous usage count",
             "Once a day: version, Cloud or Local, and roughly how many "
-            "dictations. No ID and nothing you dictate.")
+            "dictations. No ID and nothing you dictate.", wrap=_ABOUT_WRAP - 60)
         ttk.Checkbutton(row, variable=self.var_usage,
                         style="Switch.TCheckbutton").grid(row=0, column=1, sticky="e")
 
