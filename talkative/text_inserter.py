@@ -132,7 +132,7 @@ def copy_only(text):
     pyperclip.copy(text.replace("\r\n", "\n").replace("\n", "\r\n"))
 
 
-def insert_text(text, take_back=0, append_space=None):
+def insert_text(text, take_back=0, append_space=None, press_enter=None):
     """Copy text to the clipboard, paste it via simulated Ctrl+V into
     whatever control currently has focus, then restore the user's previous
     clipboard contents a moment later. In "clipboard" mode, only copy --
@@ -140,7 +140,10 @@ def insert_text(text, take_back=0, append_space=None):
     `take_back` Backspaces go first (continuation.py: the full stop that
     ended the last dictation, when this one carries on its sentence).
     `append_space` overrides config.APPEND_SPACE (None = use it):
-    continuation.fit_to_cursor knows when text already follows."""
+    continuation.fit_to_cursor knows when text already follows.
+    `press_enter` overrides config.PRESS_ENTER_AFTER: a rewrite never
+    presses Enter (in a chat app it would send the rewritten message before
+    the user could look at it -- neutral QA 2026-11-23)."""
     # Windows line breaks: a bare "\n" (bullet lists) shows as nothing in
     # older Win32 edit controls.
     text = text.replace("\r\n", "\n").replace("\n", "\r\n")
@@ -182,7 +185,7 @@ def insert_text(text, take_back=0, append_space=None):
         _controller.release("v")
         _controller.release(Key.ctrl)
 
-        if config.PRESS_ENTER_AFTER:
+        if config.PRESS_ENTER_AFTER if press_enter is None else press_enter:
             time.sleep(0.1)
             _controller.press(Key.enter)
             _controller.release(Key.enter)

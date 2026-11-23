@@ -133,8 +133,14 @@ DEV_HOTKEY = (keyboard.Key.ctrl_r, keyboard.Key.shift_r)
 # Right Ctrl is held turns that recording into a rewrite. Where Right Alt
 # is AltGr (many European layouts) pick another pair. Empty tuple = off.
 REWRITE_HOTKEY = (keyboard.Key.ctrl_r, keyboard.Key.alt_r)
+# Set by settings.load_into_config when the rewrite key was the same as the
+# dictation or code key and has been switched off (app.run tells the user).
+REWRITE_KEY_CLASH = False
 # Longest selection sent for a rewrite, and longest answer pasted back.
 REWRITE_MAX_CHARS = 4000
+# The spoken instruction's limit, the same as the Worker's
+# REWRITE_MAX_INSTRUCTION (UTF-16 units, rewrite.utf16_len).
+REWRITE_MAX_INSTRUCTION = 1000
 REWRITE_MAX_REPLY = 8000
 
 # SELF_CORRECTION_TRIGGERS: phrases that signal the speaker is retracting what

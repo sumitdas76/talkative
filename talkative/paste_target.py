@@ -23,6 +23,45 @@ import uiautomation as auto
 from . import config
 
 user32 = ctypes.windll.user32
+_kernel32 = ctypes.windll.kernel32
+user32.GetClassNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
+_kernel32.OpenProcess.restype = ctypes.c_void_p
+_kernel32.QueryFullProcessImageNameW.argtypes = [
+    ctypes.c_void_p, ctypes.c_uint32, ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_uint32)]
+_kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+
+# Console windows (classic console, Windows Terminal, mintty/Git Bash,
+# PuTTY, ConEmu): Ctrl+C there interrupts the running command.
+TERMINAL_CLASSES = {"ConsoleWindowClass", "CASCADIA_HOSTING_WINDOW_CLASS",
+                    "mintty", "PuTTY", "VirtualConsoleClass"}
+# Editors where Ctrl+C with nothing selected copies the whole line.
+LINE_COPY_EDITORS = {"code.exe", "cursor.exe", "windsurf.exe", "devenv.exe",
+                     "sublime_text.exe", "notepad++.exe", "idea64.exe",
+                     "pycharm64.exe", "rider64.exe", "webstorm64.exe"}
+
+
+def window_kind(hwnd):
+    """(window class, exe file name in lower case) of a top-level window;
+    ("", "") when unknown."""
+    cls, exe = "", ""
+    try:
+        buf = ctypes.create_unicode_buffer(256)
+        if user32.GetClassNameW(hwnd, buf, 256):
+            cls = buf.value
+        pid = ctypes.c_uint32()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        handle = _kernel32.OpenProcess(0x1000, False, pid.value)  # QUERY_LIMITED_INFORMATION
+        if handle:
+            try:
+                size = ctypes.c_uint32(520)
+                path = ctypes.create_unicode_buffer(520)
+                if _kernel32.QueryFullProcessImageNameW(handle, 0, path, ctypes.byref(size)):
+                    exe = path.value.rsplit("\\", 1)[-1].lower()
+            finally:
+                _kernel32.CloseHandle(handle)
+    except Exception:
+        pass
+    return cls, exe
 kernel32 = ctypes.windll.kernel32
 user32.GetForegroundWindow.restype = ctypes.c_void_p
 user32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.c_void_p]

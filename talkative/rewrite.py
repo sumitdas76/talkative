@@ -42,24 +42,40 @@ _EDIT_WORDS = re.compile(
     r"lengthen|expand|trim|cut|translate|convert|add|remove|delete|drop|"
     r"replace|format|put|split|merge|join|simplify|summari[sz]e|polish|"
     r"clean|tidy|capitali[sz]e|uppercase|lowercase|bullet|list|soften|"
-    r"improve|edit|write|use)\b", re.I)
+    r"improve|edit|write|use|making|made|summary)\b", re.I)
+# Polite or indirect instructions that start like a question but ask for a
+# change ("Should be more formal", "Have it sound friendlier", "What about
+# making it shorter"); refused as questions until 2026-11-23 (neutral QA).
+_INDIRECT = re.compile(
+    r"^(how about|what about|should (be|sound|read|say)|could (be|sound|read)|"
+    r"have (it|this|that)|do (a|an|the|it)\b)", re.I)
 
 
 def instruction_problem(said):
     """Why the spoken instruction can't be sent, or None."""
     if not said:
         return NO_INSTRUCTION
-    if _QUESTION_START.match(said) and not re.match(r"how about\b", said, re.I) \
+    if utf16_len(said) > config.REWRITE_MAX_INSTRUCTION:
+        return ("That instruction is too long. Say what to change in a sentence "
+                "or two.")
+    if _QUESTION_START.match(said) and not _INDIRECT.match(said) \
             and not _EDIT_WORDS.search(said):
         return QUESTION
     return None
+
+
+def utf16_len(s):
+    """Length as the Worker counts it (JavaScript strings are UTF-16): an
+    emoji is 2. Counting code points let ~2,100 emoji-heavy characters
+    through here and get a 400 there (neutral QA 2026-11-23)."""
+    return len(s.encode("utf-16-le")) // 2
 
 
 def selection_problem(selected):
     """Why `selected` can't be rewritten, or None."""
     if not (selected or "").strip():
         return NOTHING_SELECTED
-    if len(selected) > config.REWRITE_MAX_CHARS:
+    if utf16_len(selected) > config.REWRITE_MAX_CHARS:
         return (f"That's more than {config.REWRITE_MAX_CHARS:,} characters. "
                 "Select less text and try again.")
     return None
@@ -96,6 +112,18 @@ def _echoes_example(original, reply):
     return False
 
 
+def _no_em_dashes(reply):
+    """Em dashes out, touching nothing else (neutral QA 2026-11-23: a
+    comma tidy-up over the whole reply ate empty CSV fields and line
+    breaks). A line-start dash -> "- " (list marker); between numbers ->
+    "-" (a range: 2020-2024); between words -> ", ", and only a comma made
+    here may merge with punctuation right after it."""
+    reply = re.sub(r"(?m)^([ \t]*)—[ \t]*", r"\1- ", reply)
+    reply = re.sub(r"(?<=\d)[ \t]*—[ \t]*(?=\d)", "-", reply)
+    return re.sub(r"[ \t]*—[ \t]*([,.;:!?])?",
+                  lambda m: m.group(1) or ", ", reply)
+
+
 def read_reply(original, reply):
     """-> (new text, None) to paste, or (None, reason) to leave the
     selection alone. `original` is the selected text as read."""
@@ -107,9 +135,7 @@ def read_reply(original, reply):
     # chose (2026-11-23) that Talkative never adds one: ", " between words,
     # "-" as a line's list marker. Kept when the selection already has them.
     if "—" not in original:
-        reply = re.sub(r"(?m)^(\s*)—\s*", r"\1- ", reply)
-        reply = re.sub(r"\s*—\s*", ", ", reply)
-        reply = re.sub(r",\s*([,.;:!?])", r"\1", reply)
+        reply = _no_em_dashes(reply)
     # gpt-oss ends lines with Markdown's two-space hard break ("Best
     # regards,  \nSumit", every bullet): the spaces would be pasted too.
     reply = "\n".join(line.rstrip() for line in reply.split("\n"))

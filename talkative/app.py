@@ -1588,7 +1588,21 @@ class TalkativeApp:
                 moved = bool(hwnd) and paste_target.user32.GetForegroundWindow() != hwnd
             except Exception:
                 moved = True
+            cls, exe = paste_target.window_kind(hwnd) if hwnd else ("", "")
+            if cls in paste_target.TERMINAL_CLASSES:
+                # Never Ctrl+C a terminal: it interrupts the running command
+                # (neutral QA 2026-11-23).
+                self._record(audio, audio_info=info, raw=raw, final="[rewrite: terminal]",
+                             timing=f"transcribe {transcribe_secs:.1f}s [rewrite]")
+                self._not_typed("Rewriting doesn't work in a terminal. The text was "
+                                "left as it was.")
+                return
             selected = "" if moved else copy_selection()
+            # VS Code and other editors copy the whole line when nothing is
+            # selected; rewriting that would paste a second copy of the line.
+            if (selected and exe in paste_target.LINE_COPY_EDITORS
+                    and selected.endswith("\n") and selected.count("\n") == 1):
+                selected = ""
         else:
             selected = read[1]
         if selected is None:
@@ -1637,7 +1651,13 @@ class TalkativeApp:
                                     "rewrite is on the clipboard. Select the text again "
                                     "and press Ctrl+V.")
                     return
-            insert_text(new, append_space=False)
+            if config.INSERT_MODE == "clipboard":
+                copy_only(new)
+                continuation.forget()
+                self._say("The rewrite is on the clipboard (Copy to clipboard only is "
+                          "on). Press Ctrl+V to replace the selection.")
+                return
+            insert_text(new, append_space=False, press_enter=False)
             continuation.forget()
             self._report("rewrote the selection")
         finally:
@@ -1688,6 +1708,10 @@ class TalkativeApp:
         try_it_now.controller = SimpleNamespace(
             get=lambda: self.recorder.device, set=self._set_input_device)
         onboarding.maybe_show(on_choice=self._onboarding_done)
+        if config.REWRITE_KEY_CLASH:
+            error_toast.show(
+                "The rewrite key was the same as your dictation key, so it's off. "
+                "Pick another in Settings > Hotkeys.", seconds=8, info=True)
         usage_ping.start()
         # Local setup's background grammar download, if Talkative was
         # closed before it finished (see onboarding.finish_local).

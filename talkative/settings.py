@@ -214,6 +214,18 @@ def load_into_config(path=None):
                 setattr(config, attr, parsed)
                 applied[key] = data[key]
 
+    # The rewrite key (new in 1.3.25, default Right Ctrl + Right Alt) must
+    # not be the same chord as a key the user already chose: their saved
+    # dictation key would otherwise turn every dictation into a rewrite.
+    # Settings refuses that on Save, but an update never goes through
+    # Settings (neutral QA 2026-11-23). Off, and the app says so once.
+    config.REWRITE_KEY_CLASH = False
+    if config.REWRITE_HOTKEY and any(
+            chord and set(config.REWRITE_HOTKEY) == set(chord)
+            for chord in (config.HOTKEY, config.DEV_HOTKEY)):
+        config.REWRITE_HOTKEY = ()
+        config.REWRITE_KEY_CLASH = True
+
     # input_device: None (default) or a sounddevice input index / name.
     if "input_device" in data and isinstance(data["input_device"], (type(None), int, str)):
         config.INPUT_DEVICE = data["input_device"]
