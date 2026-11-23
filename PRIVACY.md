@@ -59,8 +59,12 @@ Talkative's server does not store or log your audio or text, unless you
 turn on diagnostic data (see "Diagnostic data" below). It keeps
 two counts, both reset every day: how many requests each install ID
 made today, and how many came from each network address today. The
-address itself is not stored, only a one-way scrambled form of it
-(a hash) that the count is filed under. The services above process your data under
+address itself is not stored, only a scrambled form of it that the count
+is filed under. It is scrambled with a secret key and the date, so it
+can't be turned back into the address and a new one is used each day,
+and each count deletes itself two days later. Rewrites of selected text
+have their own daily and per-minute counts, kept the same way. The
+services above process your data under
 their own policies, linked above.
 
 ### Cloud mode with your own Groq key (optional)
@@ -195,7 +199,8 @@ No identifier of any kind is sent: not your install ID, not a code,
 not a hash. Nothing in it can be traced back to you or your PC, and the
 server keeps only totals (for example "120 copies used on 3 December").
 Your network address is not stored; as with Cloud requests, a daily
-count is filed under a one-way scrambled form of it, to allow at most
+count is filed under a scrambled form of it (secret key, new each day,
+deleted two days later), to allow at most
 20 of these a day from one address. Why: to know how many people use
 Talkative, to plan the free Cloud capacity, and to know when old
 versions can be retired. Turn it off in Settings > About ("Send the

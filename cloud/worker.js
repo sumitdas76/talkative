@@ -142,6 +142,13 @@ function rewriteUser(text, instruction) {
 const REWRITE_MAX_TEXT = 4000;
 const REWRITE_MAX_INSTRUCTION = 1000;
 const REWRITE_PER_INSTALL_PER_DAY = 100;
+// Install ids are client-chosen, so rewrites are also capped per network
+// address, per day and per minute (neutral QA 2026-11-23: one user minting
+// ids could spend gpt-oss-20b's shared 8,000 tokens a minute -- a 4,000-
+// character rewrite is ~2-3k -- and push every Cloud user's grammar onto
+// Workers AI).
+const REWRITE_PER_IP_PER_DAY = 150;
+const REWRITE_PER_IP_PER_MINUTE = 3;
 
 // gpt-oss likes typographic characters (curly quotes, narrow no-break
 // space in "3 pm") that Whisper never emits -- map them back to the plain
@@ -165,6 +172,21 @@ function language(request) {
 function languageLine(code) {
   const name = LANGUAGES[code];
   return ` The text is in ${name}. Reply in ${name}.`;
+}
+
+// A rewrite keeps the typography the user's text already had: curly
+// quotes ("fix the typo" on a Word paragraph flattened its ' " ") and
+// French narrow no-break spaces (neutral QA 2026-11-23). Grammar replies
+// still go through plainText.
+function rewriteText(reply, original) {
+  let out = reply;
+  if (!/[‘’‛“”]/.test(original)) {
+    out = out.replace(/[‘’‛]/g, "'").replace(/[“”]/g, '"');
+  }
+  if (!/[    ]/.test(original)) {
+    out = out.replace(/[    ]/g, " ");
+  }
+  return out;
 }
 
 function plainText(s) {
@@ -195,11 +217,17 @@ function quotaExceeded() {
 // near where it was first used. Storage stays one small record per
 // install: the day rolls the count over rather than adding a new key.
 export class QuotaCounter extends DurableObject {
+  // `day` is any period key: "2026-11-23" for daily caps, "2026-11-23T14:05"
+  // for per-minute ones.
   async take(day, limit) {
     const rec = (await this.ctx.storage.get("rec")) || { day, count: 0 };
     if (rec.day !== day) {
       rec.day = day;
       rec.count = 0;
+      // Counters delete themselves two days after their last new period,
+      // so nothing per address or install is kept longer than that
+      // (neutral QA 2026-11-23; they used to stay forever).
+      await this.ctx.storage.setAlarm(Date.now() + 2 * 86400 * 1000);
     }
     if (rec.count >= limit) {
       return { ok: false, count: rec.count };
@@ -208,24 +236,35 @@ export class QuotaCounter extends DurableObject {
     await this.ctx.storage.put("rec", rec);
     return { ok: true, count: rec.count };
   }
+
+  async alarm() {
+    await this.ctx.storage.deleteAll();
+  }
 }
 
-async function checkAndIncrementQuota(env, name, limit) {
-  const day = today(); // YYYY-MM-DD (UTC)
+async function checkAndIncrementQuota(env, name, limit, period) {
+  const day = period || today(); // YYYY-MM-DD (UTC)
   const stub = env.QUOTA_DO.get(env.QUOTA_DO.idFromName(name));
   return await stub.take(day, limit);
 }
 
-// The per-address quota's counter name: a one-way hash of the address (the
-// raw address is never stored -- PRIVACY.md), IPv6 cut to its /64 network
-// so one connection can't rotate through its own addresses.
-async function ipQuotaName(request) {
+// The per-address quota's counter name: a keyed, daily hash of the
+// address (the raw address is never stored -- PRIVACY.md), IPv6 cut to its
+// /64 network so one connection can't rotate through its own addresses.
+// Keyed with a secret (IP_HASH_KEY, else ADMIN_KEY) and the UTC day
+// (neutral QA 2026-11-23): an unsalted SHA-256 of an IPv4 address could be
+// reversed by trying all 2^32, and the same name every day linked a
+// person's days together.
+async function ipQuotaName(request, env) {
   const ip = request.headers.get("CF-Connecting-IP");
   if (!ip) return null;
   const net = ip.includes(":") ? ipv6Network(ip) : ip;
-  const digest = await crypto.subtle.digest(
-    "SHA-256", new TextEncoder().encode("talkative-ip:" + net));
-  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const secret = (env && (env.IP_HASH_KEY || env.ADMIN_KEY)) || "talkative-ip";
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = await crypto.subtle.sign(
+    "HMAC", key, new TextEncoder().encode(today() + ":" + net));
+  const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
   return "ip:" + hex.slice(0, 32);
 }
 
@@ -344,7 +383,7 @@ function diagStore(env) {
 async function handleDiagnostics(request, env, installId) {
   const q = await checkAndIncrementQuota(env, "diag:" + installId, DIAG_PER_INSTALL_PER_DAY);
   if (!q.ok) return quotaExceeded();
-  const ipName = await ipQuotaName(request);
+  const ipName = await ipQuotaName(request, env);
   if (ipName) {
     const ipq = await checkAndIncrementQuota(env, "diag:" + ipName, DIAG_PER_IP_PER_DAY);
     if (!ipq.ok) return quotaExceeded();
@@ -485,7 +524,7 @@ async function handleUsage(request, env) {
   for (const k of ["new_install", "week_first", "month_first"]) {
     if (typeof body[k] !== "boolean") return badRequest("bad_flag", k + " must be true or false.");
   }
-  const ipName = await ipQuotaName(request);
+  const ipName = await ipQuotaName(request, env);
   if (ipName) {
     const q = await checkAndIncrementQuota(env, "usage:" + ipName, USAGE_PER_IP_PER_DAY);
     if (!q.ok) {
@@ -850,15 +889,31 @@ async function handleRewrite(request, env, timing, ctx) {
   const text = body?.text;
   const instruction = body?.instruction;
   if (typeof text !== "string" || typeof instruction !== "string" ||
-      !text.trim() || !instruction.trim() ||
-      text.length > REWRITE_MAX_TEXT || instruction.length > REWRITE_MAX_INSTRUCTION) {
-    return { error: "bad request", status: 400 };
+      !text.trim() || !instruction.trim()) {
+    return { error: "bad_request", message: "Text and instruction are required.", status: 400 };
+  }
+  if (text.length > REWRITE_MAX_TEXT) {
+    return { error: "text_too_long", status: 400,
+             message: `The selected text is over ${REWRITE_MAX_TEXT} characters.` };
+  }
+  if (instruction.length > REWRITE_MAX_INSTRUCTION) {
+    return { error: "instruction_too_long", status: 400,
+             message: `The instruction is over ${REWRITE_MAX_INSTRUCTION} characters.` };
   }
   const installId = request.headers.get("X-Install-Id");
-  const q = await checkAndIncrementQuota(env, "rw:" + installId, REWRITE_PER_INSTALL_PER_DAY);
-  if (!q.ok) {
-    noteHit(env, ctx, "rewrite cap", null);
-    return { error: "daily rewrite quota exceeded", status: 429 };
+  const ipName = await ipQuotaName(request, env);
+  const minute = new Date().toISOString().slice(0, 16);
+  const [q, ipDay, ipMinute] = await Promise.all([
+    checkAndIncrementQuota(env, "rw:" + installId, REWRITE_PER_INSTALL_PER_DAY),
+    ipName ? checkAndIncrementQuota(env, "rw:" + ipName, REWRITE_PER_IP_PER_DAY)
+      : Promise.resolve({ ok: true }),
+    ipName ? checkAndIncrementQuota(env, "rwm:" + ipName, REWRITE_PER_IP_PER_MINUTE, minute)
+      : Promise.resolve({ ok: true }),
+  ]);
+  if (!q.ok || !ipDay.ok || !ipMinute.ok) {
+    noteHit(env, ctx, !ipMinute.ok ? "rewrite rate" : "rewrite cap", null);
+    return { error: "rewrite_quota", status: 429,
+             message: !ipMinute.ok ? "Too many rewrites in a minute." : "Daily rewrite limit reached." };
   }
   const messages = [{ role: "system", content: REWRITE_SYSTEM }];
   for (const [shotText, shotInstruction, answer] of REWRITE_SHOTS) {
@@ -881,7 +936,10 @@ async function handleRewrite(request, env, timing, ctx) {
         temperature: 0,
         reasoning_effort: "low",
         include_reasoning: false,
-        max_tokens: 4096,
+        // About 1.5x the selection (a token is ~3-4 characters), plus
+        // room for short texts that get longer ("turn this into a list");
+        // a flat 4096 let one request reserve half a minute's tokens.
+        max_tokens: Math.min(4096, Math.ceil(text.length / 2) + 400),
       }),
     });
   } catch {
@@ -897,7 +955,7 @@ async function handleRewrite(request, env, timing, ctx) {
   notePeak(env, ctx, GROQ_GRAMMAR_MODEL, groqResp, timing);
   const result = await groqResp.json();
   timing.upstream_ms = Date.now() - t0;
-  return { text: plainText(result.choices?.[0]?.message?.content || ""), via: "groq" };
+  return { text: rewriteText(result.choices?.[0]?.message?.content || "", text), via: "groq" };
 }
 
 export default {
@@ -966,7 +1024,7 @@ export default {
     // cloud latency can be broken down from the client.
     const timing = { colo: request.cf?.colo };
     const tq = Date.now();
-    const ipName = await ipQuotaName(request);
+    const ipName = await ipQuotaName(request, env);
     const quotaPromise = Promise.all([
       checkAndIncrementQuota(env, installId, DAILY_QUOTA_PER_INSTALL),
       ipName ? checkAndIncrementQuota(env, ipName, DAILY_QUOTA_PER_IP)
@@ -1019,7 +1077,9 @@ export default {
         return quotaExceeded();
       }
       if (payload.status) {
-        return Response.json({ error: payload.error }, { status: payload.status });
+        // One error format: { error, message } (neutral QA 2026-11-23).
+        return Response.json({ error: payload.error, message: payload.message || payload.error },
+                             { status: payload.status });
       }
       return Response.json({ ...payload, timing });
     } catch (err) {
