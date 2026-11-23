@@ -213,7 +213,12 @@ def apply_self_corrections(text, triggers=None):
         # Nothing before the trigger: nothing to retract. Without a comma
         # or full stop after it, it's ordinary text ("Scratch that feature
         # is not working", "No sorry I can't come"), live report 2026-11-23.
-        if not preceding.strip() and not re.search(r"[,.:;!]\s*$", match.group()):
+        # "scratch that" / "strike that" are also ordinary words ("so scratch
+        # that is removing...", "strike that deal"); spoken as a correction
+        # Whisper always puts a comma or full stop after them.
+        punctuated = re.search(r"[,.:;!]\s*$", match.group())
+        verb_phrase = re.match(r"(scratch|strike)\s+that\b", match.group(), re.IGNORECASE)
+        if not punctuated and (verb_phrase or not preceding.strip()):
             search_from = match.end()
             continue
         boundaries = list(_SENTENCE_BOUNDARY.finditer(preceding))
