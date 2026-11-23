@@ -210,6 +210,12 @@ def apply_self_corrections(text, triggers=None):
             break
 
         preceding = result[: match.start()]
+        # Nothing before the trigger: nothing to retract. Without a comma
+        # or full stop after it, it's ordinary text ("Scratch that feature
+        # is not working", "No sorry I can't come"), live report 2026-11-23.
+        if not preceding.strip() and not re.search(r"[,.:;!]\s*$", match.group()):
+            search_from = match.end()
+            continue
         boundaries = list(_SENTENCE_BOUNDARY.finditer(preceding))
         cut = boundaries[-1].end() if boundaries else 0
         correction = _SENTENCE_BOUNDARY.split(result[match.end() :].lstrip())[0]
