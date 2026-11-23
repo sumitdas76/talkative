@@ -221,22 +221,72 @@ end;
 
 { The folder page (which normally checks the path) is never shown, so
   the Install click checks it: a full path, and one we can write to. }
+function GetDriveType(lpRootPathName: String): Cardinal;
+  external 'GetDriveTypeW@kernel32.dll stdcall';
+
+function UnderFolder(Dir, Parent: String): Boolean;
+begin
+  Result := (Parent <> '')
+    and (Pos(Lowercase(AddBackslash(Parent)), Lowercase(AddBackslash(Dir))) = 1);
+end;
+
+{ A folder synced by OneDrive: it can hold the EXE while syncing and
+  break an update, and "files on demand" can leave it offline. }
+function InOneDrive(Dir: String): Boolean;
+begin
+  Result := UnderFolder(Dir, GetEnv('OneDrive'))
+    or UnderFolder(Dir, GetEnv('OneDriveConsumer'))
+    or UnderFolder(Dir, GetEnv('OneDriveCommercial'));
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   Dir: String;
+  Kind: Cardinal;
 begin
   Result := True;
-  if (CurPageID <> wpWelcome) or PreviouslyInstalled then
+  { Silent installs (winget, the app's updater, /DIR= from an admin) are
+    not checked: Inno calls this even then, and a message box would wait
+    for a click nobody can give (found in testing, 2026-11-23). }
+  if (CurPageID <> wpWelcome) or PreviouslyInstalled or WizardSilent then
     Exit;
   Dir := RemoveBackslashUnlessRoot(Trim(WizardForm.DirEdit.Text));
   WizardForm.DirEdit.Text := Dir;
-  if (Length(Dir) < 3) or ((Copy(Dir, 2, 2) <> ':\') and (Copy(Dir, 1, 2) <> '\\')) then
+  Result := False;
+  if Copy(Dir, 1, 2) = '\\' then
+  begin
+    MsgBox('{#MyAppName} can''t be installed in a network folder: it has to be there '
+      + 'every time Windows starts.' + #13#10#13#10 + 'Pick a folder on this PC.',
+      mbError, MB_OK);
+    Exit;
+  end;
+  if (Length(Dir) < 3) or (Copy(Dir, 2, 2) <> ':\') then
   begin
     MsgBox('Enter a full folder path, for example C:\Apps\{#MyAppName}, or click Browse.',
       mbError, MB_OK);
-    Result := False;
-  end
-  else if not CanWriteTo(Dir) then
+    Exit;
+  end;
+  { GetDriveType: 2 removable (USB stick, SD card), 4 network (mapped
+    drive), 5 CD/DVD. }
+  Kind := GetDriveType(Copy(Dir, 1, 3));
+  if (Kind = 4) or (Kind = 5) then
+  begin
+    MsgBox('{#MyAppName} can''t be installed on a network or CD/DVD drive: it has to be '
+      + 'there every time Windows starts.' + #13#10#13#10 + 'Pick a folder on this PC.',
+      mbError, MB_OK);
+    Exit;
+  end;
+  if (Kind = 2) and (MsgBox(Copy(Dir, 1, 2) + ' is a removable drive. When it isn''t '
+      + 'plugged in, {#MyAppName} won''t start with Windows and dictation won''t work.'
+      + #13#10#13#10 + 'Install there anyway?', mbConfirmation, MB_YESNO) <> IDYES) then
+    Exit;
+  if InOneDrive(Dir) and (MsgBox('That folder is synced by OneDrive. OneDrive can '
+      + 'hold {#MyAppName}''s files while it syncs, which can stop updates from '
+      + 'installing.' + #13#10#13#10 + 'Install there anyway?', mbConfirmation,
+      MB_YESNO) <> IDYES) then
+    Exit;
+  Result := True;
+  if not CanWriteTo(Dir) then
   begin
     MsgBox('Windows doesn''t let {#MyAppName} install in that folder without admin rights.'
       + #13#10#13#10 + 'Pick a folder in your user folder or on another drive.', mbError, MB_OK);
@@ -360,11 +410,50 @@ begin
     WizardForm.NextButton.Caption := SetupMessage(msgButtonInstall);
 end;
 
+{ A folder outside the user's own profile (C:\Apps, D:\Tools...) usually
+  inherits "Users: Modify" or even "Everyone: Full control" (this dev
+  PC's D:\ root, 2026-11-23): any account on the PC could swap
+  Talkative.exe, which starts at this user's login and sees their
+  keyboard and clipboard. Lock it to this user, SYSTEM and Administrators
+  (everyone else may still read and run it). The default folder, inside
+  the profile, is private already and is left alone. Runs on every
+  install, so an update also fixes a folder installed before this. }
+procedure LockInstallFolder;
+var
+  App, User: String;
+  ResultCode: Integer;
+begin
+  App := ExpandConstant('{app}');
+  if UnderFolder(App, GetEnv('USERPROFILE')) then
+    Exit;
+  User := GetEnv('USERDOMAIN') + '\' + GetEnv('USERNAME');
+  { Grant this user first, so removing the inherited entries can never
+    lock them out of their own install. On the folder ONLY, no /T: the
+    files keep inheriting and pick up the new folder entries by
+    themselves. With /T, icacls tried the (OI)(CI) grants on each file,
+    which files can't take, then stripped the files' inherited entries,
+    leaving Talkative.exe with no permissions at all -- "Access is denied"
+    even for the user (found in testing, 2026-11-23). }
+  if Exec(ExpandConstant('{sys}\icacls.exe'),
+          '"' + App + '" /grant:r "' + User + ':(OI)(CI)F" /C /Q',
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
+  begin
+    Exec(ExpandConstant('{sys}\icacls.exe'),
+      '"' + App + '" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F '
+      + '*S-1-5-32-545:(OI)(CI)RX /C /Q', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Log(Format('install folder locked to %s (icacls %d)', [User, ResultCode]));
+  end
+  else
+    Log(Format('install folder not locked: granting %s failed (%d)', [User, ResultCode]));
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   SettingsFile: string;
   ResultCode: Integer;
 begin
+  if CurStep = ssPostInstall then
+    LockInstallFolder;
   { Open the app when an interactive install is done (no finished page).
     Silent installs (winget, the app's own /UPDATE) don't; update mode
     relaunches from DeinitializeSetup. }
