@@ -46,6 +46,8 @@ _BAR_GAP = 5
 _BAR_PROFILE = (0.45, 0.7, 0.9, 1.0, 0.9, 0.7, 0.45)  # the middle reaches highest
 _DOT_R = 4          # pulse: the dot
 _RING_MIN, _RING_MAX = 7, 14   # pulse: the ring's radius, quiet .. loud
+_PULSE_BOX = 36     # pulse's own smooth window, square, centered on the line's spot
+_SS = 4             # pulse frames are drawn at 4x and scaled down (anti-aliasing)
 
 _SCALE = 0.8  # sized down 20% at the user's request, July 20 2026
 _WIDTH, _HEIGHT = round(172 * _SCALE), round(40 * _SCALE)
@@ -185,6 +187,14 @@ class _Pill:
                                                     width=0, state="hidden")
             self.dot = self.canvas.create_oval(cx - _DOT_R, cy - _DOT_R, cx + _DOT_R,
                                                cy + _DOT_R, width=0, state="hidden")
+            # Pulse is normally drawn smooth (PIL + a layered window, see
+            # smooth_overlay.py); the canvas items above are its fallback.
+            try:
+                from . import smooth_overlay
+                self._smooth = smooth_overlay.SmoothWindow(
+                    self._overlay.root, _PULSE_BOX, _PULSE_BOX)
+            except Exception:
+                self._smooth = None
             self._style = "line"
             self._preview = False
             self._mode = "listen"
@@ -220,6 +230,46 @@ class _Pill:
         y = screen_h - _HEIGHT - _SCREEN_BOTTOM_MARGIN
         self.root.geometry(f"{_WIDTH}x{_HEIGHT}+{x}+{y}")
 
+    def _smooth_on(self):
+        return self._style == "pulse" and self._smooth is not None
+
+    def _show_window(self):
+        """The canvas window for Line and Bars (and Pulse's fallback), the
+        smooth window for Pulse; only one is ever on screen. The smooth
+        window appears with its first frame (_draw)."""
+        self._place_bottom_center()
+        if self._smooth_on():
+            self.root.withdraw()
+            sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+            self._smooth.place((sw - _PULSE_BOX) // 2,
+                               sh - _SCREEN_BOTTOM_MARGIN - (_HEIGHT + _PULSE_BOX) // 2)
+        else:
+            if self._smooth is not None:
+                self._smooth.hide()
+            self.root.deiconify()
+            self._no_activate()
+
+    def _hide_window(self):
+        self.root.withdraw()
+        if self._smooth is not None:
+            self._smooth.hide()
+
+    def _smooth_frame(self, radius, ring, arc_start=None):
+        """Show one Pulse frame in the smooth window. On any failure, drop
+        to the canvas drawing for good (never break dictation)."""
+        try:
+            self._smooth.show(_pulse_image(radius, ring, self._main_color,
+                                           self._halo_color, arc_start, self._arc_color))
+        except Exception:
+            try:
+                self._smooth.hide()
+            except Exception:
+                pass
+            self._smooth = None
+            self._apply_style()
+            self._recolor()
+            self._show_window()
+
     def _apply_style(self):
         """Show only the chosen style's items; read on every show, so a
         style picked in Settings applies from the next dictation."""
@@ -228,7 +278,9 @@ class _Pill:
         groups = {
             "line": [self.halo, self.line],
             "bars": self.bar_halos + self.bars,
-            "pulse": [self.ring_halo, self.ring, self.dot_halo, self.dot],
+            # Drawn in its own smooth window; the canvas items only as fallback.
+            "pulse": [] if self._smooth else [self.ring_halo, self.ring,
+                                              self.dot_halo, self.dot],
         }
         for name, items in groups.items():
             for item in items:
@@ -260,6 +312,7 @@ class _Pill:
             self.arc, outline=_mix(pal["line"], "#ffffff", 0.35),
             state="normal" if self._mode == "busy" and self._style == "pulse" else "hidden")
         self._main_color, self._halo_color = main, halo
+        self._arc_color = _mix(pal["line"], "#ffffff", 0.35)
 
     def _flat(self):
         step = (_WIDTH - 2 * _EDGE) / (_POINTS - 1)
@@ -293,6 +346,8 @@ class _Pill:
                         not self._visible or self._style != config.LISTEN_STYLE)
                     if restyle:
                         self._apply_style()
+                        if self._visible:
+                            self._show_window()   # Line/Bars <-> Pulse window
                     if mode != self._mode or not self._visible or restyle:
                         self._mode = mode
                         self._wave = [0.0] * _POINTS
@@ -301,21 +356,19 @@ class _Pill:
                         self._mic_ready = mode == "busy" or self._is_mic_ready()
                         self._recolor()
                     if not self._visible:
-                        self._place_bottom_center()
-                        self.root.deiconify()
-                        self._no_activate()
+                        self._show_window()
                         self._visible = True
                 elif cmd == "preview_end":
                     # Only ends the Settings preview, never a real
                     # dictation that started meanwhile (it replaced the
                     # level source and cleared _preview).
                     if self._visible and self._preview:
-                        self.root.withdraw()
+                        self._hide_window()
                         self._visible = False
                         self._preview = False
                 elif self._visible and (cmd == "hide" or (cmd == "done" and self._mode == "busy")):
                     # "done" never hides a new dictation's listening line.
-                    self.root.withdraw()
+                    self._hide_window()
                     self._visible = False
         except queue.Empty:
             pass
@@ -419,10 +472,13 @@ class _Pill:
         pauses; louder also reads brighter."""
         breathe = 0.12 * (1 + math.sin(t * 2.4)) / 2
         amount = max(self._level, breathe)
-        self._set_ring(_RING_MIN + (_RING_MAX - _RING_MIN) * amount)
-        self.canvas.itemconfigure(
-            self.ring, outline=_mix(self._main_color, self._halo_color,
-                                    0.45 * (1 - min(1.0, amount * 2))))
+        radius = _RING_MIN + (_RING_MAX - _RING_MIN) * amount
+        ring = _mix(self._main_color, self._halo_color, 0.45 * (1 - min(1.0, amount * 2)))
+        if self._smooth_on():
+            self._smooth_frame(radius, ring)
+            return
+        self._set_ring(radius)
+        self.canvas.itemconfigure(self.ring, outline=ring)
 
     def _draw_busy(self, t):
         """Processing, per style -- "working on it". Line: flat, a bright
@@ -432,6 +488,10 @@ class _Pill:
         if self._style == "bars":
             self._set_bars([0.12 + 0.3 * max(0.0, math.sin(t * 6 - i * 0.7))
                             for i in range(_BARS)])
+            return
+        if self._smooth_on():
+            self._smooth_frame(_RING_MIN + 2, _mix(self._main_color, self._halo_color, 0.5),
+                               arc_start=(-t * 360) % 360)
             return
         if self._style == "pulse":
             self._set_ring(_RING_MIN + 2)
@@ -451,6 +511,41 @@ class _Pill:
         if x1 - x0 < 2:
             x0 = x1 = -10  # between sweeps: off the canvas
         self.canvas.coords(self.sweep, x0, mid, x1, mid)
+
+
+def _pulse_image(radius, ring, dot, halo, arc_start=None, arc_color=None):
+    """One Pulse frame, drawn at _SS x and scaled down so the ring and dot
+    have smooth edges: a soft dark halo under each (shows on white
+    windows), the ring, the dot, and while processing a bright arc
+    turning around the ring."""
+    from PIL import Image, ImageDraw, ImageFilter
+    n = _PULSE_BOX * _SS
+    c = n / 2
+    rgb = lambda col, a: _rgb(col) + (a,)  # noqa: E731
+
+    shadow = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    d = ImageDraw.Draw(shadow)
+    r = radius * _SS
+    # The ring's outline: about 0.9 px each side of the 2.2 px ring, barely
+    # softened -- enough to show a light ring on a white window without
+    # turning into a grey band (first try, 4 px + 1.2 px blur, did).
+    hr = r + 0.15 * _SS
+    d.ellipse((c - hr, c - hr, c + hr, c + hr), outline=rgb(halo, 170),
+              width=round(4.0 * _SS))
+    rd = (_DOT_R + 0.9) * _SS
+    d.ellipse((c - rd, c - rd, c + rd, c + rd), fill=rgb(halo, 170))
+    img = shadow.filter(ImageFilter.GaussianBlur(0.35 * _SS))
+
+    d = ImageDraw.Draw(img)
+    rr = r - 0.9 * _SS   # centered inside the outline band
+    d.ellipse((c - rr, c - rr, c + rr, c + rr), outline=rgb(ring, 255),
+              width=round(2.2 * _SS))
+    rd = _DOT_R * _SS
+    d.ellipse((c - rd, c - rd, c + rd, c + rd), fill=rgb(dot, 255))
+    if arc_start is not None:
+        d.arc((c - rr, c - rr, c + rr, c + rr), arc_start, arc_start + 100,
+              fill=rgb(arc_color or ring, 255), width=round(2.6 * _SS))
+    return img.resize((_PULSE_BOX, _PULSE_BOX), Image.LANCZOS)
 
 
 def _rgb(color):
