@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 from pynput import keyboard
 
-from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, last_dictation, mic_warmup, model_manager, onboarding, paste_target, pill, rewrite, screen_context, settings, temp_cleanup, try_it_now, updater
+from . import audio_devices, cloud_client, cloud_notice, config, continuation, dev_mode, diagnostics, error_toast, feedback, fix_learning, grammar_engine, history, last_dictation, mic_warmup, model_manager, onboarding, paste_target, pill, rewrite, screen_context, settings, temp_cleanup, try_it_now, updater, usage_ping
 from .audio_recorder import AudioRecorder
 from .autostart import BLOCKED_BY_POLICY, BLOCKED_BY_USER, BLOCKED_MESSAGE, sync_autostart
 from .cleanup import collapse_repeats, finish_sentence, remove_fillers
@@ -1757,7 +1757,17 @@ class TalkativeApp:
         # from the configured default.
         try_it_now.controller = SimpleNamespace(
             get=lambda: self.recorder.device, set=self._set_input_device)
+        if not config.ONBOARDING_DONE:
+            # The first-run screen asks about the install count itself.
+            usage_ping.skip_this_run()
         onboarding.maybe_show(on_choice=self._onboarding_done)
+        usage_ping.start()
+        # Installs set up before the count existed: ask once, after the
+        # update check's own startup work, never on top of the first-run
+        # screen (skip_this_run above).
+        ask = threading.Timer(20, usage_ping.maybe_ask)
+        ask.daemon = True
+        ask.start()
         # Local setup's background grammar download, if Talkative was
         # closed before it finished (see onboarding.finish_local).
         if config.GRAMMAR_PENDING_DOWNLOAD and config.ENABLE_GRAMMAR_ENGINE:

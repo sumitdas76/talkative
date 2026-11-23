@@ -372,6 +372,107 @@ async function handleDiagnostics(request, env, installId) {
   return Response.json({ ok: true });
 }
 
+// Anonymous count of active installs (Backlog usage-count, 2026-11-23;
+// PRIVACY.md "Counting installs"). Once a UTC day each install that hasn't
+// turned it off posts a hash of its install id (never the id itself), its
+// version, mode and channel. One row per install per day, so repeats change
+// nothing; rows older than USAGE_DAYS_KEPT are deleted and only the daily
+// totals (numbers) stay. Read with ADMIN_KEY (tools/usage.py). The shared
+// secret is public, so anyone can post made-up ids: USAGE_PER_IP_PER_DAY
+// bounds that; the count is for planning only.
+const USAGE_DAYS_KEPT = 30;
+const USAGE_PER_IP_PER_DAY = 20;
+const USAGE_MAX_BODY = 512;
+const USAGE_MODES = ["cloud", "own-key", "local"];
+const USAGE_CHANNELS = ["installer", "store", "source"];
+
+export class UsageStore extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    const sql = this.ctx.storage.sql;
+    sql.exec("CREATE TABLE IF NOT EXISTS seen (day TEXT NOT NULL, id TEXT NOT NULL, " +
+      "version TEXT NOT NULL, mode TEXT NOT NULL, channel TEXT NOT NULL, PRIMARY KEY (day, id))");
+    sql.exec("CREATE TABLE IF NOT EXISTS daily (day TEXT PRIMARY KEY, data TEXT NOT NULL)");
+  }
+
+  // Returns true when this install wasn't counted today yet.
+  async add(day, id, version, mode, channel) {
+    const sql = this.ctx.storage.sql;
+    const cutoff = new Date(Date.now() - USAGE_DAYS_KEPT * 86400000).toISOString().slice(0, 10);
+    sql.exec("DELETE FROM seen WHERE day < ?", cutoff);
+    const before = sql.exec("SELECT COUNT(*) AS n FROM seen WHERE day = ? AND id = ?", day, id).one().n;
+    if (before) return false;
+    sql.exec("INSERT INTO seen (day, id, version, mode, channel) VALUES (?, ?, ?, ?, ?)",
+      day, id, version, mode, channel);
+    const group = (col) => Object.fromEntries(sql.exec(
+      `SELECT ${col} AS k, COUNT(*) AS n FROM seen WHERE day = ? GROUP BY ${col}`, day)
+      .toArray().map((r) => [r.k, r.n]));
+    const active = sql.exec("SELECT COUNT(*) AS n FROM seen WHERE day = ?", day).one().n;
+    sql.exec("INSERT OR REPLACE INTO daily (day, data) VALUES (?, ?)", day, JSON.stringify({
+      active, mode: group("mode"), version: group("version"), channel: group("channel"),
+    }));
+    return true;
+  }
+
+  // Daily totals plus distinct installs over the last 7 and 30 days.
+  async report() {
+    const sql = this.ctx.storage.sql;
+    const since = (days) => new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
+    const span = (days) => {
+      const from = since(days);
+      const total = sql.exec("SELECT COUNT(DISTINCT id) AS n FROM seen WHERE day >= ?", from).one().n;
+      // Each install counted once, under its latest mode and channel.
+      const latest = sql.exec(
+        "SELECT s.mode, s.channel FROM seen s JOIN (SELECT id, MAX(day) AS d FROM seen " +
+        "WHERE day >= ? GROUP BY id) m ON s.id = m.id AND s.day = m.d", from).toArray();
+      const tally = (key) => latest.reduce((acc, r) => ((acc[r[key]] = (acc[r[key]] || 0) + 1), acc), {});
+      return { from, installs: total, mode: tally("mode"), channel: tally("channel") };
+    };
+    const days = sql.exec("SELECT day, data FROM daily ORDER BY day DESC LIMIT 400").toArray()
+      .map((r) => ({ day: r.day, ...JSON.parse(r.data) }));
+    return { last_7_days: span(7), last_30_days: span(30), days };
+  }
+}
+
+function usageStore(env) {
+  return env.USAGE_DO.get(env.USAGE_DO.idFromName("global"));
+}
+
+function badRequest(code, message) {
+  return Response.json({ error: code, message }, { status: 400 });
+}
+
+async function handleUsage(request, env) {
+  const raw = await request.text();
+  if (raw.length > USAGE_MAX_BODY) return badRequest("too_large", "Body over 512 bytes.");
+  let body;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return badRequest("bad_json", "Body is not JSON.");
+  }
+  if (!body || typeof body !== "object") return badRequest("bad_json", "Body is not an object.");
+  const { id, version, mode, channel } = body;
+  if (typeof id !== "string" || !/^[0-9a-f]{64}$/.test(id)) {
+    return badRequest("bad_id", "id must be 64 lowercase hex characters.");
+  }
+  if (typeof version !== "string" || !/^\d{1,3}\.\d{1,3}\.\d{1,4}$/.test(version)) {
+    return badRequest("bad_version", "version must look like 1.3.25.");
+  }
+  if (!USAGE_MODES.includes(mode)) return badRequest("bad_mode", "Unknown mode.");
+  if (!USAGE_CHANNELS.includes(channel)) return badRequest("bad_channel", "Unknown channel.");
+  const ipName = await ipQuotaName(request);
+  if (ipName) {
+    const q = await checkAndIncrementQuota(env, "usage:" + ipName, USAGE_PER_IP_PER_DAY);
+    if (!q.ok) {
+      return Response.json({ error: "rate_limited", message: "Too many check-ins today." },
+        { status: 429 });
+    }
+  }
+  const counted = await usageStore(env).add(today(), id, version, mode, channel);
+  return Response.json({ ok: true, counted });
+}
+
 // Record a limit hit without delaying the response or ever failing it.
 function noteHit(env, ctx, kind, detail) {
   ctx.waitUntil(limitLog(env).hit(today(), kind, detail)
@@ -782,6 +883,12 @@ export default {
       }
       return Response.json(await limitLog(env).report());
     }
+    if (request.method === "GET" && url.pathname === "/usage") {
+      if (!env.ADMIN_KEY || request.headers.get("X-Admin-Key") !== env.ADMIN_KEY) {
+        return unauthorized();
+      }
+      return Response.json(await usageStore(env).report());
+    }
     if (request.method === "GET" && url.pathname.startsWith("/diagnostics")) {
       if (!env.ADMIN_KEY || request.headers.get("X-Admin-Key") !== env.ADMIN_KEY) {
         return unauthorized();
@@ -799,6 +906,16 @@ export default {
     }
     if (request.headers.get("X-Shared-Secret") !== env.SHARED_SECRET) {
       return unauthorized();
+    }
+    if (url.pathname === "/usage") {
+      // Before the install-id check: the check-in carries only a hash of it.
+      try {
+        return await handleUsage(request, env);
+      } catch (err) {
+        console.error("usage", err);
+        return Response.json({ error: "server", message: "Couldn't record the check-in." },
+          { status: 500 });
+      }
     }
     const installId = request.headers.get("X-Install-Id");
     if (!installId) {

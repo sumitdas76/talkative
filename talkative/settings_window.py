@@ -21,7 +21,7 @@ from tkinter import filedialog, messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, audio_devices, config, dev_mode, error_toast, feedback, fix_learning, grammar_engine, groq_direct, history, languages, mic_warmup, model_manager, overlay_thread, packaging, palette, pill, secret_store, settings, try_it_now, updater
+from . import __version__, app_icon, audio_devices, config, dev_mode, error_toast, feedback, fix_learning, grammar_engine, groq_direct, history, languages, mic_warmup, model_manager, overlay_thread, packaging, palette, pill, secret_store, settings, try_it_now, updater, usage_ping
 from .keynames import friendly as _friendly_key_name
 
 log = logging.getLogger(__name__)
@@ -2076,7 +2076,7 @@ class _SettingsWindow:
         ttk.Label(
             box, wraplength=560,
             text="Cloud sends your audio, and the text just before the "
-                 "cursor, to a server for processing. Nothing is kept unless "
+                 "cursor, to a server for processing. Nothing you dictate is kept unless "
                  "you turn on diagnostic data below. Local keeps everything "
                  "on this PC.",
         ).pack(anchor="w")
@@ -2104,6 +2104,28 @@ class _SettingsWindow:
                  "recording of each dictation. It goes to Sumit only, is "
                  "kept for 30 days, then deleted. Your diagnostic ID: "
                  + feedback.install_id()[:8],
+        ).pack(anchor="w", pady=(4, 0))
+
+        # Anonymous install count (usage_ping.py). Nothing selected until
+        # the user has answered once (consent, not a preset default).
+        count = self._section(f, "Anonymous user count")
+        self.var_usage = tk.StringVar(
+            value=("yes" if config.USAGE_COUNT else "no") if config.USAGE_ASKED else "")
+        ttk.Radiobutton(
+            count, text="Count this install in the anonymous user total",
+            variable=self.var_usage, value="yes",
+        ).pack(anchor="w", pady=2)
+        ttk.Radiobutton(
+            count, text="Don't count this install",
+            variable=self.var_usage, value="no",
+        ).pack(anchor="w", pady=2)
+        code = usage_ping.short_code()
+        ttk.Label(
+            count, wraplength=560, style="Muted.TLabel",
+            text="Once a day: a random code made only for this count, the "
+                 "app version, and Cloud or Local. Nothing you dictate. Codes "
+                 "are deleted after 30 days."
+                 + (f" Your count code: {code}" if code else ""),
         ).pack(anchor="w", pady=(4, 0))
 
     def _check_updates(self):
@@ -2268,6 +2290,10 @@ class _SettingsWindow:
             "hotkey_mode": self.var_hotkey_mode.get(),
             "dictionary": dictionary,
         }
+        usage = self.var_usage.get()
+        if usage in ("yes", "no") and (
+                not config.USAGE_ASKED or config.USAGE_COUNT != (usage == "yes")):
+            usage_ping.set_answer(usage == "yes")
         problem = _hotkey_problem(
             self.pending_hotkey or _key_names(config.HOTKEY),
             self.pending_dev_hotkey if self.pending_dev_hotkey is not None

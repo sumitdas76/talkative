@@ -1,15 +1,17 @@
 Talkative Privacy Policy
 ========================
 
-Last updated: 2026-11-22
+Last updated: 2026-11-23
 
 Talkative is a free, open-source Windows dictation app. This page lists
 every way it talks to the internet, what is sent, and how to turn it
 off. The source code in this repository is the reference: nothing is
 sent that isn't described here.
 
-Talkative has no accounts, no ads, no analytics and no tracking. The
-only diagnostics are the ones you can choose to send (below).
+Talkative has no accounts, no ads and no tracking across apps or sites.
+If you agree, it sends one anonymous daily count (see "Counting
+installs" below). The only diagnostics are the ones you can choose to
+send (below).
 
 
 Your choice: Cloud or Local
@@ -175,6 +177,32 @@ deleted, and only the maintainer can read them, to find and fix
 problems. They are never sold or shared. Turn it off in the same place;
 reports already sent are deleted when their 30 days are up, or sooner if
 you ask through the Feedback box.
+
+
+Counting installs (only if you said yes)
+----------------------------------------
+
+Talkative asks once whether it may count this install: on the first-run
+screen, or, if you installed it before this was added, in a small window
+after the update. Nothing is sent until you answer, and nothing at all
+if you say no.
+
+If you say yes, once a day Talkative sends Talkative's server
+(Cloudflare) a random code created on your PC for this count alone,
+plus the app version, whether you use Cloud, Cloud with your own Groq
+key, or Local, and how you installed it (installer, Microsoft Store, or
+from source). The code is never sent with your dictation, feedback or
+diagnostic data, and it is not your install ID. Nothing you dictate is
+included. Your network address is not stored; as with Cloud requests,
+a daily count is filed under a one-way scrambled form of it, to allow
+at most 20 check-ins a day from one address.
+
+Why: to know how many people use Talkative, to plan the free Cloud
+capacity, and to know when old versions can be retired. The per-install
+codes are deleted after 30 days; after that only daily totals (numbers)
+are kept. Change your answer any time in Settings > About. To have your
+code deleted sooner, send the 8 characters shown there ("Your count
+code") through the Feedback box.
 
 
 What stays on your PC

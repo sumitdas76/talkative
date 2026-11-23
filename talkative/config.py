@@ -504,6 +504,15 @@ DEBUG_AUDIO_KEEP = 30
 # MUST default False; the user turns it on in Settings > About and
 # confirms what is sent.
 SEND_DIAGNOSTICS = False
+# Anonymous count of active installs (usage_ping.py). MUST default False:
+# the user is asked once (first-run screen, or a small window after the
+# update) and nothing is sent before a yes. USAGE_ID is a random code made
+# for this count alone, never sent with anything else; USAGE_LAST_DAY is
+# the UTC day of the last check-in.
+USAGE_COUNT = False
+USAGE_ASKED = False
+USAGE_ID = ""
+USAGE_LAST_DAY = ""
 
 # ---------------------------------------------------------------------------
 # Startup

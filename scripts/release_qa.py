@@ -30,6 +30,9 @@ STUDY = ROOT / "tools" / "dev_mode_study"
 E2E = ROOT / "tools" / "e2e"
 BASELINE = Path(__file__).with_name("release_qa_baseline.json")
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+# Every app this script starts (and their children) inherits this: throwaway
+# first-run folders must never be counted as users (usage_ping.py).
+os.environ["TALKATIVE_NO_USAGE"] = "1"
 
 results = []
 
@@ -324,7 +327,8 @@ def check_text_rules():
                              ("D54", "undo_retype_test.py"),
                              ("D55", "rewrite_test.py"),
                              ("D55", "rewrite_hotkey_test.py"),
-                             ("D56", "languages_test.py")):
+                             ("D56", "languages_test.py"),
+                             ("D57", "usage_ping_test.py")):
         code, out = run_py([script], ROOT / "tools", timeout=60)
         last = out.strip().splitlines()[-1] if out.strip() else "no output"
         record(check_id, f"Text rules: {script[:-8]}", "PASS" if code == 0 else "FAIL", last)
