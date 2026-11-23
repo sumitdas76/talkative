@@ -2126,14 +2126,17 @@ class _SettingsWindow:
         card.columnconfigure(0, weight=1)
         text = ttk.Frame(card, style="CardBody.TFrame")
         text.grid(row=0, column=0, sticky="w")
-        ttk.Label(text, text="Got a feature you'd love to see?",
+        # In Sumit's own voice, person to person (user's request).
+        ttk.Label(text, text=f"Enjoying {APP_NAME}?",
                   style="CardTitle.TLabel").pack(anchor="w")
         ttk.Label(
             text, wraplength=420, style="CardMuted.TLabel",
-            text=f"Stars help {APP_NAME} reach more people, and a bigger "
-                 "community gets requests built sooner. One click helps "
-                 "yours get made.",
+            text=f"If {APP_NAME} saves you some typing, I'd be grateful for a "
+                 "star on GitHub. It helps more people find it, and more "
+                 "people means more of the features you ask for.",
         ).pack(anchor="w", pady=(2, 0))
+        ttk.Label(text, text="Thanks, Sumit", style="CardMuted.TLabel").pack(
+            anchor="w", pady=(4, 0))
         open_repo = lambda e=None: webbrowser.open(config.REPO_URL)  # noqa: E731
         repo = ttk.Label(text, text=config.REPO_URL.replace("https://", ""),
                          style="Card.TLabel", foreground=self._link, cursor="hand2",
