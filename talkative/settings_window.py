@@ -453,11 +453,21 @@ _CLOUD_COL_W = 300
 _ABOUT_WRAP = 440
 
 
+# Theme, color scheme and listening style apply at once while Settings is
+# open (previews); closing without Save puts back what they were. Reloading
+# settings.json alone didn't: a key that was never saved (listen_style for
+# everyone updating to 1.3.25) kept the unsaved choice until a restart
+# (neutral QA 2026-11-23).
+_APPEARANCE = ("THEME", "COLOR_SCHEME", "LISTEN_STYLE")
+_appearance_at_open = {}
+
+
 def _on_closed():
     global _is_open, _window
     _window = None
-    # Revert any unsaved preview mutations (e.g. the live theme preview
-    # writes config.THEME before Save).
+    for name, value in _appearance_at_open.items():
+        setattr(config, name, value)
+    # Then whatever was saved wins (Save and apply writes these keys).
     settings.load_into_config()
     with _open_lock:
         _is_open = False
@@ -468,6 +478,8 @@ def open_settings(on_applied=None, model_controller=None):
     with _open_lock:
         if _is_open:
             return
+        _appearance_at_open.clear()
+        _appearance_at_open.update({n: getattr(config, n) for n in _APPEARANCE})
         _is_open = True
 
     overlay = overlay_thread.get()
@@ -1298,12 +1310,24 @@ class _SettingsWindow:
                     blob = secret_store.protect(candidate)
                 except Exception:
                     reason = "Couldn't store the key safely on this PC."
+            if reason is None:
+                # Saved here, not in the poll: closing Settings before
+                # Groq answered used to lose a key that had passed the
+                # check (neutral QA 2026-11-23).
+                config.GROQ_KEY_DPAPI = blob
+                config.USE_OWN_GROQ_KEY = True
+                settings.save({"groq_key_dpapi": blob, "use_own_groq_key": True})
             self._key_result.append((reason, blob))
 
         threading.Thread(target=work, daemon=True).start()
         self.root.after(150, self._poll_own_key)
 
     def _poll_own_key(self):
+        try:
+            if not self.root.winfo_exists():
+                return
+        except tk.TclError:
+            return   # Settings closed meanwhile; the key was saved anyway
         if not self._key_result:
             self.root.after(150, self._poll_own_key)
             return
@@ -1312,9 +1336,6 @@ class _SettingsWindow:
         if reason:
             self._render_own_key(reason)
             return
-        config.GROQ_KEY_DPAPI = blob
-        config.USE_OWN_GROQ_KEY = True
-        settings.save({"groq_key_dpapi": blob, "use_own_groq_key": True})
         self.var_groq_key.set("")
         self._render_own_key("Key works. Your dictations now use it.")
 
@@ -1570,7 +1591,10 @@ class _SettingsWindow:
             parent=self.root,
         ):
             return
-        history.clear()
+        if not history.clear():
+            messagebox.showerror(
+                "Delete history", "The history couldn't be deleted: another program "
+                "may be using the file. Try again in a moment.", parent=self.root)
         self._history_refresh()
 
     def _open_history_viewer(self):

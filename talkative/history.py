@@ -8,11 +8,16 @@ try/except and fails silently.
 """
 
 import json
+import threading
 from datetime import datetime
 
 from .settings import settings_dir
 
 MAX_ENTRIES = 200
+# add() (a dictation finishing, worker thread) and clear() (Settings) must
+# not interleave: a clear between add()'s read and write brought the whole
+# old history back (neutral QA 2026-11-23).
+_lock = threading.Lock()
 
 
 def _path():
@@ -32,6 +37,11 @@ def load():
 def add(text):
     if not text:
         return
+    with _lock:
+        _add(text)
+
+
+def _add(text):
     try:
         entries = load()
         entries.append({
@@ -47,7 +57,10 @@ def add(text):
 
 
 def clear():
-    try:
-        _path().unlink(missing_ok=True)
-    except Exception:
-        pass
+    """True when the history is gone (or never existed)."""
+    with _lock:
+        try:
+            _path().unlink(missing_ok=True)
+            return True
+        except Exception:
+            return False

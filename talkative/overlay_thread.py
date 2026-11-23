@@ -20,10 +20,13 @@ construct an overlay's Toplevel/Canvas/`after()` polling loop -- callers
 must never touch Tk objects from any other thread.
 """
 
+import logging
 import queue
 import threading
 
 from . import config
+
+log = logging.getLogger(__name__)
 
 _overlay = None
 _lock = threading.Lock()
@@ -152,13 +155,22 @@ class _OverlayThread:
             self._ready.set()
 
     def _poll_builds(self):
+        # One failing job must never stop the poll: before 2026-11-23 an
+        # exception escaped here before the next after() was set, and every
+        # overlay (listening line, messages, Settings) went dead until a
+        # restart (found in the 1.3.25 QA).
         try:
             while True:
-                fn = self._build_queue.get_nowait()
-                fn()
-        except queue.Empty:
-            pass
-        self.root.after(20, self._poll_builds)
+                try:
+                    fn = self._build_queue.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    fn()
+                except Exception:
+                    log.exception("overlay job failed")
+        finally:
+            self.root.after(20, self._poll_builds)
 
     def build(self, fn):
         """Run fn() on the overlay thread, the next time it polls. Safe

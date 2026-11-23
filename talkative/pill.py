@@ -27,6 +27,7 @@ indicator failed to start. Its problems must never break dictation.
 """
 
 import ctypes
+import logging
 import math
 import queue
 import random
@@ -34,6 +35,8 @@ import threading
 import time
 
 from . import config, overlay_thread, palette
+
+log = logging.getLogger(__name__)
 
 # Listening styles (2026-11-23, user: "two more" beside the heartbeat
 # line; picked Bars and Pulse from four sketches). config.LISTEN_STYLE,
@@ -90,38 +93,22 @@ class _Pill:
 
     # ---- public, called from any thread ----
 
+    # A real dictation and the Settings preview both go through the command
+    # queue, and every decision between them is made on the overlay thread
+    # in _tick, in order (neutral QA 2026-11-23: deciding here, on the
+    # caller's thread, let a preview take over a dictation whose "show" was
+    # still queued, and a dictation starting during a preview skipped the
+    # mic-ready dimming).
+
     def preview(self, seconds):
         """Settings: play the chosen style with a made-up voice for a few
-        seconds (listening, then processing), then hide -- unless a real
-        dictation took over meanwhile."""
-        if self._visible and not self._preview:
-            return  # a real dictation is on screen: never replace it
-        start = time.time()
-        self._preview_id += 1
-        token = self._preview_id
-
-        def fake_voice():
-            # Syllable-like bursts with short pauses, in RMS units (show()
-            # scales by 20).
-            t = time.time() - start
-            talking = math.sin(t * 1.9) > -0.35
-            return 0.045 * talking * (0.45 + 0.55 * abs(math.sin(t * 8.5)))
-
-        self.show(fake_voice)
-        self._preview = True
-        # Timers check the token: picking styles quickly restarts the
-        # preview, and an older one's timers must not cut the new one off.
-        current = lambda: self._preview and self._preview_id == token  # noqa: E731
-        self._overlay.build(lambda: self.root.after(
-            int(seconds * 650), lambda: current() and self.busy()))
-        self._overlay.build(lambda: self.root.after(
-            int(seconds * 1000), lambda: current() and self._commands.put("preview_end")))
+        seconds (listening, then processing), then hide -- never over a
+        real dictation, and a real dictation always takes over."""
+        self._commands.put(("preview", seconds))
+        self._overlay.build(self._wake)
 
     def show(self, level_source, ready_source=None):
-        self._preview = False
-        self._level_source = level_source
-        self._ready_source = ready_source
-        self._commands.put("show")
+        self._commands.put(("show", level_source, ready_source))
         # The drawing loop stops while hidden; the shared overlay thread
         # (which polls anyway) restarts it.
         self._overlay.build(self._wake)
@@ -327,10 +314,64 @@ class _Pill:
             self._ticking = True
             self._tick()
 
+    def _start_preview(self, seconds):
+        """Overlay thread. A preview replaces only another preview."""
+        if self._visible and not self._preview:
+            return None
+        start = time.time()
+        self._preview_id += 1
+        token = self._preview_id
+
+        def fake_voice():
+            # Syllable-like bursts with short pauses, in RMS units (_draw
+            # scales by 20).
+            t = time.time() - start
+            talking = math.sin(t * 1.9) > -0.35
+            return 0.045 * talking * (0.45 + 0.55 * abs(math.sin(t * 8.5)))
+
+        # Timers check the token: a re-pick restarts the preview, and a real
+        # dictation bumps it, so an older timer never touches either.
+        current = lambda: self._preview and self._preview_id == token  # noqa: E731
+        self.root.after(int(seconds * 650), lambda: current() and self.busy())
+        self.root.after(int(seconds * 1000),
+                        lambda: current() and self._commands.put("preview_end"))
+        return fake_voice
+
     def _tick(self):
+        try:
+            self._tick_inner()
+        except Exception:
+            # One error must not freeze the line for the rest of the session
+            # (neutral QA 2026-11-23): hide it, and let the next show() start
+            # a fresh loop.
+            log.exception("listening line failed")
+            try:
+                self._hide_window()
+            except Exception:
+                pass
+            self._visible = False
+            self._ticking = False
+
+    def _tick_inner(self):
         try:
             while True:
                 cmd = self._commands.get_nowait()
+                if isinstance(cmd, tuple) and cmd[0] == "preview":
+                    source = self._start_preview(cmd[1])
+                    if source is None:
+                        continue
+                    self._preview = True
+                    self._level_source, self._ready_source = source, None
+                    cmd = "show"
+                elif isinstance(cmd, tuple) and cmd[0] == "show":
+                    _, self._level_source, self._ready_source = cmd
+                    if self._preview:
+                        # A real dictation takes over the preview: start it
+                        # clean (mic-ready dimming, wave, timers).
+                        self._preview = False
+                        self._preview_id += 1
+                        self._mode = None
+                    cmd = "show"
                 if cmd == "alert":
                     self._alert = True
                     self._recolor()
@@ -586,14 +627,21 @@ def show(level_source, ready_source=None):
 
 def preview(seconds=3.5):
     """Settings > Appearance: show the chosen listening style for a few
-    seconds. Safe from any thread; no-op on failure."""
-    try:
-        pill = _get()
-        pill._ready.wait(timeout=3)
-        if not pill._failed:
-            pill.preview(seconds)
-    except Exception:
-        pass
+    seconds. Safe from any thread; no-op on failure.
+
+    Settings calls this on the overlay thread. The first time, the pill
+    doesn't exist yet and is built ON that thread, so waiting for it there
+    froze Settings for 3 s (neutral QA 2026-11-23): the wait runs on a
+    helper thread instead."""
+    def go():
+        try:
+            pill = _get()
+            pill._ready.wait(timeout=3)
+            if not pill._failed:
+                pill.preview(seconds)
+        except Exception:
+            pass
+    threading.Thread(target=go, daemon=True, name="pill-preview").start()
 
 
 def hide():
