@@ -78,6 +78,8 @@ SetupIconFile=..\assets\icon.ico
 SetupWindowTitle=Install %1
 WelcomeLabel1=Talk instead of type
 WelcomeLabel2=Talkative turns your voice into text in any app. Hold the key, speak, let go, and your words appear where the cursor is.%n%nInstalls just for you, with no admin rights. It takes a few seconds.
+DiskSpaceMBLabel=Needs about [mb] MB of free space.
+DiskSpaceGBLabel=Needs about [gb] GB of free space.
 WizardInstalling=Installing
 ; The welcome page's own "Click Next to continue" line: there is no Next.
 ClickNext=
@@ -184,15 +186,17 @@ end;
 var
   AutostartBox: TNewCheckBox;
   PrivacyLink: TNewStaticText;
-  LocationLabel: TNewStaticText;
-  ChangeLink: TNewStaticText;
+  LocationHeading: TNewStaticText;
   BandStrip: TBitmapImage;
 
-{ Install location (user, 2026-11-23: let people choose where it goes).
-  A line on the welcome page, not a folder page, so the install stays one
-  click. Offered only on a first install: a reinstall or update keeps the
-  folder it already has (Inno's UsePreviousAppDir), otherwise the updater
-  and Start menu would point at a stale copy. }
+{ Install location (user, 2026-11-23: let people choose where it goes; a
+  text line with a "Change" link was rejected as not good enough). An
+  "Install location" section on the welcome page: Inno's own folder box,
+  Browse button (its folder dialog adds "\Talkative" to the pick) and
+  space note, moved there from the hidden folder page, so the install
+  stays one page. Offered only on a first install: a reinstall or update
+  keeps the folder it already has (Inno's UsePreviousAppDir), otherwise
+  the updater and Start menu would point at a stale copy. }
 function PreviouslyInstalled: Boolean;
 begin
   Result := RegKeyExists(HKCU,
@@ -215,30 +219,29 @@ begin
     RemoveDir(Dir);
 end;
 
-procedure ShowLocation;
-begin
-  LocationLabel.Caption := 'Installs to ' + MinimizePathName(WizardForm.DirEdit.Text,
-    LocationLabel.Font, WizardForm.WelcomeLabel2.Width - ScaleX(90));
-  ChangeLink.Left := LocationLabel.Left + LocationLabel.Width + ScaleX(8);
-end;
-
-procedure ChangeLocation(Sender: TObject);
+{ The folder page (which normally checks the path) is never shown, so
+  the Install click checks it: a full path, and one we can write to. }
+function NextButtonClick(CurPageID: Integer): Boolean;
 var
   Dir: String;
 begin
-  Dir := WizardForm.DirEdit.Text;
-  if not BrowseForFolder('Choose where to install {#MyAppName}. A {#MyAppName} folder is made inside the folder you pick.', Dir, True) then
+  Result := True;
+  if (CurPageID <> wpWelcome) or PreviouslyInstalled then
     Exit;
-  if CompareText(ExtractFileName(RemoveBackslashUnlessRoot(Dir)), '{#MyAppName}') <> 0 then
-    Dir := AddBackslash(Dir) + '{#MyAppName}';
-  if not CanWriteTo(Dir) then
-  begin
-    MsgBox('Windows doesn''t let {#MyAppName} install there without admin rights.' + #13#10
-      + 'Pick a folder in your user folder or on another drive.', mbError, MB_OK);
-    Exit;
-  end;
+  Dir := RemoveBackslashUnlessRoot(Trim(WizardForm.DirEdit.Text));
   WizardForm.DirEdit.Text := Dir;
-  ShowLocation;
+  if (Length(Dir) < 3) or ((Copy(Dir, 2, 2) <> ':\') and (Copy(Dir, 1, 2) <> '\\')) then
+  begin
+    MsgBox('Enter a full folder path, for example C:\Apps\{#MyAppName}, or click Browse.',
+      mbError, MB_OK);
+    Result := False;
+  end
+  else if not CanWriteTo(Dir) then
+  begin
+    MsgBox('Windows doesn''t let {#MyAppName} install in that folder without admin rights.'
+      + #13#10#13#10 + 'Pick a folder in your user folder or on another drive.', mbError, MB_OK);
+    Result := False;
+  end;
 end;
 
 procedure OpenPrivacy(Sender: TObject);
@@ -254,6 +257,7 @@ var
   Page: TNewNotebookPage;
   Panel: TBitmapImage;
   R: TRect;
+  L, W, Y: Integer;
 begin
   Page := WizardForm.WelcomePage;
 
@@ -282,33 +286,55 @@ begin
   WizardForm.WelcomeLabel2.Caption := Trim(WizardForm.WelcomeLabel2.Caption);
   WizardForm.WelcomeLabel2.AdjustHeight;
 
+  L := WizardForm.WelcomeLabel2.Left;
+  W := WizardForm.WelcomeLabel2.Width;
+  Y := WizardForm.WelcomeLabel2.Top + WizardForm.WelcomeLabel2.Height + ScaleY(22);
+
+  if not PreviouslyInstalled then
+  begin
+    LocationHeading := TNewStaticText.Create(WizardForm);
+    LocationHeading.Parent := Page;
+    LocationHeading.Caption := 'Install location';
+    LocationHeading.Font.Style := [fsBold];
+    LocationHeading.Left := L;
+    LocationHeading.Top := Y;
+    Y := Y + LocationHeading.Height + ScaleY(8);
+
+    with WizardForm.DirBrowseButton do
+    begin
+      Parent := Page;
+      Caption := 'Browse' + #$2026;
+      Left := L + W - Width;
+    end;
+    with WizardForm.DirEdit do
+    begin
+      Parent := Page;
+      Left := L;
+      Top := Y;
+      Width := W - WizardForm.DirBrowseButton.Width - ScaleX(8);
+    end;
+    WizardForm.DirBrowseButton.Top := Y
+      + (WizardForm.DirEdit.Height - WizardForm.DirBrowseButton.Height) div 2;
+    Y := Y + WizardForm.DirEdit.Height + ScaleY(8);
+
+    with WizardForm.DiskSpaceLabel do
+    begin
+      Parent := Page;
+      Left := L;
+      Top := Y;
+      Width := W;
+    end;
+    Y := Y + WizardForm.DiskSpaceLabel.Height + ScaleY(22);
+  end;
+
   AutostartBox := TNewCheckBox.Create(WizardForm);
   AutostartBox.Parent := Page;
   AutostartBox.Caption := 'Start {#MyAppName} when Windows starts';
   AutostartBox.Checked := True;
-  AutostartBox.Left := WizardForm.WelcomeLabel2.Left;
-  AutostartBox.Top := WizardForm.WelcomeLabel2.Top + WizardForm.WelcomeLabel2.Height + ScaleY(20);
-  AutostartBox.Width := WizardForm.WelcomeLabel2.Width;
+  AutostartBox.Left := L;
+  AutostartBox.Top := Y;
+  AutostartBox.Width := W;
   AutostartBox.Height := ScaleY(22);
-
-  LocationLabel := TNewStaticText.Create(WizardForm);
-  LocationLabel.Parent := Page;
-  LocationLabel.Left := WizardForm.WelcomeLabel2.Left;
-  LocationLabel.Top := AutostartBox.Top + AutostartBox.Height + ScaleY(14);
-  ChangeLink := TNewStaticText.Create(WizardForm);
-  ChangeLink.Parent := Page;
-  ChangeLink.Caption := 'Change';
-  ChangeLink.Cursor := crHand;
-  ChangeLink.Font.Style := [fsUnderline];
-  ChangeLink.Font.Color := clHotLight;
-  ChangeLink.OnClick := @ChangeLocation;
-  ChangeLink.Top := LocationLabel.Top;
-  ShowLocation;
-  if PreviouslyInstalled then
-  begin
-    LocationLabel.Visible := False;
-    ChangeLink.Visible := False;
-  end;
 
   { The privacy link sits in the button band, lined up with the text above
     and centred on the buttons, so the band isn't an empty strip. }
