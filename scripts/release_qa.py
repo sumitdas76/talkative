@@ -324,7 +324,6 @@ def check_text_rules():
                              ("D53", "own_groq_key_test.py"),
                              ("D53", "groq_prompt_drift_test.py"),
                              ("W12", "own_groq_key_settings_test.py"),
-                             ("D54", "undo_retype_test.py"),
                              ("D55", "rewrite_test.py"),
                              ("D55", "rewrite_hotkey_test.py"),
                              ("D56", "languages_test.py"),

@@ -41,10 +41,6 @@ CONTEXT_MAX_CHARS = 400
 # the same window, carries on that sentence: its full stop is taken back
 # and the new text starts in lowercase (continuation.py). 0 = off.
 CONTINUE_SECONDS = 4.0
-# The last dictation is kept in memory this long, so saying only "scratch
-# that" takes it back and "type that again" types it again
-# (last_dictation.py). Never saved to disk.
-LAST_DICTATION_SECONDS = 30 * 60
 # After each dictation the microphone stays open CONTINUE_SECONDS, keeping
 # only this many seconds in memory; a re-press in that time starts with
 # them, so a word said while pressing isn't lost (audio_recorder.py).

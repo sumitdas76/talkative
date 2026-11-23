@@ -159,9 +159,8 @@ def caret_and_selection(limit=2000):
     focused control, raw, at most `limit` characters each (the text before
     keeps its end, the selection its start); "" for no selection. None when
     it can't be read (no TextPattern) or it's a password field. Used on
-    this PC only: "scratch that" checks its own text is still right before
-    the caret (last_dictation.py) and that nothing is selected, since a
-    Backspace would delete a selection instead. Never raises."""
+    this PC only, by the rewrite key (rewrite.py) to read the selection.
+    Never raises."""
     try:
         pythoncom.CoInitialize()
     except Exception:

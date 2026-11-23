@@ -13,7 +13,7 @@ cloud_client.rewrite() and pastes.
 Never replaces anything it isn't sure of: an empty reply, a reply that
 says the instruction wasn't a rewrite (cloud_prompt.NOT_A_REWRITE), or a
 selection that changed while the user spoke all leave the text alone.
-"Scratch that" puts the original back (last_dictation keeps it).
+Ctrl+Z in the app puts the original back (the rewrite is a paste).
 """
 
 import re

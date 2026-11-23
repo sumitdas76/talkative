@@ -21,7 +21,7 @@ from tkinter import filedialog, messagebox, ttk
 from pynput import keyboard
 from PIL import Image, ImageDraw, ImageTk
 
-from . import __version__, app_icon, audio_devices, config, dev_mode, error_toast, feedback, fix_learning, grammar_engine, groq_direct, history, languages, mic_warmup, model_manager, overlay_thread, packaging, palette, pill, secret_store, settings, try_it_now, updater, usage_ping
+from . import __version__, app_icon, audio_devices, config, dev_mode, error_toast, feedback, fix_learning, grammar_engine, groq_direct, history, languages, mic_warmup, model_manager, overlay_thread, packaging, palette, pill, secret_store, settings, try_it_now, updater
 from .keynames import friendly as _friendly_key_name
 
 log = logging.getLogger(__name__)
@@ -1283,7 +1283,7 @@ class _SettingsWindow:
         ttk.Label(rewrite_box, wraplength=560, style="Muted.TLabel",
                   text="Select text, hold this key and say what to change, like "
                        "“make it shorter” or “turn this into a list”. Needs Cloud. "
-                       "Say “scratch that” to get the original back.").pack(
+                       "Press Ctrl+Z to get the original back.").pack(
             anchor="w", pady=(0, 4))
         row = self._setting_row(rewrite_box, "Hotkey",
                                 "Click it, then hold the key(s) you want.")
