@@ -242,6 +242,8 @@ _window = None
 # also shows the devices in use.
 _PAGES = ["General", "Auto Text", "Dictation", "Hotkeys", "Audio & Output",
           "Feedback", "About"]
+# General > Processing: the Cloud column's text width (beside Local).
+_CLOUD_COL_W = 300
 
 
 def _on_closed():
@@ -444,11 +446,24 @@ class _SettingsWindow:
         self._page_cap = max(200, bottom - top - frame - fixed)
         self._fit_scroll()
         self.root.update_idletasks()
+        # Too wide for this screen (1366x768 at 125% is 1093 wide here):
+        # General's side-by-side columns go back to one above the other.
+        if self.root.winfo_reqwidth() + 16 > right - left:
+            self._stack_general()
+            self._fit_scroll()
+            self.root.update_idletasks()
         w = self.root.winfo_reqwidth()
         h = self.root.winfo_reqheight() + frame
         x = left + max(0, (right - left - w) // 2)
         y = top + max(0, (bottom - top - h) // 2)
         self.root.geometry(f"+{x}+{y}")
+
+    def _stack_general(self):
+        """General's two pairs of columns (Startup | Appearance, Cloud |
+        Local) one above the other, for screens too narrow for them."""
+        for second, gap in self._general_columns:
+            second.grid(row=1, column=0, columnspan=2, sticky="new", pady=(gap, 0))
+        self._cloud_spacer.configure(width=1)
 
     def _fit_scroll(self):
         """Size the page area: as tall as the tallest page (so the window
@@ -773,13 +788,25 @@ class _SettingsWindow:
     def _tab_general(self, f):
         self.var_autostart = tk.BooleanVar(value=config.START_WITH_WINDOWS)
         self.var_theme = tk.StringVar(value=config.THEME)
-        start = self._section(f, "Startup", first=True)
+        # Wide rather than tall (2026-11-23, user request: 1366x768
+        # screens): Startup beside Appearance, Cloud beside Local, so the
+        # own-key block opens into the space next to the model cards
+        # instead of making the page taller.
+        top = ttk.Frame(f)
+        top.pack(fill="x")
+        top.columnconfigure(1, weight=1)
+        start_col = ttk.Frame(top)
+        start_col.grid(row=0, column=0, sticky="nw", padx=(0, 48))
+        look_col = ttk.Frame(top)
+        look_col.grid(row=0, column=1, sticky="new")
+        start = self._section(start_col, "Startup", first=True)
         row = self._setting_row(start, "Start with Windows",
                                 f"Open {APP_NAME} when you sign in to Windows.")
         ttk.Checkbutton(row, variable=self.var_autostart,
-                        style="Switch.TCheckbutton").grid(row=0, column=1, sticky="e")
+                        style="Switch.TCheckbutton").grid(row=0, column=1, sticky="e",
+                                                          padx=(24, 0))
 
-        look = self._section(f, "Appearance")
+        look = self._section(look_col, "Appearance", first=True)
         row = self._setting_row(look, "Theme")
         modes = ttk.Frame(row)
         modes.grid(row=0, column=1, sticky="e")
@@ -807,11 +834,22 @@ class _SettingsWindow:
         # Cloud and Local as two parts, the local models under Local
         # (2026-10-27, user request: the Models tab folded in here).
         proc = self._section(f, "Processing")
-        ttk.Label(proc, text="Cloud", style="Sub.TLabel").pack(anchor="w")
-        cloud_box = ttk.Frame(proc, padding=(4, 2, 0, 0))
+        cols = ttk.Frame(proc)
+        cols.pack(fill="x")
+        cols.columnconfigure(1, weight=1)
+        cloud_col = ttk.Frame(cols, width=_CLOUD_COL_W)
+        cloud_col.grid(row=0, column=0, sticky="nw", padx=(0, 32))
+        local_col = ttk.Frame(cols)
+        local_col.grid(row=0, column=1, sticky="new")
+        # Fixed width, so opening the key block doesn't widen the window.
+        self._cloud_spacer = ttk.Frame(cloud_col, width=_CLOUD_COL_W, height=1)
+        self._cloud_spacer.pack(side="bottom")
+        self._general_columns = [(look_col, 14), (local_col, 10)]
+        ttk.Label(cloud_col, text="Cloud", style="Sub.TLabel").pack(anchor="w")
+        cloud_box = ttk.Frame(cloud_col, padding=(4, 2, 0, 0))
         cloud_box.pack(fill="x")
-        ttk.Label(proc, text="Local", style="Sub.TLabel").pack(anchor="w", pady=(10, 0))
-        local_box = ttk.Frame(proc, padding=(4, 2, 0, 0))
+        ttk.Label(local_col, text="Local", style="Sub.TLabel").pack(anchor="w")
+        local_box = ttk.Frame(local_col, padding=(4, 2, 0, 0))
         local_box.pack(fill="x")
         self.var_processing = tk.StringVar(value=config.PROCESSING_MODE)
         self.var_speech_service = tk.StringVar(value=config.SPEECH_SERVICE)
@@ -875,13 +913,15 @@ class _SettingsWindow:
         for seq in ("<Button-1>", "<Return>", "<space>"):
             self.key_toggle.bind(seq, lambda e: self._toggle_own_key())
         self.key_box = ttk.Frame(parent, padding=(16, 4, 0, 0))
+        wrap = _CLOUD_COL_W - 24
         ttk.Label(
-            self.key_box, wraplength=430, justify="left", style="Muted.TLabel",
+            self.key_box, wraplength=wrap, justify="left", style="Muted.TLabel",
             text="Everyone shares one free Groq key, which has a daily limit. With "
                  "your own free key, your dictations use your own limit, and your "
                  "audio goes straight to Groq instead of through Talkative Cloud. "
-                 "If your key stops working, Talkative Cloud is used. Don't add a "
-                 "card to that Groq account: the free limit is plenty.",
+                 "If your key stops working, Talkative Cloud is used. The free "
+                 "plan is plenty, so there's no need to add a credit card to "
+                 "your Groq account.",
         ).pack(anchor="w")
         link = ttk.Label(self.key_box, text="Get a free key at console.groq.com",
                          cursor="hand2", foreground=self._link, takefocus=True)
@@ -889,21 +929,21 @@ class _SettingsWindow:
         for seq in ("<Button-1>", "<Return>", "<space>"):
             link.bind(seq, lambda e: webbrowser.open("https://console.groq.com/keys"))
         self.key_entry_row = ttk.Frame(self.key_box)
-        ttk.Label(self.key_entry_row, text="Your key:").pack(side="left")
+        ttk.Label(self.key_entry_row, text="Your key:").pack(anchor="w")
         self.var_groq_key = tk.StringVar()
         self.key_entry = ttk.Entry(self.key_entry_row, textvariable=self.var_groq_key,
-                                   show="•", width=34)
-        self.key_entry.pack(side="left", padx=(6, 6))
+                                   show="•", width=20)
+        self.key_entry.pack(side="left", padx=(0, 6), pady=(2, 0))
         self.key_entry.bind("<Return>", lambda e: self._check_own_key())
         self.key_check_btn = ttk.Button(self.key_entry_row, text="Check and use",
                                         command=self._check_own_key)
         self.key_check_btn.pack(side="left")
         self.key_saved_row = ttk.Frame(self.key_box)
-        self.key_left = ttk.Label(self.key_saved_row, text="")
-        self.key_left.pack(side="left")
+        self.key_left = ttk.Label(self.key_saved_row, text="", wraplength=wrap, justify="left")
+        self.key_left.pack(anchor="w")
         ttk.Button(self.key_saved_row, text="Remove key",
-                   command=self._remove_own_key).pack(side="left", padx=(10, 0))
-        self.key_status = ttk.Label(self.key_box, text="", wraplength=430, justify="left")
+                   command=self._remove_own_key).pack(anchor="w", pady=(4, 0))
+        self.key_status = ttk.Label(self.key_box, text="", wraplength=wrap, justify="left")
         self.key_status.pack(anchor="w", side="bottom", pady=(4, 0))
         self._render_own_key()
 
