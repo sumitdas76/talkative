@@ -173,6 +173,113 @@ def _apply_switch_glyphs(style, line, accent, accent_fg):
     ])
 
 
+# Radio buttons (2026-11-23, user: "more prominent", a cleaner look):
+# drawn like the checkbox, same create-once rule. Unselected: a clear ring
+# that darkens on hover; selected: an accent disc with a white dot (as in
+# Windows 11). The image is wider than the circle: the gap before the text.
+_RADIO_SIZE = 18
+_RADIO_IMAGE = (_RADIO_SIZE + 8, _RADIO_SIZE)
+_RADIO_ELEMENT = "SumitRadio.indicator"
+_radio_images = None  # photos once created, in _RADIO_STATES order
+_RADIO_STATES = ("normal", "hover", "selected", "disabled", "disabled_selected")
+
+
+def _draw_radio_glyphs(ring, ring_hover, fill, accent, accent_fg, faint):
+    scale = 4
+    w, h = _RADIO_IMAGE[0] * scale, _RADIO_IMAGE[1] * scale
+    d0 = _RADIO_SIZE * scale
+    pad = scale  # anti-aliased edge room
+    box = (pad, pad, d0 - pad, d0 - pad)
+    dot = d0 * 0.2
+    c = d0 / 2
+    inner = (c - dot, c - dot, c + dot, c + dot)
+    width = round(1.6 * scale)
+    out = []
+    for state in _RADIO_STATES:
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        if state == "selected":
+            d.ellipse(box, fill=accent)
+            d.ellipse(inner, fill=accent_fg)
+        elif state == "disabled_selected":
+            d.ellipse(box, fill=faint)
+            d.ellipse(inner, fill=fill)
+        else:
+            outline = {"normal": ring, "hover": ring_hover, "disabled": faint}[state]
+            d.ellipse(box, fill=fill, outline=outline, width=width)
+        out.append(img.resize(_RADIO_IMAGE, Image.LANCZOS))
+    return out
+
+
+def _apply_radio_glyphs(style, ring, ring_hover, fill, accent, accent_fg, faint):
+    global _radio_images
+    pils = _draw_radio_glyphs(ring, ring_hover, fill, accent, accent_fg, faint)
+    if _radio_images is None:
+        _radio_images = tuple(ImageTk.PhotoImage(i) for i in pils)
+        normal, hover, sel, dis, dis_sel = _radio_images
+        style.element_create(
+            _RADIO_ELEMENT, "image", normal,
+            ("disabled selected", dis_sel), ("disabled", dis),
+            ("selected", sel), ("active", hover),
+        )
+    else:
+        for photo, pil in zip(_radio_images, pils):
+            photo.paste(pil)
+    for name in ("TRadiobutton", "Card.TRadiobutton"):
+        style.layout(name, [
+            ("Radiobutton.padding", {"sticky": "nswe", "children": [
+                (_RADIO_ELEMENT, {"side": "left", "sticky": ""}),
+                ("Radiobutton.focus", {"side": "left", "sticky": "w", "children": [
+                    ("Radiobutton.label", {"sticky": "nswe"}),
+                ]}),
+            ]}),
+        ])
+
+
+# Section cards (2026-11-23): each settings section is a rounded surface on
+# the page's canvas color, instead of sections split by lines. The image
+# element's border keeps the corners while it stretches.
+_SECTION_ELEMENT = "SumitSection.background"
+_SECTION_IMAGE = (40, 40)
+_section_image = None
+
+
+def _draw_section_glyph(canvas, card, edge):
+    scale = 4
+    w, h = _SECTION_IMAGE[0] * scale, _SECTION_IMAGE[1] * scale
+    img = Image.new("RGBA", (w, h), canvas)
+    ImageDraw.Draw(img).rounded_rectangle(
+        (0, 0, w - 1, h - 1), radius=10 * scale, fill=card, outline=edge, width=scale)
+    return img.resize(_SECTION_IMAGE, Image.LANCZOS)
+
+
+def _apply_section_glyph(style, canvas, card, edge):
+    global _section_image
+    pil = _draw_section_glyph(canvas, card, edge)
+    if _section_image is None:
+        _section_image = ImageTk.PhotoImage(pil)
+        style.element_create(_SECTION_ELEMENT, "image", _section_image,
+                             border=14, sticky="nsew")
+    else:
+        _section_image.paste(pil)
+    style.layout("Section.TFrame", [(_SECTION_ELEMENT, {"sticky": "nswe"})])
+
+
+def _fonts(root):
+    """Windows 11's UI font (Segoe UI Variable) when it's installed, else
+    Segoe UI (Windows 10)."""
+    import tkinter.font as tkfont
+    have = set(tkfont.families(root))
+
+    def pick(*names):
+        return next((n for n in names if n in have), names[-1])
+    return {
+        "text": pick("Segoe UI Variable Text", "Segoe UI"),
+        "semi": pick("Segoe UI Variable Text Semibold", "Segoe UI Semibold"),
+        "display": pick("Segoe UI Variable Display Semib", "Segoe UI Semibold"),
+    }
+
+
 # Sidebar item backgrounds (2026-10-30, user: highlighted on hover "just
 # like Claude", no lines): rounded rectangles stretched behind the label
 # via the image element's border, plain for normal, a soft fill on hover
@@ -364,7 +471,7 @@ class _SettingsWindow:
         # is gridded into the same cell and raised when chosen, so the
         # window sizes to the largest page and doesn't jump on a switch.
         self._build_sidebar()
-        content = ttk.Frame(self.root)
+        content = ttk.Frame(self.root, style="Canvas.TFrame")
         content.pack(side="left", fill="both", expand=True)
         self._content = content
 
@@ -372,16 +479,15 @@ class _SettingsWindow:
         # the page above it scrolls when the screen is too short for it
         # (2026-11-18, user report: on 1366x768 screens Save and Close
         # were off the bottom -- the General page alone needs ~850 px).
-        bar = ttk.Frame(content, padding=(28, 10, 28, 12))
+        bar = ttk.Frame(content, padding=(28, 8, 28, 12), style="Canvas.TFrame")
         bar.pack(side="bottom", fill="x")
-        ttk.Separator(content).pack(side="bottom", fill="x")
-        self.saved_label = ttk.Label(bar, text="")
+        self.saved_label = ttk.Label(bar, text="", style="Canvas.TLabel")
         self.saved_label.pack(side="left")
         ttk.Button(bar, text="Close", command=self._close).pack(side="right")
         ttk.Button(bar, text="Save and apply", command=self._save,
                    style="Accent.TButton").pack(side="right", padx=8)
 
-        viewport = ttk.Frame(content)
+        viewport = ttk.Frame(content, style="Canvas.TFrame")
         viewport.pack(fill="both", expand=True)
         self._scroll_canvas = canvas = tk.Canvas(
             viewport, bg=self._bg, highlightthickness=0, bd=0, yscrollincrement=20,
@@ -389,7 +495,7 @@ class _SettingsWindow:
         self._scrollbar = ttk.Scrollbar(viewport, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=self._scrollbar.set)
         canvas.pack(side="left", fill="both", expand=True)
-        area = ttk.Frame(canvas)
+        area = ttk.Frame(canvas, style="Canvas.TFrame")
         self._area = area
         self._area_item = canvas.create_window(0, 0, window=area, anchor="nw")
         area.columnconfigure(0, weight=1)
@@ -400,16 +506,17 @@ class _SettingsWindow:
             "Dictation": self._tab_dictation,
             "Hotkeys": self._tab_hotkeys,
             "Audio & Output": self._tab_audio_output,
-            "Feedback": self._build_feedback_section,
+            "Feedback": lambda f: self._build_feedback_section(
+                self._section(f, "Send feedback", first=True)),
             "About": self._tab_about,
         }
         self._pages = {}
         self._wide_columns = []  # (second column, gap above it when stacked)
         for name in _PAGES:
-            page = ttk.Frame(area, padding=(28, 20, 28, 8))
+            page = ttk.Frame(area, padding=(28, 16, 28, 8), style="Canvas.TFrame")
             page.grid(row=0, column=0, sticky="nsew")
-            ttk.Label(page, text=name, style="PageTitle.TLabel").pack(anchor="w", pady=(0, 12))
-            body = ttk.Frame(page)
+            ttk.Label(page, text=name, style="PageTitle.TLabel").pack(anchor="w", pady=(0, 10))
+            body = ttk.Frame(page, style="Canvas.TFrame")
             body.pack(fill="both", expand=True)
             builders[name](body)
             self._pages[name] = page
@@ -576,13 +683,15 @@ class _SettingsWindow:
         self._scroll_canvas.yview_moveto(0)
         self._fit_scroll()
 
-    def _section(self, parent, title, first=False):
-        """A page section: a divider (not above the first), a colored
-        heading, and the frame its settings go in."""
-        if not first:
-            ttk.Separator(parent).pack(fill="x", pady=(14, 12))
-        ttk.Label(parent, text=title, style="Section.TLabel").pack(anchor="w", pady=(0, 6))
-        body = ttk.Frame(parent)
+    def _section(self, parent, title, first=False, grow=False):
+        """A page section: a rounded card on the page (2026-11-23; was a
+        divider line and a heading), its heading, and the frame its
+        settings go in. `grow`: fill the parent's height (side-by-side
+        cards line up)."""
+        card = ttk.Frame(parent, style="Section.TFrame", padding=(18, 10, 18, 12))
+        card.pack(fill="both" if grow else "x", expand=grow, pady=(0 if first else 10, 0))
+        ttk.Label(card, text=title, style="Section.TLabel").pack(anchor="w", pady=(0, 4))
+        body = ttk.Frame(card)
         body.pack(fill="x")
         return body
 
@@ -640,40 +749,53 @@ class _SettingsWindow:
         sidebar = pill._mix(bg, raised, 0.5)
         nav_hover = pill._mix(sidebar, raised, 0.45)
 
-        self.root.configure(bg=bg)
-        style.configure(".", background=bg, foreground=fg,
+        # Cards on a canvas (2026-11-23): the page is `bg`, each section
+        # a `card` surface (the theme's field color) with a hairline edge;
+        # boxes inside a card (model cards, examples) are `inset`.
+        canvas, card = bg, field
+        inset = pill._mix(field, raised, 0.45)
+        edge = pill._mix(card, border, 0.45)
+        fonts = _fonts(self.root)
+        text_font, semi = fonts["text"], fonts["semi"]
+
+        self.root.configure(bg=canvas)
+        style.configure(".", background=card, foreground=fg,
                         fieldbackground=field, bordercolor=border,
-                        lightcolor=bg, darkcolor=bg, font=("Segoe UI", 10))
+                        lightcolor=card, darkcolor=card, font=(text_font, 10))
+        style.configure("Canvas.TFrame", background=canvas)
+        style.configure("Canvas.TLabel", background=canvas)
+        _apply_section_glyph(style, canvas, card, edge)
         style.configure("Sidebar.TFrame", background=sidebar)
         style.configure("SidebarTitle.TLabel", background=sidebar, foreground=fg,
-                        font=("Segoe UI Semibold", 14))
+                        font=(fonts["display"], 14))
         style.configure("SidebarMuted.TLabel", background=sidebar, foreground=muted)
         style.configure("Nav.TLabel", foreground=fg, padding=(12, 6))
         _apply_nav_glyphs(style, sidebar, nav_hover, pill._mix(raised, hover, 0.5))
-        style.configure("PageTitle.TLabel", font=("Segoe UI Semibold", 18))
-        style.configure("Section.TLabel", foreground=title, font=("Segoe UI Semibold", 11))
-        style.configure("Sub.TLabel", font=("Segoe UI Semibold", 10))
-        style.configure("TSeparator", background=border)
-        # Cards (the model boxes): a field-colored panel with a thin border.
-        style.configure("Card.TFrame", background=field, bordercolor=border,
-                        lightcolor=border, darkcolor=border, relief="solid", borderwidth=1)
-        style.configure("CardBody.TFrame", background=field)
-        style.configure("Card.TLabel", background=field)
-        style.configure("CardTitle.TLabel", background=field, font=("Segoe UI Semibold", 10))
-        style.configure("CardMuted.TLabel", background=field, foreground=muted)
+        style.configure("PageTitle.TLabel", background=canvas,
+                        font=(fonts["display"], 20))
+        style.configure("Section.TLabel", foreground=title, font=(semi, 11))
+        style.configure("Sub.TLabel", font=(semi, 10))
+        style.configure("TSeparator", background=edge)
+        # Boxes inside a section (the model cards, the dictation example):
+        # a slightly tinted panel with a hairline edge.
+        style.configure("Card.TFrame", background=inset, bordercolor=edge,
+                        lightcolor=edge, darkcolor=edge, relief="solid", borderwidth=1)
+        style.configure("CardBody.TFrame", background=inset)
+        style.configure("Card.TLabel", background=inset)
+        style.configure("CardTitle.TLabel", background=inset, font=(semi, 10))
+        style.configure("CardMuted.TLabel", background=inset, foreground=muted)
         # A switch inside a card (Optimize Narration): the layout comes from
         # Switch.TCheckbutton, only the background differs.
-        style.configure("Card.Switch.TCheckbutton", background=field)
-        style.map("Card.Switch.TCheckbutton", background=[("active", field)])
+        style.configure("Card.Switch.TCheckbutton", background=inset)
+        style.map("Card.Switch.TCheckbutton", background=[("active", inset)])
         # The voice model choice in each card (Fast / Accurate).
-        style.configure("Card.TRadiobutton", background=field,
-                        font=("Segoe UI Semibold", 10))
-        style.map("Card.TRadiobutton", background=[("active", field)],
+        style.configure("Card.TRadiobutton", background=inset, font=(semi, 10))
+        style.map("Card.TRadiobutton", background=[("active", inset)],
                   foreground=[("disabled", muted)])
         # Flat buttons: clam's light/dark edge colors set to the face
         # color remove its bevel.
         style.configure("TButton", background=raised, lightcolor=raised, darkcolor=raised,
-                        bordercolor=border, padding=(14, 4))
+                        bordercolor=border, padding=(16, 5))
         style.map(
             "TButton",
             background=[("disabled", raised), ("active", hover)],
@@ -683,7 +805,7 @@ class _SettingsWindow:
         # The main action ("Save and apply") in the accent color.
         style.configure("Accent.TButton", background=accent, foreground=accent_fg,
                         bordercolor=accent, lightcolor=accent, darkcolor=accent,
-                        font=("Segoe UI Semibold", 10))
+                        font=(semi, 10))
         style.map(
             "Accent.TButton",
             background=[("disabled", raised), ("active", accent_hover)],
@@ -691,45 +813,41 @@ class _SettingsWindow:
             foreground=[("disabled", border)],
         )
         # Section titles ("Dictation style", "Feedback"...) in color.
-        style.configure("TLabelframe", background=bg, bordercolor=border)
-        style.configure("TLabelframe.Label", background=bg, foreground=title,
-                        font=("Segoe UI Semibold", 10))
+        style.configure("TLabelframe", background=card, bordercolor=border)
+        style.configure("TLabelframe.Label", background=card, foreground=title,
+                        font=(semi, 10))
         # Radiobutton/checkbutton row background was never mapped for the
         # "active" (hover) state, so clam's built-in light default painted
         # every row white on hover regardless of theme.
-        style.configure("TCheckbutton", background=bg, foreground=fg)
-        style.configure("TRadiobutton", background=bg, foreground=fg)
+        style.configure("TCheckbutton", background=card, foreground=fg)
+        style.configure("TRadiobutton", background=card, foreground=fg, padding=(0, 1))
         style.map(
             "TCheckbutton",
-            background=[("active", bg)],
+            background=[("active", card)],
             foreground=[("disabled", border)],
         )
         _apply_checkbox_glyphs(style, field, border, accent, accent_fg)
         _apply_switch_glyphs(style, muted, accent, accent_fg)
         style.map(
             "TRadiobutton",
-            background=[("active", bg)],
+            background=[("active", card)],
             foreground=[("disabled", border)],
         )
-        # clam's radio dot was white on an unselected button in dark mode,
-        # so the chosen option looked like the only empty one. Now: an
-        # empty field-colored circle, and a title-colored dot when selected
-        # (the accent is too dark to see on dark backgrounds).
-        style.configure("TRadiobutton", indicatorbackground=field,
-                        indicatorforeground=title, bordercolor=border,
-                        upperbordercolor=border, lowerbordercolor=border)
-        style.map(
-            "TRadiobutton",
-            indicatorbackground=[("pressed", hover), ("selected", field)],
-            indicatorforeground=[("disabled", border), ("selected", title)],
-        )
+        # Our own radio glyph (see _draw_radio_glyphs). In dark mode the
+        # accent is dark, so the selected disc uses the heading color with
+        # the page color as its dot, which stays clear on both themes.
+        dark = self._effective_theme() == "dark"
+        _apply_radio_glyphs(
+            style, ring=pill._mix(border, fg, 0.35), ring_hover=fg, fill=field,
+            accent=title if dark else accent, accent_fg=canvas if dark else accent_fg,
+            faint=pill._mix(card, border, 0.6))
         # Flat tables: taller rows for 10pt text, headings without bevels.
         style.configure("Treeview", background=field, foreground=fg,
                         fieldbackground=field, rowheight=26, bordercolor=border,
                         lightcolor=field, darkcolor=field)
         style.configure("Treeview.Heading", background=raised, foreground=fg,
                         lightcolor=raised, darkcolor=raised, bordercolor=border,
-                        padding=(8, 4), font=("Segoe UI Semibold", 10))
+                        padding=(8, 4), font=(semi, 10))
         style.map("Treeview.Heading", background=[("active", hover)],
                   lightcolor=[("active", hover)], darkcolor=[("active", hover)])
         style.configure("TCombobox", lightcolor=field, darkcolor=field, padding=(6, 3),
@@ -777,8 +895,8 @@ class _SettingsWindow:
         style.configure("Muted.TLabel", foreground=self._muted)
         # feedback_text is a raw tk.Text (not ttk), so it needs its colors
         # reapplied by hand on every theme switch, not just at creation.
-        style.configure("Vertical.TScrollbar", background=border, troughcolor=bg,
-                        bordercolor=bg, lightcolor=border, darkcolor=border,
+        style.configure("Vertical.TScrollbar", background=border, troughcolor=canvas,
+                        bordercolor=canvas, lightcolor=border, darkcolor=border,
                         arrowcolor=muted)
         style.map("Vertical.TScrollbar", background=[("active", hover)])
         if hasattr(self, "_scroll_canvas"):
@@ -799,21 +917,21 @@ class _SettingsWindow:
         # screens): Startup beside Appearance, Cloud beside Local, so the
         # own-key block opens into the space next to the model cards
         # instead of making the page taller.
-        top = ttk.Frame(f)
+        top = ttk.Frame(f, style="Canvas.TFrame")
         top.pack(fill="x")
         top.columnconfigure(1, weight=1)
-        start_col = ttk.Frame(top)
-        start_col.grid(row=0, column=0, sticky="nw", padx=(0, 48))
-        look_col = ttk.Frame(top)
-        look_col.grid(row=0, column=1, sticky="new")
-        start = self._section(start_col, "Startup", first=True)
+        start_col = ttk.Frame(top, style="Canvas.TFrame")
+        start_col.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        look_col = ttk.Frame(top, style="Canvas.TFrame")
+        look_col.grid(row=0, column=1, sticky="nsew")
+        start = self._section(start_col, "Startup", first=True, grow=True)
         row = self._setting_row(start, "Start with Windows",
                                 f"Open {APP_NAME} when you sign in to Windows.")
         ttk.Checkbutton(row, variable=self.var_autostart,
                         style="Switch.TCheckbutton").grid(row=0, column=1, sticky="e",
                                                           padx=(24, 0))
 
-        look = self._section(look_col, "Appearance", first=True)
+        look = self._section(look_col, "Appearance", first=True, grow=True)
         row = self._setting_row(look, "Theme")
         modes = ttk.Frame(row)
         modes.grid(row=0, column=1, sticky="e")
@@ -851,7 +969,7 @@ class _SettingsWindow:
         # Fixed width, so opening the key block doesn't widen the window.
         self._cloud_spacer = ttk.Frame(cloud_col, width=_CLOUD_COL_W, height=1)
         self._cloud_spacer.pack(side="bottom")
-        self._wide_columns += [(look_col, 14), (local_col, 10)]
+        self._wide_columns += [(look_col, 10), (local_col, 14)]
         ttk.Label(cloud_col, text="Cloud", style="Sub.TLabel").pack(anchor="w")
         cloud_box = ttk.Frame(cloud_col, padding=(4, 2, 0, 0))
         cloud_box.pack(fill="x")
@@ -2145,15 +2263,15 @@ class _SettingsWindow:
         self._star_card(f)
         # Two columns under the star card (2026-11-23, user request, like
         # General): Version and Privacy left, the two sending choices right.
-        cols = ttk.Frame(f)
-        cols.pack(fill="x", pady=(8, 0))
+        cols = ttk.Frame(f, style="Canvas.TFrame")
+        cols.pack(fill="x", pady=(10, 0))
         cols.columnconfigure(0, weight=1, uniform="about")
         cols.columnconfigure(1, weight=1, uniform="about")
-        left = ttk.Frame(cols)
-        left.grid(row=0, column=0, sticky="new", padx=(0, 24))
-        right = ttk.Frame(cols)
-        right.grid(row=0, column=1, sticky="new")
-        self._wide_columns.append((right, 14))
+        left = ttk.Frame(cols, style="Canvas.TFrame")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        right = ttk.Frame(cols, style="Canvas.TFrame")
+        right.grid(row=0, column=1, sticky="nsew")
+        self._wide_columns.append((right, 10))
         ver = self._section(left, "Version", first=True)
         row = ttk.Frame(ver)
         row.pack(fill="x")
@@ -2222,25 +2340,25 @@ class _SettingsWindow:
     def _star_card(self, f):
         """A quiet request for a GitHub star (user's request, 2026-11-23):
         one card here, never a popup or a reminder."""
-        card = ttk.Frame(f, style="Card.TFrame", padding=(16, 12))
-        card.pack(fill="x", pady=(0, 6))
+        card = ttk.Frame(f, style="Section.TFrame", padding=(20, 16))
+        card.pack(fill="x")
         card.columnconfigure(0, weight=1)
-        text = ttk.Frame(card, style="CardBody.TFrame")
+        text = ttk.Frame(card)
         text.grid(row=0, column=0, sticky="w")
         # In Sumit's own voice, person to person (user's request).
         ttk.Label(text, text=f"Enjoying {APP_NAME}?",
-                  style="CardTitle.TLabel").pack(anchor="w")
+                  style="Section.TLabel").pack(anchor="w")
         ttk.Label(
-            text, wraplength=420, style="CardMuted.TLabel",
+            text, wraplength=480, style="Muted.TLabel",
             text=f"If {APP_NAME} saves you some typing, I'd be grateful for a "
                  "star on GitHub. It helps more people find it, and more "
                  "people means more of the features you ask for.",
         ).pack(anchor="w", pady=(2, 0))
-        ttk.Label(text, text="Thanks, Sumit", style="CardMuted.TLabel").pack(
+        ttk.Label(text, text="Thanks, Sumit", style="Muted.TLabel").pack(
             anchor="w", pady=(4, 0))
         open_repo = lambda e=None: webbrowser.open(config.REPO_URL)  # noqa: E731
         repo = ttk.Label(text, text=config.REPO_URL.replace("https://", ""),
-                         style="Card.TLabel", foreground=self._link, cursor="hand2",
+                         foreground=self._link, cursor="hand2",
                          takefocus=True)
         repo.pack(anchor="w", pady=(4, 0))
         for seq in ("<Button-1>", "<Return>", "<space>"):
