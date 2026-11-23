@@ -43,9 +43,18 @@ def record(check_id, name, status, detail=""):
 
 
 def run_py(args, cwd, timeout=600):
-    p = subprocess.run([PY, *args], cwd=cwd, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace", timeout=timeout,
-                       env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+    """A hung test is a FAIL for its row, not the end of the gate
+    (2026-11-23: settings_layout.py hung and the whole run crashed on
+    TimeoutExpired with half the checks never run)."""
+    try:
+        p = subprocess.run([PY, *args], cwd=cwd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout,
+                           env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+    except subprocess.TimeoutExpired as exc:
+        partial = exc.stdout or ""
+        if isinstance(partial, bytes):
+            partial = partial.decode("utf-8", "replace")
+        return 124, f"{partial}\nTIMED OUT after {timeout} s"
     return p.returncode, p.stdout + p.stderr
 
 
@@ -330,7 +339,9 @@ def check_text_rules():
                              ("D57", "usage_ping_test.py"),
                              ("W13", "history_page_test.py"),
                              ("W14", "pill_preview_test.py"),
-                             ("D58", "models_dir_test.py")):
+                             ("D58", "models_dir_test.py"),
+                             ("D56", "language_guards_test.py"),
+                             ("D59", "qa_fixes_1325_test.py")):
         code, out = run_py([script], ROOT / "tools", timeout=60)
         last = out.strip().splitlines()[-1] if out.strip() else "no output"
         record(check_id, f"Text rules: {script[:-8]}", "PASS" if code == 0 else "FAIL", last)
