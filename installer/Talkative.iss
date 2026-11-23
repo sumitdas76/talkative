@@ -45,7 +45,10 @@ PrivilegesRequired=lowest
 ; instance before rebuilding" step documented in the project's own
 ; CLAUDE.md, though scripts\rebuild.ps1's own check is unaffected since it
 ; runs before ISCC.exe, not through this installer.
-CloseApplications=yes
+; force (2026-11-23): if Talkative survives PrepareToInstall's own close, Restart
+; Manager terminates it instead of failing (a tray app never answers its
+; polite close request). Uninstall uses this too.
+CloseApplications=force
 RestartApplications=no
 OutputDir=Output
 OutputBaseFilename=TalkativeSetup
@@ -153,6 +156,26 @@ begin
       Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#MyAppExeName}',
         '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Sleep(1000);
+    end;
+  end
+  else if TalkativeRunning then
+  begin
+    { A normal install over a running copy (2026-11-23, user: choosing
+      "Automatically close the applications" ended in "Setup was unable
+      to automatically close all applications"). Windows' Restart Manager
+      asks programs to close through their windows; Talkative is a tray
+      app and never answers, so that always failed. Clicking Install is
+      the consent: close it here, before Inno's own files-in-use check,
+      so that page never shows; ssDone opens the new version. Called on
+      the Install click (the ready page is off). }
+    Log('Talkative is running: closing it before installing');
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#MyAppExeName}',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    for I := 1 to 10 do
+    begin
+      if not TalkativeRunning then
+        Break;
+      Sleep(300);
     end;
   end;
 end;
@@ -480,7 +503,7 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
-    { Belt-and-suspenders backstop on top of CloseApplications=yes above --
+    { Belt-and-suspenders backstop on top of CloseApplications=force above --
       that relies on Restart Manager prompting interactively, which can't
       happen on a silent/unattended uninstall. /T kills the whole process
       tree (the onefile bootloader parent AND its child interpreter
