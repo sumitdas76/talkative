@@ -151,12 +151,20 @@ begin
   Exe := ExpandConstant('{app}\{#MyAppExeName}');
   StringChangeEx(Exe, '''', '''''', True);
   OutFile := ExpandConstant('{tmp}\closed.txt');
-  Exec(ExpandConstant('{cmd}'),
-    '/C powershell.exe -NoProfile -NonInteractive -Command "Get-Process '
+  // The 64-bit PowerShell (sysnative): Setup is a 32-bit program, and a
+  // 32-bit PowerShell can't read a 64-bit process's path, so every
+  // Talkative looked path-less and nothing was closed (found 2026-11-23:
+  // Restart Manager then force-closed it after ~35 s and nothing reopened
+  // it).
+  Exec(ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -Command "Get-Process '
     + '{#MyAppName} -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '''
-    + Exe + ''' } | ForEach-Object { $_.Id; Stop-Process -Id $_.Id -Force }" > "'
-    + OutFile + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    + Exe + ''' } | ForEach-Object { $_.Id; Stop-Process -Id $_.Id -Force } '
+    + '| Out-File -Encoding ascii ''' + OutFile + '''"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := LoadStringFromFile(OutFile, Output) and (Trim(String(Output)) <> '');
+  Log('CloseCopyInApp: ' + Exe + ', exit ' + IntToStr(ResultCode)
+    + ', closed: ' + Trim(String(Output)));
   if Result then
     Sleep(800);
 end;
@@ -167,6 +175,7 @@ var
   I: Integer;
 begin
   Result := '';
+  Log('PrepareToInstall: running=' + IntToStr(Ord(TalkativeRunning)));
   if IsUpdateMode then
   begin
     { The app exits by itself right after launching this installer; wait
