@@ -136,9 +136,9 @@ Things that happen in both modes
   only used if you press the hotkey again in that time. Windows'
   microphone icon shows both.
 
-- Update checks, once a day. Talkative downloads a small public file
-  from GitHub to see whether a newer app version or model update
-  exists. Nothing about you or your dictation is sent; like any web
+- Update checks, about once an hour while Talkative runs. Talkative
+  downloads a small public file from GitHub to see whether a newer app
+  version or model update exists. Nothing about you or your dictation is sent; like any web
   request, GitHub sees your IP address. Updates are only downloaded
   when you click Update.
 - Feedback replies, once a day. Talkative downloads a public file from

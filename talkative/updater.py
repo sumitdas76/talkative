@@ -739,7 +739,10 @@ def _check_due(state):
         last = datetime.fromisoformat(str(state.get("last_check", "")))
     except ValueError:
         return True
-    return datetime.now() - last >= timedelta(hours=config.UPDATE_CHECK_HOURS)
+    # 5 minutes of slack: the hourly look runs about an hour after the last
+    # one, not exactly, and mustn't skip a whole hour by a few seconds.
+    return (datetime.now() - last
+            >= timedelta(hours=config.UPDATE_CHECK_HOURS) - timedelta(minutes=5))
 
 
 def _mark_checked():

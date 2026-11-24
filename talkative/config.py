@@ -465,8 +465,12 @@ REPO_URL = "https://github.com/sumitdas76/talkative"
 # dictated with the new one (usage-based grace, spec section 7.6).
 UPDATE_GRACE_WORDS = 1000
 # Updates are checked (at startup, and hourly while running) when the last
-# successful check is at least this old.
-UPDATE_CHECK_HOURS = 12
+# successful check is at least this old. 1 hour (was 12 until 1.3.25: a
+# release published in the morning wasn't offered until the next day).
+# GitHub allows 60 unauthenticated API requests an hour per address, so
+# more than 60 copies behind one shared address would see some checks
+# refused; those are logged and retried an hour later.
+UPDATE_CHECK_HOURS = 1
 
 # ---------------------------------------------------------------------------
 # Feedback (spec queue #4) -- the app's only outbound data path, and only
