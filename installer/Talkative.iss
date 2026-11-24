@@ -149,6 +149,15 @@ var
   Output: AnsiString;
 begin
   Exe := ExpandConstant('{app}\{#MyAppExeName}');
+  // No EXE in this folder: nothing can be running from it. Skips ~1 s of
+  // PowerShell start-up before the progress bar (a fresh install while
+  // another copy runs elsewhere; user, 2026-11-24).
+  if not FileExists(Exe) then
+  begin
+    Result := False;
+    Log('CloseCopyInApp: no ' + Exe + ', nothing to close');
+    Exit;
+  end;
   StringChangeEx(Exe, '''', '''''', True);
   OutFile := ExpandConstant('{tmp}\closed.txt');
   // The 64-bit PowerShell (sysnative): Setup is a 32-bit program, and a
@@ -421,6 +430,25 @@ begin
     '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
 end;
 
+// Browse with a "Make New Folder" button (user, 2026-11-24: Inno's own
+// Browse dialog had none). Like Inno's, it adds \Talkative to the pick
+// unless the picked folder already is one.
+procedure BrowseClick(Sender: TObject);
+var
+  Dir: String;
+begin
+  Dir := RemoveBackslashUnlessRoot(Trim(WizardForm.DirEdit.Text));
+  while (Dir <> '') and not DirExists(Dir) and (ExtractFileDir(Dir) <> Dir) do
+    Dir := ExtractFileDir(Dir);
+  if BrowseForFolder(SetupMessage(msgBrowseDialogLabel), Dir, True) then
+  begin
+    Dir := RemoveBackslashUnlessRoot(Dir);
+    if CompareText(ExtractFileName(Dir), '{#MyAppName}') <> 0 then
+      Dir := AddBackslash(Dir) + '{#MyAppName}';
+    WizardForm.DirEdit.Text := Dir;
+  end;
+end;
+
 procedure InitializeWizard;
 var
   Page: TNewNotebookPage;
@@ -474,6 +502,7 @@ begin
       Parent := Page;
       Caption := 'Browse' + #$2026;
       Left := L + W - Width;
+      OnClick := @BrowseClick;
     end;
     with WizardForm.DirEdit do
     begin
