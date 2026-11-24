@@ -728,7 +728,8 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  ResultCode: Integer;
+  ResultCode, I: Integer;
+  Ids: String;
 begin
   if CurUninstallStep = usUninstall then
   begin
@@ -740,8 +741,23 @@ begin
       doesn't depend on getting the parent/child relationship right by
       hand. Exit code ignored -- "no matching process" is the common,
       expected case, not a failure. }
-    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#MyAppExeName} /T',
-      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    // Only the copy in this folder (user, 2026-11-24: uninstalling a
+    // second copy closed every Talkative); taskkill of all copies only if
+    // WMI can't be used.
+    try
+      Ids := '';
+      if WmiCopies(ExpandConstant('{app}\{#MyAppExeName}'), True, Ids) > 0 then
+        for I := 1 to 50 do
+        begin
+          if WmiCopies(ExpandConstant('{app}\{#MyAppExeName}'), False, Ids) = 0 then
+            Break;
+          Sleep(100);
+        end;
+      Log('Uninstall closed:' + Ids);
+    except
+      Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#MyAppExeName} /T',
+        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    end;
   end;
   if CurUninstallStep = usPostUninstall then
   begin
