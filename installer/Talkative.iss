@@ -142,10 +142,48 @@ var
 { Close Talkative.exe processes running from this install folder only
   (a portable or second copy elsewhere doesn't lock these files and is
   left alone). True when one was running. }
+// Count Talkative.exe processes running from Exe through WMI (the WMI
+// service reads a 64-bit process's path, unlike a 32-bit PowerShell);
+// with Kill, terminate them. Raises when WMI isn't usable.
+function WmiCopies(Exe: String; Kill: Boolean; var Ids: String): Integer;
+var
+  Locator, Svc, Procs, P: Variant;
+  I: Integer;
+  Path: String;
+begin
+  Result := 0;
+  Locator := CreateOleObject('WbemScripting.SWbemLocator');
+  Svc := Locator.ConnectServer('.', 'root\CIMV2');
+  Procs := Svc.ExecQuery('SELECT ProcessId, ExecutablePath FROM Win32_Process'
+    + ' WHERE Name = ''{#MyAppExeName}''');
+  for I := 0 to Procs.Count - 1 do
+  begin
+    P := Procs.ItemIndex(I);
+    try
+      Path := P.ExecutablePath;
+    except
+      Path := '';
+    end;
+    if CompareText(Path, Exe) = 0 then
+    begin
+      Result := Result + 1;
+      if Kill then
+      begin
+        Ids := Ids + ' ' + IntToStr(P.ProcessId);
+        try
+          P.Terminate;
+        except
+          Log('CloseCopyInApp: could not end ' + IntToStr(P.ProcessId));
+        end;
+      end;
+    end;
+  end;
+end;
+
 function CloseCopyInApp: Boolean;
 var
-  ResultCode: Integer;
-  OutFile, Exe: String;
+  ResultCode, I: Integer;
+  OutFile, Exe, Ids: String;
   Output: AnsiString;
 begin
   Exe := ExpandConstant('{app}\{#MyAppExeName}');
@@ -157,6 +195,24 @@ begin
     Result := False;
     Log('CloseCopyInApp: no ' + Exe + ', nothing to close');
     Exit;
+  end;
+  // WMI first (~0.1-0.3 s, user 2026-11-24: PowerShell's ~1 s start-up
+  // plus a fixed 800 ms wait was a visible pause before the progress
+  // bar); wait only until the processes are really gone.
+  try
+    Ids := '';
+    Result := WmiCopies(Exe, True, Ids) > 0;
+    if Result then
+      for I := 1 to 50 do
+      begin
+        if WmiCopies(Exe, False, Ids) = 0 then
+          Break;
+        Sleep(100);
+      end;
+    Log('CloseCopyInApp (WMI): ' + Exe + ', closed:' + Ids);
+    Exit;
+  except
+    Log('CloseCopyInApp: WMI failed (' + GetExceptionMessage + '), using PowerShell');
   end;
   StringChangeEx(Exe, '''', '''''', True);
   OutFile := ExpandConstant('{tmp}\closed.txt');
