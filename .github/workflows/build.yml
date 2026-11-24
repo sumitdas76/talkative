@@ -89,7 +89,16 @@ jobs:
           Invoke-WebRequest https://aka.ms/vs/17/release/vc_redist.x64.exe -OutFile installer\redist\vc_redist.x64.exe
 
       - name: Install Inno Setup
-        run: choco install innosetup --version 6.7.3 -y --no-progress  # >= 6.7 for the Windows 11 wizard style; pinned so Inno 7 can't change the installer unnoticed
+        # >= 6.7 for the Windows 11 wizard style; pinned (version and hash) so
+        # Inno 7 can't change the installer unnoticed. From Inno's own GitHub
+        # release, not Chocolatey: its feed was down for two runs on 2026-11-24.
+        run: |
+          $f = "$env:RUNNER_TEMP\innosetup-6.7.3.exe"
+          Invoke-WebRequest https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe -OutFile $f
+          $h = (Get-FileHash $f -Algorithm SHA256).Hash
+          if ($h -ne "9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732") { throw "Inno Setup hash mismatch: $h" }
+          Start-Process $f -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-","/ALLUSERS","/DIR=`"${env:ProgramFiles(x86)}\Inno Setup 6`"" -Wait
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { throw "Inno Setup did not install" }
 
       - name: Build TalkativeSetup.exe
         run: |
