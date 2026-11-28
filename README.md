@@ -27,7 +27,7 @@ audio and text never leave your PC.
 
 Dictation history, if you turn it on in Settings > History, is always
 stored only on your device, regardless of mode. In either mode the app
-checks GitHub once a day for updates (nothing about you is sent), and
+checks GitHub about once an hour for updates (nothing about you is sent), and
 the Feedback box in Settings → About sends a message only when you
 click Send.
 
@@ -61,7 +61,7 @@ that it works fully offline.
 
 ## Updates
 
-In Local mode, the app checks once a day for improved models and asks
+In Local mode, the app checks about once an hour for improved models and asks
 before downloading anything. You can undo any update from Settings →
 Models.
 
