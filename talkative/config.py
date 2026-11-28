@@ -248,16 +248,15 @@ PROCESSING_MODE = "cloud"
 CLOUD_ENDPOINT_URL = "https://talkative-cloud.sumitdas76.workers.dev"
 # Cloud mode's speech-to-text, shown in Settings as the accent:
 # "us_english" -- Groq's Whisper (Talkative Cloud, as always), or
-# "indian_english" -- Microsoft Azure Speech en-IN on the maintainer's own
-# free Azure resource, called by the Worker (cloud/worker.js
-# azureTranscribe; 2026-10-23). Azure busy or its free hours used up: the
-# Worker falls back to Groq for that dictation. Developer English always
-# uses Groq (its literal-symbol prompt needs Whisper).
+# "indian_english" -- Groq's whisper-large-v3 (better on Indian accents than
+# turbo: 15.1% vs 18.9% word errors), on the user's own key or the Worker.
+# Was Microsoft Azure en-IN until its trial ended (2026-11-22). Developer
+# English always uses turbo.
 SPEECH_SERVICE = "us_english"
 # The user's own free Groq key (Settings > General > Cloud, optional;
 # groq_direct.py), DPAPI-encrypted by secret_store.protect(). Set: Cloud
-# calls Groq directly with it, and Talkative Cloud only when it fails
-# (and for Indian English, which needs our Azure). "" = shared Cloud.
+# calls Groq directly with it (Indian English too), and Talkative Cloud
+# only when it fails. "" = shared Cloud.
 GROQ_KEY_DPAPI = ""
 # Which key Cloud uses when an own key is saved: False = Talkative's shared
 # key, the own key kept for later (users swap between the two to have

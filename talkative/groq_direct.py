@@ -27,6 +27,9 @@ from . import cloud_prompt, config, secret_store
 GROQ_HOST = "api.groq.com"
 _BASE = "/openai/v1"
 STT_MODEL = "whisper-large-v3-turbo"
+# Indian English (2026-11-28): 15.1% word errors on Indian recordings vs
+# turbo's 18.9% (tools/sarvam_study/README.md); worker.js uses it too.
+INDIAN_STT_MODEL = "whisper-large-v3"
 GRAMMAR_MODEL = "openai/gpt-oss-20b"
 KEY_PATTERN = re.compile(r"gsk_[A-Za-z0-9]{20,200}")
 _MAX_REPLY = 1_000_000
@@ -223,7 +226,7 @@ def check_key(candidate, timeout=10.0):
     return None
 
 
-def transcribe(wav_bytes, prompt, timeout, language="en"):
+def transcribe(wav_bytes, prompt, timeout, language="en", model=STT_MODEL):
     """WAV bytes -> text, with the same request worker.js handleTranscribe
     makes to Groq."""
     boundary = uuid.uuid4().hex
@@ -237,7 +240,7 @@ def transcribe(wav_bytes, prompt, timeout, language="en"):
                  f'filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n'.encode("ascii"))
     parts.append(wav_bytes)
     parts.append(b"\r\n")
-    field("model", STT_MODEL)
+    field("model", model)
     field("language", language)
     field("response_format", "json")
     prompt = (prompt or "")[-800:].strip()
@@ -245,7 +248,7 @@ def transcribe(wav_bytes, prompt, timeout, language="en"):
         field("prompt", prompt)
     parts.append(f"--{boundary}--\r\n".encode("ascii"))
     result = _call("POST", "/audio/transcriptions", b"".join(parts),
-                   f"multipart/form-data; boundary={boundary}", timeout, model=STT_MODEL)
+                   f"multipart/form-data; boundary={boundary}", timeout, model=model)
     return str(result.get("text", "")).strip()
 
 

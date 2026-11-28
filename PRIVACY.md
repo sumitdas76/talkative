@@ -45,12 +45,9 @@ These go to Talkative's server, a Cloudflare Worker run by the
 Talkative maintainer (talkative-cloud.sumitdas76.workers.dev), which
 forwards the audio and text to:
 
-- Groq, for speech-to-text and grammar cleanup.
+- Groq, for speech-to-text (including "Indian English") and grammar
+  cleanup.
   Privacy policy: https://groq.com/privacy-policy/
-- Microsoft Azure Speech (Central India), for speech-to-text when you
-  choose "Indian English" under Cloud in Settings. Microsoft says audio
-  for this kind of recognition is processed in memory and not stored.
-  Privacy: https://learn.microsoft.com/azure/ai-foundry/responsible-ai/speech-service/speech-to-text/data-privacy-security
 - Cloudflare Workers AI, as a backup for speech-to-text and grammar
   cleanup when Groq is unavailable.
   Privacy policy: https://www.cloudflare.com/privacypolicy/
@@ -75,8 +72,7 @@ the cursor and the transcribed text straight to Groq
 (api.groq.com) under your own Groq account and Groq's terms, not
 through Talkative's server, and without the install ID. Talkative's
 server is used only when your key doesn't work for a dictation (Groq
-refused it, its daily limit is used up, or Groq can't be reached),
-and for speech-to-text when you choose "Indian English".
+refused it, its daily limit is used up, or Groq can't be reached).
 
 The key is stored on your PC in settings.json, encrypted with Windows
 so that only your Windows account on this PC can read it. It is sent

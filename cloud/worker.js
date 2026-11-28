@@ -610,59 +610,6 @@ function knownNearCap(name, limit) {
   return !!k && k.day === today() && k.count >= limit - SPECULATE_MARGIN;
 }
 
-// "Indian English" (2026-10-23): Microsoft Azure Speech, en-IN, with the
-// maintainer's own Azure resource (secrets AZURE_SPEECH_KEY and
-// AZURE_SPEECH_REGION; free F0 tier: 5 audio hours a month, one request at
-// a time). Chosen per dictation by the client (X-Stt-Provider: azure).
-// Measured on 59 real recordings: 12.8% word errors vs Groq's 14.6%,
-// Indian English 18.9% -> 12.8%. Any Azure problem -- busy (429, one at a
-// time), month's hours used up, network -- falls through to the normal
-// Groq path below, so the dictation still gets typed.
-// Returns both Azure forms: "text" (Display, punctuated, but with a full
-// stop at every pause) and "itn" (same words, no punctuation); the client
-// tries grammar cleanup on "itn" first (talkative/app.py).
-const AZURE_LANGUAGES = ["en-IN", "en-US", "en-GB"];
-
-async function azureTranscribe(request, env, bytes, timing, ctx) {
-  if (!env.AZURE_SPEECH_KEY || !env.AZURE_SPEECH_REGION) return null;
-  const requested = request.headers.get("X-Stt-Language");
-  const language = AZURE_LANGUAGES.includes(requested) ? requested : "en-IN";
-  const t0 = Date.now();
-  try {
-    const url = `https://${env.AZURE_SPEECH_REGION}.stt.speech.microsoft.com/speech/` +
-      `recognition/conversation/cognitiveservices/v1?language=${language}` +
-      "&format=detailed&profanity=raw";
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Ocp-Apim-Subscription-Key": env.AZURE_SPEECH_KEY,
-        "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
-        Accept: "application/json",
-      },
-      body: bytes,
-    });
-    timing.azure_ms = Date.now() - t0;
-    if (!resp.ok) {
-      timing.azure_problem = `azure ${resp.status}`;
-      console.error("azure transcription", resp.status, (await resp.text()).slice(0, 200));
-      noteHit(env, ctx, `azure ${resp.status}`, null);
-      return null;
-    }
-    const r = await resp.json();
-    if (r.RecognitionStatus === "Success" && r.NBest?.length) {
-      return { text: r.NBest[0].Display.trim(), itn: r.NBest[0].ITN.trim(), via: "azure" };
-    }
-    if (["NoMatch", "InitialSilenceTimeout", "BabbleTimeout"].includes(r.RecognitionStatus)) {
-      return { text: "", itn: "", via: "azure" };
-    }
-    timing.azure_problem = `azure ${r.RecognitionStatus}`;
-    return null;
-  } catch (e) {
-    timing.azure_problem = `azure unreachable: ${e}`;
-    return null;
-  }
-}
-
 async function handleTranscribe(request, env, timing, ctx) {
   const bytes = new Uint8Array(await request.arrayBuffer());
   if (bytes.length === 0) {
@@ -670,18 +617,22 @@ async function handleTranscribe(request, env, timing, ctx) {
   }
   const lang = language(request);
   timing.language = lang;
-  if (lang === "en" && request.headers.get("X-Stt-Provider") === "azure") {
-    const az = await azureTranscribe(request, env, bytes, timing, ctx);
-    if (az) return az;
-  }
   const form = new FormData();
   form.append("file", new Blob([bytes], { type: "audio/wav" }), "audio.wav");
   // X-Stt-Model picks Groq's other Whisper for measurement (A/B against the
   // default, tools/grammar_eval/cloud_stt_ab.py, 2026-10-04). Allow-listed:
   // both have the same free-tier limits, so a test can't reach anything
   // the default couldn't.
+  // "Indian English" (2026-11-28): Groq whisper-large-v3, 15.1% word
+  // errors on 24 Indian English recordings vs turbo's 18.9%, same speed
+  // (tools/sarvam_study/README.md). It replaced Microsoft Azure en-IN,
+  // whose trial ended 2026-11-22. Clients from 1.3.16 to 1.3.25 still ask
+  // for Indian English with X-Stt-Provider: azure, so that header means
+  // large-v3 too. Groq counts limits per model, so this doesn't take from
+  // turbo's share.
   const STT_MODELS = ["whisper-large-v3-turbo", "whisper-large-v3"];
-  const requested = request.headers.get("X-Stt-Model");
+  const requested = lang === "en" && request.headers.get("X-Stt-Provider") === "azure"
+    ? "whisper-large-v3" : request.headers.get("X-Stt-Model");
   const sttModel = STT_MODELS.includes(requested) ? requested : STT_MODELS[0];
   timing.stt_model = sttModel;
   form.append("model", sttModel);

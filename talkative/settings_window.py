@@ -1135,7 +1135,7 @@ class _SettingsWindow:
         # One choice across both sections (2026-10-27, user request: no
         # separate "Cloud" button): an accent under Cloud selects Cloud
         # with that speech service -- US English = Groq's Whisper, Indian
-        # English = Azure en-IN via the Worker -- or Local's own button.
+        # English = Groq's whisper-large-v3 -- or Local's own button.
         # Since 2026-11-23 the accent is one entry of a language list
         # (languages.py): "Speak in" + the list; picking from the list picks
         # Cloud too. var_engine is now "cloud" or "local".
@@ -1284,8 +1284,6 @@ class _SettingsWindow:
             text = "Using your key."
             if left is not None:
                 text += f" About {left:,} transcriptions left today."
-            if config.SPEECH_SERVICE == "indian_english":
-                text += " Indian English still uses Talkative Cloud; cleanup uses your key."
             self.key_left.config(text=text)
             self.key_saved_row.pack(anchor="w", pady=(6, 0))
         else:

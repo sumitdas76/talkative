@@ -216,7 +216,6 @@ class TalkativeApp:
         self._chord_engaged = False  # full chord was down since all its keys were last up
         self._context = None  # screen_context.Pending for the current recording, or None
         self._press = None  # continuation.press_info() of the current recording
-        self._azure_notice = 0.0  # when the last "Indian English is busy" message was shown
         self.tray = TrayApp(
             on_quit=self.quit, on_settings=self.open_settings,
             hotkey_label=friendly_key(config.HOTKEY),
@@ -1216,9 +1215,7 @@ class TalkativeApp:
                     # Skipped when Cloud just refused the transcription: it
                     # would most likely refuse this too, maybe after a 20 s
                     # timeout. The rule-based cleanup above still ran.
-                    text = self._cloud_grammar(
-                        text, corrected=after_corrections != after_fillers
-                    )
+                    text = cloud_client.grammar_apply(text)
                 grammar_secs = time.time() - t0
                 if dev:
                     # The grammar model likes to wrap paths in backticks
@@ -1288,35 +1285,6 @@ class TalkativeApp:
             text = finish_sentence(text)
         return text, before, before, before, secs
 
-    def _cloud_grammar(self, text, corrected=False):
-        """Cloud grammar. For Indian English (Azure) it first tries Azure's
-        unpunctuated words: Azure ends a sentence at every pause
-        ("...the user of the software. Stop between a sentence..."), and
-        punctuating the plain words fixes that. The model is unreliable on
-        unpunctuated text (it once answered a question instead of
-        punctuating it), so if the guards reject that attempt, the
-        punctuated text is cleaned up as usual. Measured on 20 real
-        dictations, 2026-10-23: never worse, often better.
-
-        Not when a spoken correction was applied to the punctuated text
-        (`corrected`): without sentence breaks the correction rule can't
-        find what to retract, and the model kept "Monday sorry I mean
-        Tuesday" (live test 2026-10-25)."""
-        itn = getattr(cloud_client.last_stt, "itn", "") if self._cloud_active() else ""
-        if corrected:
-            itn = ""
-        if itn:
-            plain = apply_spoken_symbols(itn)
-            if config.CLEANUP_MODE == "cleaned_up":
-                plain = remove_fillers(plain)
-                if config.ENABLE_SELF_CORRECTION:
-                    plain = apply_self_corrections(plain)
-                plain = collapse_repeats(plain)
-            cleaned = cloud_client.grammar_apply(plain)
-            if cleaned != plain:
-                return cleaned
-        return cloud_client.grammar_apply(text)
-
     def _record(self, audio, **stages):
         """One dictation's stages to debug.log (if on) and, if the user
         turned on Send diagnostic data, to Talkative's server."""
@@ -1368,22 +1336,14 @@ class TalkativeApp:
         (SAPI dictation) got 85% of words wrong on the 59 real recordings
         Cloud gets 14.6% on (2026-10-04); Win+H voice typing has no API.
 
-        Indian English (config.SPEECH_SERVICE) asks the Worker for Azure;
-        when Azure is busy or its free hours are used up, the Worker uses
-        Groq instead, and the user hears about it at most every 10 minutes.
-        Developer English always uses Groq: its literal-symbol prompt
-        needs Whisper."""
+        Indian English (config.SPEECH_SERVICE) uses Groq's whisper-large-v3.
+        Developer English always uses turbo, as it was measured with it."""
         indian = config.SPEECH_SERVICE == "indian_english" and not dev
         language = languages.code(True, dev)
         try:
             text = cloud_client.transcribe(audio, config.SAMPLE_RATE,
                                            initial_prompt=prompt, indian_english=indian,
                                            language=language)
-            if (indian and text and getattr(cloud_client.last_stt, "via", "") != "azure"
-                    and time.time() - self._azure_notice > 600):
-                self._azure_notice = time.time()
-                self.tray.notify("Indian English is busy right now, so US English "
-                                 "transcribed this one.")
             key_notice = cloud_client.take_key_notice()
             if key_notice:
                 self.tray.notify(key_notice)
